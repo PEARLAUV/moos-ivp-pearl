@@ -2,7 +2,6 @@
 // Vehicle MOOS configuration file
 
 ServerHost = $(PEARL_IP)
-ServerPort = $(VPORT)
 
 // Community name IS the vehicle name
 Community  = $(VNAME)
@@ -27,7 +26,6 @@ Processconfig = ANTLER
 
   Run = pShare            @ NewConsole = false
   Run = pHostInfo         @ NewConsole = false
-  Run = uFldNodeBroker    @ NewConsole = false
   
   Run = pHelmIvP          @ NewConsole = false
 }

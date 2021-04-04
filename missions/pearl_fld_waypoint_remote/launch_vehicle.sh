@@ -14,10 +14,6 @@ REGION="deep_pond"
 START_POS="0,0"  
 
 PEARL_IP="192.168.20.137"  #IP address of the RPi on PEARL
-SHORE_IP="192.168.20.158"  #IP address of the shoreside laptop
-VEHICLE_PORT="9001"
-VEHICLE_LISTEN="9301"
-SHORE_LISTEN="9300"
 
 CRUISESPEED="0.5"  #speed to traverse waypoints in m/s
 
@@ -33,10 +29,6 @@ for ARGI; do
 	echo "  --deep_pond       Set region to be Deep Pond (Default is Deep Pond)"
 	echo "  --startpos=X,Y    (Default is 0,0)                   "
 	echo "  --ip=<addr>       (Default is 192.168.20.137)        "
-	echo "  --shore=<addr>    (Default is 192.168.20.158)        "
-	echo "  --vport=<port>    (Default is 9001)                  "
-	echo "  --vlisten=<port>  (Default is 9301)                  "
-	echo "  --slisten=<port>  (Default is 9300)                  "
 	echo "  --help, -h                                           " 
 	exit 0;
     elif [ "${ARGI//[^0-9]/}" = "$ARGI" -a "$TIME_WARP" = 1 ]; then 
