@@ -53,6 +53,8 @@ PearlPID::PearlPID()
   m_station_keep    = false;
   m_solar_heading   = 0;
   m_deadband        = 0;
+  m_solar_desired   = false;
+  m_within_deadband = false;
 
   m_desired_heading = 0;
   m_desired_speed   = 0;
@@ -234,11 +236,16 @@ bool PearlPID::Iterate()
   }
   
   if(m_use_solar && m_station_keep && m_desired_speed < 0.01) {
+    m_solar_desired = true;
     if (abs(m_current_heading - m_solar_heading) <= m_deadband) {
+      m_within_deadband = true;
       m_desired_heading = m_current_heading; }
     else {
+      m_within_deadband = false;
       m_desired_heading = m_solar_heading; }
   }
+  else {
+    m_solar_desired = false; }
 
   double rudder = 0;
   double thrust = 0;
@@ -693,14 +700,20 @@ bool PearlPID::buildReport()
   string sDeadband     = doubleToString(m_deadband, 1);
   string sCurHeading   = doubleToString(m_current_heading, 1);
   string sCurSpeed     = doubleToString(m_current_speed, 1);
+  string sWithinDead   = boolToString(m_within_deadband);
+  string sSolarDesired = boolToString(m_solar_desired);
   
   m_msgs << endl << "pPearlPID Variables and Status" << endl << "-------------------------" << endl;
   
   m_msgs << "   pPearlPID Control On:   " << sControl << endl;
   m_msgs << "   ALLSTOP Commanded:      " << sAllstop << endl;
   m_msgs << "   Speed Factor:           " << sSpeedFactor << endl;
+  m_msgs << endl;
   m_msgs << "   STATION-KEEPING:        " << sStation << endl;
   m_msgs << "   Sun-tracking Mode ON:   " << sUseSolar << endl;
+  m_msgs << "   Using SOLAR_HEADING as DESIRED_HEADING: " << sSolarDesired << endl;
+  m_msgs << "   Within solar heading deadband:          " << sWithinDead << endl;
+  m_msgs << endl;
   m_msgs << "   Sun Heading:            " << sSolarHeading << endl;
   m_msgs << "   Sun Heading Deadband:   +/-" << sDeadband << endl;
   m_msgs << endl;

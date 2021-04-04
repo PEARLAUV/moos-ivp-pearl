@@ -59,6 +59,8 @@ protected:
   bool     m_station_keep;
   double   m_solar_heading;
   double   m_deadband;
+  bool     m_solar_desired;
+  bool     m_within_deadband;
 
   double   m_current_heading;
   double   m_current_speed;
