@@ -1,0 +1,92 @@
+Single vehicle mission for running various waypoint missions. Mission options include:
+-perimeter circuit
+-star pattern
+-figure-eight pattern
+
+----------------------------------------------------------------------------------
+Launch instructions:
+----------------------------------------------------------------------------------
+
+(shoreside terminal)
+>> ./launch_shoreside.sh
+
+**note that the proper shore/vehicle IP addresses and ports must be specified
+either in the launch_shoreside.sh executable or at the command line. Type
+./launch_shoreside.sh -h for a full list of possible command line arguments.
+
+(remote vehicle terminal)
+>> ./launch_vehicle.sh
+
+**note that the proper shore/vehicle IP addresses and ports must be specified
+either in the launch_vehicle.sh executable or at the command line. Type
+./launch_vehicle.sh -h for a full list of possible command line arguments.
+
+Once both MOOS communities are running, the manual control switch (SwD) on the RC
+controller must be flipped ON and OFF in order to run missions and behaviors. PEARL 
+starts up in manual override mode by default for safety.
+
+-----------------------------------------------------------------------------------
+Variables/Parameters to adjust:
+-----------------------------------------------------------------------------------
+
+-Shoreside laptop and PEARL RPi IP addresses (Variable names: SHORE_IP, PEARL_IP)
+	Location: launch_vehicle.sh, launch_shoreside.sh
+	Note that we can specify these IP addresses as command line arguments
+	when running either script, but for simplicity it makes sense to 
+	just change the defaults in the code.
+**The ports that MOOS-IvP uses to communicate between shore/PEARL are also set
+in the launch scripts. You shouldn't need to change these, but that's where
+they are just in case.
+
+-PEARL waypoint cruise speed (CRUISESPEED)
+	Location: launch_vehicle.sh
+	This is the speed PEARL will set when moving between waypoints.
+	Currently speed is set to 0.3 m/s.
+
+-Station-keeping radius (inner_radius, outer_radius, hibernation_radius)
+	Location: meta_vehicle.bhv
+	The important thing here is inner_radius, which defines the area within
+	which PEARL can drift while station-keeping. Currently inner_radius
+	is set to 5 meters.
+
+-PID controller gains
+	Location: plug_pPearlPID.moos
+	Currently set as: P=1, I=0, D=0
+
+-PEARL/IMU heading offset (HEADING_OFFSET)
+	Location: plug_iPEARL.moos
+	PEARL's heading is calculated by adding this offset (in degrees) to
+	the heading measured by the IMU.
+
+-Sun Tracking mode ON/OFF (SUN_TRACKING)
+	Location: plug_pPearlPID.moos
+	true = sun tracking mode ON
+	false = sun tracking mode OFF
+
+-PEARL/solar panels offset (SUN_HEADING_OFFSET)
+	Location: plug_uSunTracking.moos
+	PEARL's heading during sun-tracking mode is calculated by adding this
+	offset (in degrees) to the calculated solar azimuth angle.
+
+-Max thrust/rudder percentages (MAX_THRUST, MAX_RUDDER)
+	Location: plug_iChargeController.moos
+	MAX_THRUST is the maximum thrust percentage that can be commanded to the
+	motors. MAX_RUDDER is typically set as MAX_THRUST/2.
+
+-Origin set point (Lat, Long)
+	Location: plug_origin_warp.moos
+	This is the latitude and longitude that corresponds to the point (0,0) on the 
+	local grid. The local grid uses units of meters.
+
+-Waypoint/return point locations (points)
+	Location: meta_vehicle.bhv
+	This are the locations of the waypoints on the local grid (so they are in 
+	units of meters). Each waypoint behavior in the meta_vehicle.bhv file has
+	a specified set of points.
+
+
+
+
+
+
+	

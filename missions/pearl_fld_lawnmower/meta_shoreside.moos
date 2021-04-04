@@ -51,7 +51,7 @@ ProcessConfig = uFldShoreBroker
   CommsTick = 1
 
   qbridge = DEPLOY, RETURN, STATION_KEEP
-  qbridge = DIRECT_THRUST_MODE, DIRECT_THRUST_INCREASE, DIRECT_THRUST_DECREASE
+  qbridge = STAR, PERIMETER, FIGURE_EIGHT
   qbridge = NODE_REPORT, NODE_MESSAGE, APPCAST_REQ
 
   bridge  = src=REGION_INFO,  alias=REGION_INFO
@@ -82,23 +82,24 @@ ProcessConfig = pMarineViewer
   vehicles_inactive_color  = red
   trails_length            = 10000
 
-  stale_report_thresh = 15
-  stale_remove_thresh = 120
+  stale_report_thresh = 1800    //seconds
+  stale_remove_thresh = 2700    //seconds
 
   scope = PHI_HOST_INFO
   scope = DEPLOY_ALL
   scope = RETURN_ALL
   scope = STATION_KEEP_ALL
   scope = MOOS_MANUAL_OVERRIDE
+  scope = STAR_ALL
+  scope = PERIMETER_ALL
+  scope = FIGURE_EIGHT_ALL
   
-  cmd = label=DIRECT-THRUST-LEFT, var=DIRECT_THRUST_MODE, dval=1, receivers=all
-  cmd = label=DIRECT-THRUST-RIGHT, var=DIRECT_THRUST_MODE, dval=2, receivers=all
-  cmd = label=DIRECT-THRUST-BOTH, var=DIRECT_THRUST_MODE, dval=3, receivers=all
-  cmd = label=ROTATE, var=DIRECT_THRUST_MODE, dval=4, receivers=all
-  
-  cmd = label=+5%, var=DIRECT_THRUST_INCREASE, sval=true, receivers=all
-  cmd = label=-5%, var=DIRECT_THRUST_DECREASE, sval=true, receivers=all
-  cmd = label=ALLSTOP, var=DIRECT_THRUST_MODE, dval=0, receivers=all
+  ACTION  = MENU_KEY=star         # STAR_ALL=true  # PERIMETER_ALL=false
+  ACTION+ = MENU_KEY=star         # FIGURE_EIGHT_ALL=false
+  ACTION  = MENU_KEY=perimeter    # STAR_ALL=false # PERIMETER_ALL=true
+  ACTION+ = MENU_KEY=perimeter    # FIGURE_EIGHT_ALL=false
+  ACTION  = MENU_KEY=figure-eight # STAR_ALL=false # PERIMETER_ALL=false
+  ACTION+ = MENU_KEY=figure-eight # FIGURE_EIGHT_ALL=true
 
   BUTTON_ONE   = DEPLOY       # DEPLOY_ALL=true   # RETURN_ALL=false # STATION_KEEP_ALL=false
   BUTTON_TWO   = RETURN       # DEPLOY_ALL=true   # RETURN_ALL=true  # STATION_KEEP_ALL=false
