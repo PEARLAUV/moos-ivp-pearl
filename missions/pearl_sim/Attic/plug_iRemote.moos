@@ -1,0 +1,18 @@
+//------------------------------------
+// iRemote configuration block
+
+ProcessConfig = iRemote
+{
+  AppTick   = 5
+  CommsTick = 5
+
+  CustomKey = 1 : HELM_VERBOSE @ "verbose"
+  CustomKey = 2 : HELM_VERBOSE @ "terse"
+  CustomKey = 3 : HELM_VERBOSE @ "quiet"
+  CustomKey = 4 : DEPLOY @ "true"
+  CustomKey = 5 : DEPLOY @ "false"
+  CustomKey = 6 : STATION_KEEP @ "true"
+  CustomKey = 7 : STATION_KEEP @ "false"
+  CustomKey = 8 : RETURN @ "true"
+  CustomKey = 9 : RETURN @ "false"
+}

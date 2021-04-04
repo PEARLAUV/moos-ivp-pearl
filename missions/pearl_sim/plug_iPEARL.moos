@@ -1,0 +1,13 @@
+//--------------------------------
+// iPEARL config block from plugin
+
+ProcessConfig = iPEARL
+{
+  AppTick     = 10
+  CommsTick   = 10
+
+  PORT           = /dev/ttyACM0
+  BAUDRATE       = 115200
+  PREFIX         = IMU
+  HEADING_OFFSET = 0.0
+}

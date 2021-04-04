@@ -1,0 +1,205 @@
+//-------------------------------------------------
+// FILE: pearl.moos
+//-------------------------------------------------
+
+ServerHost   = localhost
+ServerPort   = 9000
+Community    = pearl
+MOOSTimeWarp = 1
+
+// Deep Pond
+LatOrigin    = 41.739191
+LongOrigin   = -69.992287
+
+//------------------------------------------
+// Antler configuration  block
+ProcessConfig = ANTLER
+{
+  MSBetweenLaunches = 200
+
+  Run = MOOSDB         @ NewConsole = false
+  //Run = pLogger         @ NewConsole = false
+  Run = uSimMarine	   @ NewConsole = false
+  Run = pMarinePID     @ NewConsole = false
+  Run = pHelmIvP       @ NewConsole = false
+  Run = pMarineViewer	 @ NewConsole = true
+  Run = uProcessWatch	 @ NewConsole = false
+  Run = pNodeReporter	 @ NewConsole = false
+}                               
+
+//------------------------------------------
+// pLogger config block
+
+ProcessConfig = pLogger
+{
+  AppTick   = 10
+  CommsTick = 10
+
+  File          = LOG_PEARL_SIM
+  AsyncLog      = true
+  PATH          = ./
+  FileTimeStamp = true
+
+  WildCardLogging = false
+}
+
+//------------------------------------------
+// uProcessWatch
+
+ProcessConfig = uProcessWatch
+{
+  AppTick   = 2
+  CommsTick = 2
+
+  nowatch   = uPokeDB*
+  nowatch   = uXMS*
+  
+  watch  = uSimMarine
+  //watch  = pLogger
+  watch  = pNodeReporter
+  watch  = pMarinePID
+  watch  = pHelmIvP  
+}
+
+//------------------------------------------
+// uSimMarine config block
+
+ProcessConfig = uSimMarine
+{
+  AppTick  	= 4
+  CommsTick	= 4
+
+  start_pos = x=0, y=0, heading=180, speed=0
+
+  prefix        = NAV
+
+}
+
+//------------------------------------------
+// pHelmIvP config block
+
+ProcessConfig = pHelmIvP
+{
+  AppTick    = 4
+  CommsTick  = 4
+
+  behaviors  = pearl.bhv
+  domain     = course:0:359:360
+  domain     = speed:0:0.5:11
+}
+
+//------------------------------------------
+// pMarinePID config block
+
+ProcessConfig = pMarinePID
+{
+  AppTick    = 10
+  CommsTick  = 10
+
+  verbose       = true
+  depth_control = false
+
+  // Yaw PID controller
+  yaw_pid_kp		 = 1.0
+  yaw_pid_kd		 = 0.0
+  yaw_pid_ki		 = 0.0
+  yaw_pid_integral_limit = 0.07
+
+  // Speed PID controller
+  speed_pid_kp		 = 1.0
+  speed_pid_kd		 = 0.0
+  speed_pid_ki		 = 0.0
+  speed_pid_integral_limit = 0.07
+
+  //MAXIMUMS
+  maxrudder    = 100
+  maxthrust    = 100
+
+  // A non-zero SPEED_FACTOR overrides use of SPEED_PID
+  // Will set DESIRED_THRUST = DESIRED_SPEED * SPEED_FACTOR
+  speed_factor = 0
+}
+
+//------------------------------------------
+// pMarineViewer config block
+
+ProcessConfig = pMarineViewer
+{
+  AppTick    = 4
+  CommsTick  = 4
+
+  tiff_file            = deep_pond_sat.tif
+  tiff_file_b          = deep_pond_map.tif
+
+  //set_pan_x            = -90
+  //set_pan_y            = -280
+  zoom                 = 1.5
+  vehicle_shape_scale  = 1.5
+
+  appcast_viewable     = true
+  appcast_color_scheme = indigo
+	appcast_font_size    = large
+	procs_font_size      = large
+	nodes_font_size      = xlarge
+  
+  ACTION  = MENU_KEY=simple       # SIMPLE=true  # SQUARE = false # STAR=false  # PERIMETER=false
+  ACTION+ = MENU_KEY=simple       # FIGURE_EIGHT=false
+  ACTION  = MENU_KEY=square       # SIMPLE=false # SQUARE = true  # STAR=false  # PERIMETER=false
+  ACTION+ = MENU_KEY=square       # FIGURE_EIGHT=false    
+  ACTION  = MENU_KEY=star         # SIMPLE=false # SQUARE = false # STAR=true  # PERIMETER=false
+  ACTION+ = MENU_KEY=star         # FIGURE_EIGHT=false
+  ACTION  = MENU_KEY=perimeter    # SIMPLE=false # SQUARE = false # STAR=false # PERIMETER=true
+  ACTION+ = MENU_KEY=perimeter    # FIGURE_EIGHT=false
+  ACTION  = MENU_KEY=figure-eight # SIMPLE=false # SQUARE = false # STAR=false # PERIMETER=false
+  ACTION+ = MENU_KEY=figure-eight # FIGURE_EIGHT=true
+  
+  BUTTON_ONE   = DEPLOY       # DEPLOY=true   # RETURN=false # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
+  BUTTON_TWO   = RETURN       # DEPLOY=true   # RETURN=true  # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
+  BUTTON_THREE = STATION-KEEP # DEPLOY=true   # RETURN=false # STATION_KEEP=true  # MOOS_MANUAL_OVERRIDE=false
+  BUTTON_FOUR  = ALLSTOP      # DEPLOY=false  # RETURN=false # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
+}
+
+//------------------------------------------
+// pNodeReporter config block
+
+ProcessConfig = pNodeReporter
+{
+  AppTick    = 2
+  CommsTick	 = 2
+
+  platform_type   = kayak
+}
+
+//------------------------------------
+// uTimerScript config block from plugin
+
+ProcessConfig = uTimerScript
+{
+  AppTick    = 2
+  CommsTick  = 2
+
+  paused        = false
+  reset_max     = unlimited
+  reset_time    = end
+  delay_reset   = 10:60
+  time_warp     = 0.25:2.0
+  script_name   = WIND
+  script_atomic = true
+
+  randvar = varname=ANG, min=0,   max=359, key=at_reset
+  randvar = varname=MAG, min=0.5, max=1.5, key=at_reset
+
+  event = var=DRIFT_VECTOR_ADD, val="$(ANG),{$(MAG)*0.2}", time=10
+  event = var=DRIFT_VECTOR_ADD, val="$(ANG),{$(MAG)*0.2}", time=12
+  event = var=DRIFT_VECTOR_ADD, val="$(ANG),{$(MAG)*0.2}", time=14
+  event = var=DRIFT_VECTOR_ADD, val="$(ANG),{$(MAG)*0.2}", time=16
+  event = var=DRIFT_VECTOR_ADD, val="$(ANG),{$(MAG)*0.2}", time=18
+
+  event = var=DRIFT_VECTOR_ADD, val="$(ANG),{$(MAG)*-0.2}", time=20
+  event = var=DRIFT_VECTOR_ADD, val="$(ANG),{$(MAG)*-0.2}", time=22
+  event = var=DRIFT_VECTOR_ADD, val="$(ANG),{$(MAG)*-0.2}", time=24
+  event = var=DRIFT_VECTOR_ADD, val="$(ANG),{$(MAG)*-0.2}", time=26
+  event = var=DRIFT_VECTOR_ADD, val="$(ANG),{$(MAG)*-0.2}", time=28
+} 
+
+

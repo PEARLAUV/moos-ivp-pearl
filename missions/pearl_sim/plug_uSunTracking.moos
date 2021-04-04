@@ -1,0 +1,12 @@
+//--------------------------------
+// uSunTracking config block from plugin
+
+ProcessConfig = uSunTracking
+{
+  AppTick     = 10
+  CommsTick   = 10
+
+  PREFIX          = SOLAR
+  SUN_HEADING_OFFSET  = 0.0
+  PUBLISH_ANGLES  = true
+}

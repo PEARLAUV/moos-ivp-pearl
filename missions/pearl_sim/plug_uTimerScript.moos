@@ -1,0 +1,32 @@
+//------------------------------------
+// uTimerScript config block from plugin
+
+ProcessConfig = uTimerScript
+{
+  AppTick    = 2
+  CommsTick  = 2
+
+  paused        = false
+  reset_max     = unlimited
+  reset_time    = end
+  condition     = WIND_GUSTS = true
+  delay_start   = 10:60
+  time_warp     = 0.25:2.0
+  script_name   = WIND
+  script_atomic = true
+
+  randvar = varname=ANG, min=0,   max=359, key=at_reset
+  randvar = varname=MAG, min=0.5, max=1.5, key=at_reset
+
+  event = var=DRIFT_VECTOR_ADD, val="$[ANG],{$[MAG]*0.2}", time=10
+  event = var=DRIFT_VECTOR_ADD, val="$[ANG],{$[MAG]*0.2}", time=12
+  event = var=DRIFT_VECTOR_ADD, val="$[ANG],{$[MAG]*0.2}", time=14
+  event = var=DRIFT_VECTOR_ADD, val="$[ANG],{$[MAG]*0.2}", time=16
+  event = var=DRIFT_VECTOR_ADD, val="$[ANG],{$[MAG]*0.2}", time=18
+
+  event = var=DRIFT_VECTOR_ADD, val="$[ANG],{$[MAG]*-0.2}", time=20
+  event = var=DRIFT_VECTOR_ADD, val="$[ANG],{$[MAG]*-0.2}", time=22
+  event = var=DRIFT_VECTOR_ADD, val="$[ANG],{$[MAG]*-0.2}", time=24
+  event = var=DRIFT_VECTOR_ADD, val="$[ANG],{$[MAG]*-0.2}", time=26
+  event = var=DRIFT_VECTOR_ADD, val="$[ANG],{$[MAG]*-0.2}", time=28
+} 
