@@ -51,7 +51,6 @@ ProcessConfig = uFldShoreBroker
   CommsTick = 1
 
   qbridge = DEPLOY, RETURN, STATION_KEEP
-  qbridge = STAR, PERIMETER, FIGURE_EIGHT
   qbridge = NODE_REPORT, NODE_MESSAGE, APPCAST_REQ
 
   bridge  = src=REGION_INFO,  alias=REGION_INFO
@@ -90,16 +89,6 @@ ProcessConfig = pMarineViewer
   scope = RETURN_ALL
   scope = STATION_KEEP_ALL
   scope = MOOS_MANUAL_OVERRIDE
-  scope = STAR_ALL
-  scope = PERIMETER_ALL
-  scope = FIGURE_EIGHT_ALL
-  
-  ACTION  = MENU_KEY=star         # STAR_ALL=true  # PERIMETER_ALL=false
-  ACTION+ = MENU_KEY=star         # FIGURE_EIGHT_ALL=false
-  ACTION  = MENU_KEY=perimeter    # STAR_ALL=false # PERIMETER_ALL=true
-  ACTION+ = MENU_KEY=perimeter    # FIGURE_EIGHT_ALL=false
-  ACTION  = MENU_KEY=figure-eight # STAR_ALL=false # PERIMETER_ALL=false
-  ACTION+ = MENU_KEY=figure-eight # FIGURE_EIGHT_ALL=true
 
   BUTTON_ONE   = DEPLOY       # DEPLOY_ALL=true   # RETURN_ALL=false # STATION_KEEP_ALL=false
   BUTTON_TWO   = RETURN       # DEPLOY_ALL=true   # RETURN_ALL=true  # STATION_KEEP_ALL=false

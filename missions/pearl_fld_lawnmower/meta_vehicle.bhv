@@ -5,10 +5,6 @@ initialize  RETURN               = false
 initialize  STATION_KEEP         = false
 initialize  MOOS_MANUAL_OVERRIDE = true
 
-initialize  STAR                 = true
-initialize  PERIMETER            = false
-initialize  FIGURE_EIGHT         = false
-
 //-----------------------------------------
 Behavior = BHV_StationKeep
 {
@@ -31,15 +27,12 @@ Behavior = BHV_StationKeep
 //-----------------------------------------
 Behavior = BHV_Waypoint
 {
-  name      = waypt_star
+  name      = waypt_lawnmower
   pwt       = 100
   condition = DEPLOY=true
   condition = RETURN=false
   condition = STATION_KEEP=false
   condition = MOOS_MANUAL_OVERRIDE=false
-  condition = STAR=true
-  condition = PERIMETER=false
-  condition = FIGURE_EIGHT=false
   endflag   = RETURN=true
   UPDATES   = WPT_UPDATE
   
@@ -50,73 +43,7 @@ Behavior = BHV_Waypoint
 	capture_radius = 5
 	slip_radius    = 10
 
-	points      = 35,15 : 0,0 : -15,25 : 0,0 : -40,-20 : 0,0 : 10,-25 : 0,0    //star pattern
-	
-	repeat         = 1
-	order          = $(ORDER)
-
-	visual_hints = nextpt_color=yellow
-	visual_hints = nextpt_vertex_size=8
-	visual_hints = nextpt_lcolor=gray70
-	visual_hints = vertex_color=dodger_blue, edge_color=white
-	visual_hints = vertex_size=5, edge_size=1
-}
-//-----------------------------------------
-Behavior = BHV_Waypoint
-{
-  name      = waypt_perimeter
-  pwt       = 100
-  condition = DEPLOY=true
-  condition = RETURN=false
-  condition = STATION_KEEP=false
-  condition = MOOS_MANUAL_OVERRIDE=false
-  condition = STAR=false
-  condition = PERIMETER=true
-  condition = FIGURE_EIGHT=false
-  endflag   = RETURN=true
-  UPDATES   = WPT_UPDATE
-  
-	lead           = 8
-	lead_damper    = 1
-	speed          = $(SPEED)   //meters per second
-	capture_line   = true
-	capture_radius = 5
-	slip_radius    = 10
-
-	points      = -40,10 : -50,-15 : -30,-25 : 5,-25 : 30,-15 : 45,10 : 35,25 : 10,30 : -15,25 : -40,10     //perimeter pattern
-	
-	repeat         = 1
-	order          = $(ORDER)
-
-	visual_hints = nextpt_color=yellow
-	visual_hints = nextpt_vertex_size=8
-	visual_hints = nextpt_lcolor=gray70
-	visual_hints = vertex_color=dodger_blue, edge_color=white
-	visual_hints = vertex_size=5, edge_size=1
-}
-//-----------------------------------------
-Behavior = BHV_Waypoint
-{
-  name      = waypt_figure_eight
-  pwt       = 100
-  condition = DEPLOY=true
-  condition = RETURN=false
-  condition = STATION_KEEP=false
-  condition = MOOS_MANUAL_OVERRIDE=false
-  condition = STAR=false
-  condition = PERIMETER=false
-  condition = FIGURE_EIGHT=true
-  endflag   = RETURN=true
-  UPDATES   = WPT_UPDATE
-  
-	lead           = 8
-	lead_damper    = 1
-	speed          = $(SPEED)   //meters per second
-	capture_line   = true
-	capture_radius = 5
-	slip_radius    = 10
-
-	points      = 30,-15 : 40,10 : 10,25 : -20,-30 : -40,-20 : -30,10     //figure eight pattern
+	points      = -70,5 : -50,-40 : -40,-36 : -60,9 : -50,13 : -30,-32 : -20,-28 : -40,17 : -30,21 : -10,-24 : 0,-20 : -20,25 : -10,29 : 10,-16 : 20,-12 : 0,33 : 10,37 : 30,-8 : 40,-4 : 20,41 : 30,45 : 45,10 : -60,-30 : -65,-20 : 40,25 : 35,35 : -70,-5    //lawnmower pattern
 	
 	repeat         = 1
 	order          = $(ORDER)
@@ -144,5 +71,5 @@ Behavior = BHV_Waypoint
 	capture_radius = 2
 	slip_radius    = 8
 
-	points = 0,0
+	points = -70,5
 }
