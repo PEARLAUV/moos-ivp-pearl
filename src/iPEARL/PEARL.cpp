@@ -302,8 +302,6 @@ bool PEARL::SendToFront()
   if (m_direct_thrust_mode > 0 ) {
     m_direct_L = clamp(m_direct_L, -100, 100);
     m_direct_R = clamp(m_direct_R, -100, 100);    
-    m_direct_L = m_left_motor_offset * m_direct_L;
-    m_direct_R = m_right_motor_offset * m_direct_R;
     m_commanded_L = m_direct_L;
     m_commanded_R = m_direct_R;
     message += "PICOM,";

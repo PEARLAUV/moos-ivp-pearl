@@ -294,8 +294,13 @@ bool PearlPID::Iterate()
 
   m_paused = false;
 
-  if(thrust == 0 && !m_use_solar)
-    rudder = 0;
+  if(thrust == 0) {
+    if(!m_use_solar) {
+      rudder = 0; }
+    else if(m_use_solar && !m_station_keep) {
+      rudder = 0; }
+  }
+  
   Notify("DESIRED_RUDDER", rudder);
   Notify("DESIRED_THRUST", thrust);
   m_current_thrust = thrust;
