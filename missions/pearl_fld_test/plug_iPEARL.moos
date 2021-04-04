@@ -11,8 +11,8 @@ ProcessConfig = iPEARL
   PREFIX         = IMU
   HEADING_OFFSET = 0.0
   
-  LEFT_MOTOR_FRAC = 0.0   //Thrust commanded to left motor is multipled by this fraction
+  LEFT_MOTOR_FRAC = 1.0   //Thrust commanded to left motor is multipled by this fraction
                           //Must be in range (0.0,1.0], 1.0 means no offset is applied
-  RIGHT_MOTOR_FRAC = 0.0  //Thrust commanded to right motor is multipled by this fraction
+  RIGHT_MOTOR_FRAC = 1.0  //Thrust commanded to right motor is multipled by this fraction
                           //Must be in range (0.0,1.0], 1.0 means no offset is applied
 }

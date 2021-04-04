@@ -9,5 +9,5 @@ MOOSTimeWarp = $(WARP)
 //LongOrigin = -80.922027
 
 //Pawleys Island, SC
-LatOrigin = 33.267199
-LongOrigin = -79.089877
+LatOrigin = 33.445377
+LongOrigin = -79.149795
