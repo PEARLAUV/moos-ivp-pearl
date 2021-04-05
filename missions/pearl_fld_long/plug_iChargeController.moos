@@ -1,0 +1,15 @@
+//--------------------------------
+// iChargeController config block from plugin
+
+ProcessConfig = iChargeController
+{
+  AppTick     = 1
+  CommsTick   = 1
+
+  PORT           = /dev/ttyXRUSB0
+  BAUDRATE       = 115200
+  PREFIX         = CHG
+  READ_DATA      = true
+  MAX_THRUST     = 100.0
+  MAX_RUDDER     = 50.0
+}

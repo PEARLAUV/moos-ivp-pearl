@@ -6,13 +6,13 @@ ProcessConfig = uTimerScript
   AppTick    = 2
   CommsTick  = 2
 
-  paused        = true
+  paused        = false
   condition     = DEPLOY=true
   condition     = RETURN=false
   condition     = STATION_KEEP=true
   condition     = MOOS_MANUAL_OVERRIDE=false
-  reset_max     = unlimited
-  reset_time    = 10
+  reset_max     = 4
+  reset_time    = 15
   script_name   = STATION_KEEP_SEQUENCE
 
   event = var=DEPLOY,       val="true",  time=10

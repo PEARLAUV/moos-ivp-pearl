@@ -1,0 +1,9 @@
+MOOSTimeWarp = $(WARP)
+
+//Deep Pond
+LatOrigin    = 41.739191
+LongOrigin   = -69.992287
+
+//Huntersville, NC
+//LatOrigin = 35.384233
+//LongOrigin = -80.922027
