@@ -12,7 +12,7 @@ ProcessConfig = uTimerScript
   condition     = STATION_KEEP=true
   condition     = MOOS_MANUAL_OVERRIDE=false
   reset_max     = 2
-  reset_time    = 15
+  reset_time    = 300
   script_name   = STATION_KEEP_SEQUENCE
 
   event = var=DEPLOY,       val="true",  time=300
