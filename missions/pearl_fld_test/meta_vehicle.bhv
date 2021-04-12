@@ -134,7 +134,9 @@ Behavior = BHV_Waypoint
 	capture_radius = 5
 	slip_radius    = 10
 
-	points      = 35,15 : 0,0 : -15,25 : 0,0 : -40,-20 : 0,0 : 10,-25 : 0,0    //star pattern
+	//points      = 0,0 : 35,15 : 0,0 : -15,25 : 0,0 : -40,-20 : 0,0 : 10,-25 : 0,0   //center star
+	points      = -40,-15 : -50,15 : -40,-15 : -70,-25 : -40,-15 : -30,-40 : -40,-15 : -15,-5 : -40,-15  //star west
+	//points      = 35,15 : 0,0 : -15,25 : 0,0 : -40,-20 : 0,0 : 10,-25 : 0,0    //star pattern
 	
 	repeat         = 1
 	order          = $(ORDER)
@@ -276,5 +278,5 @@ Behavior = BHV_Waypoint
 	capture_radius = 2
 	slip_radius    = 8
 
-	points = 0,0
+	points = -55,-45
 }

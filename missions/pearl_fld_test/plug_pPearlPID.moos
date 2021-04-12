@@ -10,7 +10,7 @@ ProcessConfig = pPearlPID
   DEPTH_CONTROL = false
   ACTIVE_START  = true
   
-  SUN_TRACKING = true
+  SUN_TRACKING = false
   HEADING_DEADBAND = 5   // +/- degrees
   
   // Yaw PID controller

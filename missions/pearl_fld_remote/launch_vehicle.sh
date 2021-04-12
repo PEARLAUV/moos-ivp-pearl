@@ -45,14 +45,6 @@ for ARGI; do
         START_POS="${ARGI#--startpos=*}"
     elif [ "${ARGI:0:5}" = "--ip=" ]; then
         PEARL_IP="${ARGI#--ip=*}"
-    elif [ "${ARGI:0:8}" = "--shore=" ]; then
-        SHORE_IP="${ARGI#--shore=*}"
-    elif [ "${ARGI:0:8}" = "--vport=" ]; then
-	VEHICLE_PORT="${ARGI#--vport=*}"
-    elif [ "${ARGI:0:10}" = "--vlisten=" ]; then
-	VEHICLE_LISTEN="${ARGI#--vlisten=*}"
-    elif [ "${ARGI:0:10}" = "--slisten=" ]; then
-        SHORE_LISTEN="${ARGI#--slisten=*}"
     else 
 	echo "launch_vehicle.sh: Bad Arg: " $ARGI
 	exit 1
@@ -76,10 +68,6 @@ nsplug meta_vehicle.moos targ_$VNAME.moos $NSFLAGS  \
        REGION=$REGION                \
        START_POS=$START_POS          \
        PEARL_IP=$PEARL_IP            \
-       SHORE_IP=$SHORE_IP            \
-       VPORT=$VEHICLE_PORT           \
-       SHARE_LISTEN=$VEHICLE_LISTEN  \
-       SHORE_LISTEN=$SHORE_LISTEN    
 
 
 nsplug meta_vehicle.bhv targ_$VNAME.bhv $NSFLAGS  \

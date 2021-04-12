@@ -24,7 +24,6 @@ Processconfig = ANTLER
   Run = iChargeController @ NewConsole = false
   Run = uSunTracking      @ NewConsole = false
 
-  Run = pShare            @ NewConsole = false
   Run = pHostInfo         @ NewConsole = false
   
   Run = pHelmIvP          @ NewConsole = false
@@ -40,9 +39,7 @@ Processconfig = ANTLER
 #include plug_iChargeController.moos
 #include plug_uSunTracking.moos
 
-#include plug_pShare.moos
 #include plug_pHostInfo.moos
-#include plug_uFldNodeBroker.moos
 
 #include plug_pHelmIvP.moos
 

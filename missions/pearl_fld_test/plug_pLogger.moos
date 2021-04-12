@@ -6,7 +6,7 @@ ProcessConfig = pLogger
   AppTick 	= 10
   CommsTick 	= 10
   
-  File		= LOG_%(VNAME)_WAYPOINT
+  File		= LOG_%(VNAME)_REMOTE
   PATH		= ./
   SyncLog 	= true @ 0.2
   AsyncLog 	= true

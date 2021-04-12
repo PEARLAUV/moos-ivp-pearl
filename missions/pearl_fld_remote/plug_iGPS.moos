@@ -6,7 +6,7 @@ ProcessConfig = iGPS
   AppTick     = 10
   CommsTick   = 10
   
-  Port              = /dev/ttyS0
+  Port              = /dev/ttyUSB1  //S0
   BaudRate          = 9600
   PREFIX            = GPS
   

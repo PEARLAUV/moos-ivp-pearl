@@ -5,9 +5,8 @@ initialize  RETURN               = false
 initialize  STATION_KEEP         = false
 initialize  MOOS_MANUAL_OVERRIDE = true
 
-initialize  STAR                 = true
-initialize  PERIMETER            = false
-initialize  FIGURE_EIGHT         = false
+initialize  STAR_WEST            = true
+initialize  STAR_CENTER          = false
 
 //-----------------------------------------
 Behavior = BHV_StationKeep
@@ -31,15 +30,14 @@ Behavior = BHV_StationKeep
 //-----------------------------------------
 Behavior = BHV_Waypoint
 {
-  name      = waypt_star
+  name      = waypt_star_west
   pwt       = 100
   condition = DEPLOY=true
   condition = RETURN=false
   condition = STATION_KEEP=false
   condition = MOOS_MANUAL_OVERRIDE=false
-  condition = STAR=true
-  condition = PERIMETER=false
-  condition = FIGURE_EIGHT=false
+  condition = STAR_WEST=true
+  condition = STAR_CENTER=false
   endflag   = RETURN=true
   UPDATES   = WPT_UPDATE
   
@@ -50,7 +48,7 @@ Behavior = BHV_Waypoint
 	capture_radius = 5
 	slip_radius    = 10
 
-	points      = 35,15 : 0,0 : -15,25 : 0,0 : -40,-20 : 0,0 : 10,-25 : 0,0    //star pattern
+	points      = -40,-15 : -50,15 : -40,-15 : -70,-25 : -40,-15 : -30,-40 : -40,-15 : -15,-5 : -40,-15   //west star pattern
 	
 	repeat         = 1
 	order          = $(ORDER)
@@ -64,15 +62,14 @@ Behavior = BHV_Waypoint
 //-----------------------------------------
 Behavior = BHV_Waypoint
 {
-  name      = waypt_perimeter
+  name      = waypt_star_center
   pwt       = 100
   condition = DEPLOY=true
   condition = RETURN=false
   condition = STATION_KEEP=false
   condition = MOOS_MANUAL_OVERRIDE=false
-  condition = STAR=false
-  condition = PERIMETER=true
-  condition = FIGURE_EIGHT=false
+  condition = STAR_WEST=false
+  condition = STAR_CENTER=true
   endflag   = RETURN=true
   UPDATES   = WPT_UPDATE
   
@@ -83,40 +80,7 @@ Behavior = BHV_Waypoint
 	capture_radius = 5
 	slip_radius    = 10
 
-	points      = -40,10 : -50,-15 : -30,-25 : 5,-25 : 30,-15 : 45,10 : 35,25 : 10,30 : -15,25 : -40,10     //perimeter pattern
-	
-	repeat         = 1
-	order          = $(ORDER)
-
-	visual_hints = nextpt_color=yellow
-	visual_hints = nextpt_vertex_size=8
-	visual_hints = nextpt_lcolor=gray70
-	visual_hints = vertex_color=dodger_blue, edge_color=white
-	visual_hints = vertex_size=5, edge_size=1
-}
-//-----------------------------------------
-Behavior = BHV_Waypoint
-{
-  name      = waypt_figure_eight
-  pwt       = 100
-  condition = DEPLOY=true
-  condition = RETURN=false
-  condition = STATION_KEEP=false
-  condition = MOOS_MANUAL_OVERRIDE=false
-  condition = STAR=false
-  condition = PERIMETER=false
-  condition = FIGURE_EIGHT=true
-  endflag   = RETURN=true
-  UPDATES   = WPT_UPDATE
-  
-	lead           = 8
-	lead_damper    = 1
-	speed          = $(SPEED)   //meters per second
-	capture_line   = true
-	capture_radius = 5
-	slip_radius    = 10
-
-	points      = 30,-15 : 40,10 : 10,25 : -20,-30 : -40,-20 : -30,10     //figure eight pattern
+	points      = 0,0 : 35,15 : 0,0 : -15,25 : 0,0 : -40,-20 : 0,0 : 10,-25 : 0,0    //center star pattern
 	
 	repeat         = 1
 	order          = $(ORDER)
@@ -144,5 +108,5 @@ Behavior = BHV_Waypoint
 	capture_radius = 2
 	slip_radius    = 8
 
-	points = 0,0
+	points = -65,-15
 }
