@@ -81,8 +81,8 @@ ProcessConfig = pMarineViewer
   vehicles_inactive_color  = red
   trails_length            = 10000
 
-  stale_report_thresh = 900    //seconds
-  stale_remove_thresh = 1200    //seconds
+  stale_report_thresh = 1800    //seconds
+  stale_remove_thresh = 2100    //seconds
 
   scope = PHI_HOST_INFO
   scope = DEPLOY_ALL
