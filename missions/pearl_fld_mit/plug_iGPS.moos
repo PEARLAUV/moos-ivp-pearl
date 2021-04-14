@@ -1,0 +1,20 @@
+//-------------------------------
+// iGPS configuration block from plugin
+
+ProcessConfig = iGPS
+{
+  AppTick     = 10
+  CommsTick   = 10
+  
+  Port              = /dev/ttyS0
+  BaudRate          = 9600
+  PREFIX            = GPS
+  
+  HEADING_SOURCE    = none
+  HEADING_OFFSET    = 0.0
+  
+  PUBLISH_HDOP      = true
+  PUBLISH_RAW       = true
+  
+  TRIGGER_MSG       = GPGGA
+}
