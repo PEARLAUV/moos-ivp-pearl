@@ -121,10 +121,10 @@ def main():
 
     # plotting starts below
     pltInterval = 50    # Period at which the plot animation updates [ms]
-    xmin = -(120)
-    xmax = 120
-    ymin = -(120)
-    ymax = 120
+    xmin = -(160)
+    xmax = 160
+    ymin = -(160)
+    ymax = 160
     fig = plt.figure(figsize=(8, 8))
     ax = plt.axes(xlim=(xmin, xmax), ylim=(ymin, ymax))
     ax.grid(True)

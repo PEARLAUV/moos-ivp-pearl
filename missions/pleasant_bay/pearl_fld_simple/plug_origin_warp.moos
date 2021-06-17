@@ -1,0 +1,9 @@
+MOOSTimeWarp = $(WARP)
+
+//Pleasant Bay
+LatOrigin    = 41.728333
+LongOrigin   = -69.990278
+
+//Huntersville, NC
+//LatOrigin = 35.384233
+//LongOrigin = -80.922027
