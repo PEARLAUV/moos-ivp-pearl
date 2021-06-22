@@ -322,8 +322,8 @@ bool PEARL::SendToFront()
   
   m_serial->WriteToSerialPort(message);
   
-  //m_Comms.Notify("DIRECT_THRUST_INCREASE", "false");
-  //m_Comms.Notify("DIRECT_THRUST_DECREASE", "false");
+  m_Comms.Notify("DIRECT_THRUST_INCREASE", "false");
+  m_Comms.Notify("DIRECT_THRUST_DECREASE", "false");
   
   return true;
 }
