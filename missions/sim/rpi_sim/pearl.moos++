@@ -5,6 +5,8 @@
 ServerHost   = localhost
 ServerPort   = 9000
 Community    = pearl
+//----  Next Line was commented and replaced with a command line overload ---- //
+//MOOSTimeWarp = 1    (default)
 MOOSTimeWarp = 1
 
 // Deep Pond
@@ -27,7 +29,6 @@ ProcessConfig = ANTLER
   Run = iGPS              @ NewConsole = false
   //Run = iChargeController @ NewConsole = false
   Run = uSunTracking      @ NewConsole = false
-  Run = iGarmin           @ NewConsole = false
   
 }                               
 
@@ -181,14 +182,3 @@ ProcessConfig = uSunTracking
   PUBLISH_ANGLES      = true
 }
 
-//-------------------------------
-// iGarmin config block
-
-ProcessConfig = iGarmin
-{
-  AppTick     = 10
-  CommsTick   = 10
-  
-  PREFIX      = GAR
-
-}
