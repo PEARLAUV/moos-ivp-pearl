@@ -25,7 +25,7 @@ ProcessConfig = ANTLER
   Run = iPEARL            @ NewConsole = false
   Run = uProcessWatch	    @ NewConsole = false
   Run = iGPS              @ NewConsole = false
-  Run = iChargeController @ NewConsole = false
+  //Run = iChargeController @ NewConsole = false
   Run = uSunTracking      @ NewConsole = false
   
 }                               
