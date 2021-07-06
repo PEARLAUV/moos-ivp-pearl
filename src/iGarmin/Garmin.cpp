@@ -8,8 +8,19 @@
 
 #include "MBUtils.h"
 #include "Garmin.h"
+#include "NMEA2000_CAN.h"
+#include "N2kMessages.h"
+//#include "N2kMessagesEnumToStr.h" //Nescessary if Printing to a stream
+
 
 using namespace std;
+
+/*
+ * Static NMEA string exists because overwritten Handler must be static so the handler can 
+ * be reassigned as the handler called by the ParseMessages() function provided. ParseMessages
+ * must be overwritten because the default ParseMessages simply publishes to a stream.
+ */
+double GARMIN::m_nmea_heading_deg = 0;
 
 GARMIN::GARMIN()
 {
@@ -56,6 +67,12 @@ bool GARMIN::OnStartUp()
 	RegisterForMOOSMessages();
 	MOOSPause(500);
 	
+	// Set up and start NMEA messages
+	NMEA2000.EnableForward(false);
+	NMEA2000.SetMsgHandler(HandleNMEA2000Msg);
+	
+	NMEA2000.Open();
+	
 	return true;
 }
 
@@ -68,6 +85,9 @@ bool GARMIN::OnConnectToServer()
 bool GARMIN::Iterate()
 {
 	AppCastingMOOSApp::Iterate();
+	
+	//Overwritten ParseMessages function will now call HandleNMEA2000Msg
+	NMEA2000.ParseMessages();
 	
 	AppCastingMOOSApp::PostReport();
 	
@@ -86,6 +106,32 @@ bool GARMIN::SetParam_PREFIX(std::string sVal)
 
 bool GARMIN::buildReport()
 {
-	
+	m_msgs << endl << "NMEA HEADING :    " << m_nmea_heading_deg << endl;
 	return true;
 }
+
+/*
+ * HandleNMEA2000Msg:
+ * DESCRIPTION: Overwritten handler function to parse input string and record heading
+ * records to a static variable which can be written to the MOOSDB. Similar to Data Display
+ * Examples given by the NMEA2000 library on github
+ */
+void GARMIN::HandleNMEA2000Msg(const tN2kMsg &N2kMsg){
+
+	unsigned char SID;
+	tN2kHeadingReference HeadingReference;
+	double Heading = 0;
+	double Deviation = 0;
+	double Variation = 0;
+	//Provided Parsing function, Individual parsing functions given by N2kMessage file
+	if(ParseN2kHeading(N2kMsg, SID, Heading, Deviation, Variation, HeadingReference)){
+		m_nmea_heading_deg = Heading*180/M_PI;
+	}
+
+	
+}
+
+
+
+
+

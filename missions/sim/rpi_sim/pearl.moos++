@@ -29,6 +29,7 @@ ProcessConfig = ANTLER
   Run = iGPS              @ NewConsole = false
   //Run = iChargeController @ NewConsole = false
   Run = uSunTracking      @ NewConsole = false
+  Run = iGarmin           @ NewConsole = false
   
 }                               
 
@@ -180,5 +181,17 @@ ProcessConfig = uSunTracking
   PREFIX              = SOLAR
   SUN_HEADING_OFFSET  = 0.0
   PUBLISH_ANGLES      = true
+}
+
+//-------------------------------
+// iGarmin config block
+
+ProcessConfig = iGarmin
+{
+  AppTick     = 10
+  CommsTick   = 10
+  
+  PREFIX      = GAR
+
 }
 
