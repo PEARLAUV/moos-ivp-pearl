@@ -21,6 +21,7 @@ using namespace std;
  * must be overwritten because the default ParseMessages simply publishes to a stream.
  */
 double GARMIN::m_nmea_heading_deg = 0;
+unsigned int GARMIN::m_source = 0;
 
 GARMIN::GARMIN()
 {
@@ -61,6 +62,7 @@ bool GARMIN::OnStartUp()
 		string value  = line;
 
 		if (param == "PREFIX")          handled = SetParam_PREFIX(value);
+		else if(param == "DEV_TO_READ")	handled = SetParam_DEV_TO_READ(value);
 		else
 		  reportUnhandledConfigWarning(orig); }
 	
@@ -94,13 +96,19 @@ bool GARMIN::Iterate()
 	return true;
 }
 
-bool GARMIN::SetParam_PREFIX(std::string sVal)
+bool GARMIN::SetParam_PREFIX(string sVal)
 {
 	m_prefix = toupper(sVal);
 	size_t strLen = m_prefix.length();
 	if (strLen > 0 && m_prefix.at(strLen -1) != '_')
 		m_prefix += "_";
 	
+	return true;
+}
+
+bool GARMIN::SetParam_DEV_TO_READ(string sVal)
+{
+	m_source = stoi(sVal);
 	return true;
 }
 
@@ -123,8 +131,9 @@ void GARMIN::HandleNMEA2000Msg(const tN2kMsg &N2kMsg){
 	double Heading = 0;
 	double Deviation = 0;
 	double Variation = 0;
+	int idx = 0;
 	//Provided Parsing function, Individual parsing functions given by N2kMessage file
-	if(ParseN2kHeading(N2kMsg, SID, Heading, Deviation, Variation, HeadingReference)){
+	if(N2kMsg.Source == m_source && ParseN2kHeading(N2kMsg, SID, Heading, Deviation, Variation, HeadingReference)){
 		m_nmea_heading_deg = Heading*180/M_PI;
 	}
 

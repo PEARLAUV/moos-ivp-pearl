@@ -190,5 +190,6 @@ ProcessConfig = iGarmin
   CommsTick   = 10
   
   PREFIX      = GAR
+  DEV_TO_READ = 0
 
 }

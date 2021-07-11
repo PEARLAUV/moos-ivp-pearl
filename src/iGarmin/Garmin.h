@@ -35,10 +35,12 @@ class GARMIN : public AppCastingMOOSApp
 	void RegisterForMOOSMessages();
 	
 	//Handle Config Params
-	bool SetParam_PREFIX(std::string sVal);
+	bool SetParam_PREFIX(string sVal);
+	bool SetParam_DEV_TO_READ(string sVal);
 	
 	//MOOS file parameters
 	std::string  m_prefix;
+	static unsigned int m_source;
 	
 	//NMEA 2000 custom message handler
 	static void HandleNMEA2000Msg(const tN2kMsg &N2kMsg);
