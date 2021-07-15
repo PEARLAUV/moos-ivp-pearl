@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
   cout << termColor("green");
   cout << "iDualGPS running as: " << run_command << endl;
   cout << termColor() << endl;
-  GPS GPS;
-  GPS.Run(run_command.c_str(), mission_file.c_str());
+  DGPS DGPS;
+  DGPS.Run(run_command.c_str(), mission_file.c_str());
   return 0;
 }
