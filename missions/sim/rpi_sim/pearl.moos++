@@ -26,10 +26,11 @@ ProcessConfig = ANTLER
   Run = pHelmIvP          @ NewConsole = false
   Run = iPEARL            @ NewConsole = false
   Run = uProcessWatch	    @ NewConsole = false
-  Run = iGPS              @ NewConsole = false
+  //Run = iGPS              @ NewConsole = false
+  Run = iDualGPS          @ NewConsole = false
   //Run = iChargeController @ NewConsole = false
   Run = uSunTracking      @ NewConsole = false
-  Run = iGarmin           @ NewConsole = false
+  //Run = iGarmin           @ NewConsole = false
   
 }                               
 
@@ -146,6 +147,28 @@ ProcessConfig = iGPS
   TRIGGER_MSG          = GPGGA
 }
 
+//-------------------------------
+// iDualGPS config block
+
+ProcessConfig = iDualGPS
+{
+  AppTick     = 10
+  CommsTick   = 10
+  
+  DUAL_GPS          = false
+  PORT_1            = /dev/ttyUSB0
+  PORT_2            = /dev/ttyUSB2
+  BAUDRATE          = 9600
+  PREFIX            = GPS
+  
+  HEADING_OFFSET    = 0.0
+  
+  PUBLISH_RAW       = true
+  PUBLISH_HDOP      = true
+  
+  TRIGGER_MSG       = ""
+}
+
 //---------------
 ProcessConfig = iPEARL
 {
@@ -164,7 +187,7 @@ ProcessConfig = iChargeController
   AppTick     = 1
   CommsTick   = 1
 
-  PORT           = /dev/tty1   //just a place holder since this part of the app is not finished
+  PORT           = /dev/ttyXRUSB0
   BAUDRATE       = 115200
   PREFIX         = CHG
   READ_DATA      = false

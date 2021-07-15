@@ -42,6 +42,9 @@ DGPS::DGPS()
 	m_curHeading_L      = BAD_DOUBLE;
 	m_curHeading_R      = BAD_DOUBLE;
 	m_curHeadingDUAL    = BAD_DOUBLE;
+	m_curSpeed          = BAD_DOUBLE;
+	m_curQuality_L      = "";
+	m_curQuality_R      = "";
 }
 
 bool DGPS::OnStartUp()
@@ -218,7 +221,10 @@ void DGPS::HandleLeftMessage(gpsValueToPublish gVal)
 	  if (gVal.m_key == "Y")          m_curY_L    = gVal.m_dVal;
 	  if (gVal.m_key == "LATITUDE")   m_curLat_L  = gVal.m_dVal;
 	  if (gVal.m_key == "LONGITUDE")  m_curLon_L  = gVal.m_dVal;
-	  if (gVal.m_key == "HEADING_GPRMC") m_curHeading_L = gVal.m_dVal; }
+	  if (gVal.m_key == "HEADING_GPRMC") m_curHeading_L = gVal.m_dVal;
+	  if (gVal.m_key == "SPEED")      m_curSpeed = gVal.m_dVal; }
+	else 
+	  if (gVal.m_key == "QUALITY")    m_curQuality_L = gVal.m_sVal;
 	  
 	PublishMessage(gVal);
 }
@@ -241,6 +247,8 @@ void DGPS::HandleRightMessage(gpsValueToPublish gVal)
 	  if (gVal.m_key == "LATITUDE")   m_curLat_R  = gVal.m_dVal;
 	  if (gVal.m_key == "LONGITUDE")  m_curLon_R  = gVal.m_dVal;
 	  if (gVal.m_key == "HEADING_GPRMC") m_curHeading_R = gVal.m_dVal; }
+	else 
+	  if (gVal.m_key == "QUALITY")    m_curQuality_R = gVal.m_sVal;
 }
 
 void DGPS::PublishMessage(gpsValueToPublish gVal)
@@ -274,20 +282,20 @@ bool DGPS::ParserSetup()
 
 bool DGPS::DualSerialSetup()
 {
-	string errMsg = "";
-	m_serial_L = new SerialComms(m_serial_port_left, m_baudrate, errMsg);
-	m_serial_R = new SerialComms(m_serial_port_right, m_baudrate, errMsg);
+	string errMsgLeft = "";
+	string errMsgRight = "";
+	m_serial_L = new SerialComms(m_serial_port_left, m_baudrate, errMsgLeft);
+	m_serial_R = new SerialComms(m_serial_port_right, m_baudrate, errMsgRight);
 	if (m_serial_L->IsGoodSerialComms() && m_serial_R->IsGoodSerialComms()) {
 		m_serial_L->Run();
 		m_serial_R->Run();
-		string msg = "Serial ports opened. ";
-		msg       += "Communicating over port ";
-		msg       += m_serial_port_left;
-		msg       += " and ";
-		msg       += m_serial_port_right;
-		reportEvent(msg);
 		return true; }
-	reportConfigWarning("Unable to open serial port: " + errMsg);
+        if (!errMsgLeft.empty())
+	  reportConfigWarning("Unable to open left serial port: " + errMsgLeft);
+	else if (!errMsgRight.empty())
+	  reportConfigWarning("Unable to open right serial port: " + errMsgRight);
+	else
+	  reportConfigWarning("Unable to start serial comms.");
 	return false;
 }
 
@@ -297,10 +305,6 @@ bool DGPS::SerialSetup()
 	m_serial_L = new SerialComms(m_serial_port_left, m_baudrate, errMsg);
 	if (m_serial_L->IsGoodSerialComms()) {
 		m_serial_L->Run();
-		string msg = "Serial port opened. ";
-		msg       += "Communicating over port ";
-		msg       += m_serial_port_left;
-		reportEvent(msg);
 		return true; }
 	reportConfigWarning("Unable to open serial port: " + errMsg);
 	return false;
@@ -454,53 +458,62 @@ bool DGPS::buildReport()
   string sLeftLon     = doubleToString(m_curLon_L, 6);
   string sRightLat    = doubleToString(m_curLat_R, 6);
   string sRightLon    = doubleToString(m_curLon_R, 6);
+  string sSpeed       = doubleToString(m_curSpeed, 1);
   string sGPSHeading  = doubleToString(m_curHeading_L, 1);
   string sDualHeading = doubleToString(m_curHeadingDUAL, 1);
   
-  m_msgs << endl << "SETUP" << endl << "-----" << endl;
-  m_msgs <<   "     Dual GPS Mode Enabled:   " << m_dual_gps << endl;
+  m_msgs << endl << "SETUP" << endl;
+  m_msgs << "----------------------------------------" << endl;
+  m_msgs <<   "   Dual GPS Mode Enabled:   " << sDualMode << endl;
   if (m_dual_gps) {
-    m_msgs << "     Left PORT (BAUDRATE):    " << m_serial_port_left << " (" << m_baudrate << ")" << endl;
-    m_msgs << "     Right PORT (BAUDRATE):   " << m_serial_port_right << " (" << m_baudrate << ")" << endl; }
+    m_msgs << "   Left PORT (BAUDRATE):    " << m_serial_port_left << " (" << m_baudrate << ")" << endl;
+    m_msgs << "   Right PORT (BAUDRATE):   " << m_serial_port_right << " (" << m_baudrate << ")" << endl; }
   else 
-    m_msgs << "     PORT (BAUDRATE):         " << m_serial_port_left << " (" << m_baudrate << ")" << endl;
-  m_msgs <<   "     Publish PREFIX:          " << m_prefix << endl;
-  m_msgs << endl << "DEVICE STATUS" << "-------------" << endl;
+    m_msgs << "   PORT (BAUDRATE):         " << m_serial_port_left << " (" << m_baudrate << ")" << endl;
+  m_msgs <<   "   Publish PREFIX:          " << m_prefix << endl;
+  m_msgs << endl << "DEVICE STATUS" << endl;
+  m_msgs << "----------------------------------------" << endl;
   if (!m_bValidSerialConn) {
     m_msgs << "*** Not parsing GPS due to MOOS configuration error. ***" << endl;
     return true; }
   if (m_dual_gps) {
     if (m_serial_L->IsGoodSerialComms())
-      m_msgs << "Serial communicating properly on port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
+      m_msgs << "   Serial communicating properly on port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
     else
-      m_msgs << "Serial not connected to port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
+      m_msgs << "   Serial not connected to port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
     if (m_serial_L->IsGoodSerialComms())
-      m_msgs << "Serial communicating properly on port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
+      m_msgs << "   Serial communicating properly on port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
     else
-      m_msgs << "Serial not connected to port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
+      m_msgs << "   Serial not connected to port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
   }
   else {
     if (m_serial_L->IsGoodSerialComms())
-      m_msgs << "Serial communicating properly on port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
+      m_msgs << "   Serial communicating properly on port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
     else
-      m_msgs << "Serial not connected to port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
+      m_msgs << "   Serial not connected to port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
   }
   m_msgs << endl;
   if (m_counters.size() == 0)
-    m_msgs << "Not yet parsed any sentences." << endl;
+    m_msgs << "   Not yet parsed any sentences." << endl;
   else {
-    if (m_dual_gps) {
-      m_msgs << "X, Y:        " << sLeftX << ", " << sLeftY << endl;
-      m_msgs << "Lat, Lon:    " << sLeftLat << ", " << sLeftLon << endl; }
+    if (!m_dual_gps) {
+      m_msgs << "   X, Y [m]:        " << sLeftX << ", " << sLeftY << endl;
+      m_msgs << "   Lat, Lon [deg]:  " << sLeftLat << ", " << sLeftLon << endl; }
     else {
-      m_msgs << "Port X, Y:          " << sLeftX << ", " << sLeftY << endl;
-      m_msgs << "Starboard X, Y:     " << sRightX << ", " << sRightY << endl;
-      m_msgs << "Port Lat, Lon:      " << sLeftLat << ", " << sLeftLon << endl;
-      m_msgs << "Starboard Lat, Lon: " << sRightLat << ", " << sRightLon << endl; }
+      m_msgs << "   Port X, Y [m]:          " << sLeftX << ", " << sLeftY << endl;
+      m_msgs << "   Starboard X, Y [m]:     " << sRightX << ", " << sRightY << endl;
+      m_msgs << "   Port Lat, Lon [deg]:      " << sLeftLat << ", " << sLeftLon << endl;
+      m_msgs << "   Starboard Lat, Lon [deg]: " << sRightLat << ", " << sRightLon << endl; }
     m_msgs << endl;
-    m_msgs <<  "Vector Heading:   " << sGPSHeading << endl;
+    m_msgs <<   "   GPS Speed [m/s]:        " << sSpeed << endl;
+    m_msgs <<   "   Vector Heading [deg]:   " << sGPSHeading << endl;
     if (m_dual_gps)
-      m_msgs << "Dual GPS Heading: " << sDualHeading << endl;
+      m_msgs << "   Dual GPS Heading [deg]: " << sDualHeading << endl;
+    m_msgs << endl;
+    if (m_dual_gps)
+      m_msgs << "   GPS Signal Quality (Port, Starboard):  " << m_curQuality_L << ", " << m_curQuality_R << endl;
+    else 
+      m_msgs << "   GPS Signal Quality:  " << m_curQuality_L << endl;
     }
   
   return true;

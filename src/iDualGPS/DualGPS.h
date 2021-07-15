@@ -74,9 +74,12 @@ protected:
 	double         m_curLon_L;
 	double         m_curLat_R;
 	double         m_curLon_R;
+	double         m_curSpeed;
 	double         m_curHeading_L;
 	double         m_curHeading_R;
 	double         m_curHeadingDUAL;
+	std::string    m_curQuality_L;
+	std::string    m_curQuality_R;
 	
 	std::map<std::string, unsigned int>   m_counters;
 	
