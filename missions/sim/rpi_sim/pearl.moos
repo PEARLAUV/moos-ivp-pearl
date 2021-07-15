@@ -28,7 +28,7 @@ ProcessConfig = ANTLER
   Run = iDualGPS          @ NewConsole = false
   //Run = iChargeController @ NewConsole = false
   Run = uSunTracking      @ NewConsole = false
-  //Run = iGarmin           @ NewConsole = false
+  Run = iGarmin           @ NewConsole = false
   
 }                               
 
