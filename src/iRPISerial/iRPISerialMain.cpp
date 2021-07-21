@@ -40,7 +40,7 @@ if(mission_file == "")
 cout << termColor("green");
 cout << "iRPISerial launching as " << run_command << endl;
 cout << termColor() << endl;
-RPISerial RPISerial;
+RPISERIAL RPISerial;
 RPISerial.Run(run_command.c_str(), mission_file.c_str());
 return(0);
 }

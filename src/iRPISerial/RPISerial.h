@@ -9,6 +9,7 @@
 #ifndef RPISERIAL_H_
 #define RPISERIAL_H_
 
+
 #include <string>
 #include <stdio.h>
 #include <iostream>
@@ -19,7 +20,7 @@
 
 using namespace std;
 
-class RPISerial : public AppCastingMOOSApp
+class RPISERIAL : public AppCastingMOOSApp
 {
  public:
 		 RPISERIAL();

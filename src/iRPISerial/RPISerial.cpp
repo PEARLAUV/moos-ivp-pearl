@@ -8,6 +8,7 @@
 
 #include "MBUtils.h"
 #include "RPISerial.h"
+#include "NMEAdefs.h"
 
 
 using namespace std;
@@ -25,9 +26,9 @@ RPISERIAL::RPISERIAL()
 
     //Serial strings
     m_msgs_from_serial = 0;
-    m_last_SCC_from_sensor"Nothing received yet";
-    m_last_Light_from_sensor"Nothing received yet";
-    m_last_Wind_from_sensor"Nothing received yet";
+    m_last_SCC_from_sensor="Nothing received yet";
+    m_last_Light_from_sensor= "Nothing received yet";
+    m_last_Wind_from_sensor= "Nothing received yet";
 
     //Values pulled from serial Strings
     //SCC values
@@ -58,7 +59,7 @@ RPISERIAL::RPISERIAL()
     m_windSpeed = 0.0;
 }
 
-bool RPISerial::OnNewMail(MOOSMSG_LIST &NewMail)
+bool RPISERIAL::OnNewMail(MOOSMSG_LIST &NewMail)
 {
 	AppCastingMOOSApp::OnNewMail(NewMail);
 	MOOSMSG_LIST::iterator p;
@@ -70,12 +71,12 @@ bool RPISerial::OnNewMail(MOOSMSG_LIST &NewMail)
 	return UpdateMOOSVariables(NewMail);
 }
 
-void RPISerial::RegisterForMOOSMessages()
+void RPISERIAL::RegisterForMOOSMessages()
 {
 	AppCastingMOOSApp::RegisterVariables();
 }
 
-bool RPISerial::OnStartUp()
+bool RPISERIAL::OnStartUp()
 {
 	AppCastingMOOSApp::OnStartUp();
 	STRING_LIST sParams;
@@ -95,6 +96,8 @@ bool RPISerial::OnStartUp()
         else if (param == "BAUDRATE")   handled = SetParam_BAUDRATE(value);
 		else
 		  reportUnhandledConfigWarning(orig); }
+          
+    m_bValidSerialConn = SerialSetup();
 	
 	RegisterForMOOSMessages();
 	MOOSPause(500);
@@ -102,13 +105,13 @@ bool RPISerial::OnStartUp()
 	return true;
 }
 
-bool RPISerial::OnConnectToServer()
+bool RPISERIAL::OnConnectToServer()
 {
 	RegisterForMOOSMessages();
 	return true;
 }
 
-bool RPISerial::Iterate()
+bool RPISERIAL::Iterate()
 {
 	AppCastingMOOSApp::Iterate();
 	
@@ -118,7 +121,7 @@ bool RPISerial::Iterate()
 	return true;
 }
 
-bool RPISerial::SetParam_PREFIX(string sVal)
+bool RPISERIAL::SetParam_PREFIX(string sVal)
 {
 	m_prefix = toupper(sVal);
 	size_t strLen = m_prefix.length();
@@ -128,7 +131,7 @@ bool RPISerial::SetParam_PREFIX(string sVal)
 	return true;
 }
 
-bool RPISerial::SetParam_BAUDRATE(std::string sVal)
+bool RPISERIAL::SetParam_BAUDRATE(std::string sVal)
 {
   if (sVal.empty())
     reportConfigWarning("Mission file parameter BAUDRATE must not be blank.");
@@ -145,7 +148,7 @@ bool RPISerial::SetParam_BAUDRATE(std::string sVal)
     return true;
 }
 
-bool RPISerial::SetParam_PORT(std::string sVal)
+bool RPISERIAL::SetParam_PORT(std::string sVal)
 {
   m_serial_port = sVal;
   if (m_serial_port.empty())
@@ -156,9 +159,15 @@ bool RPISerial::SetParam_PORT(std::string sVal)
 
 bool RPISERIAL::buildReport()
 {
+    m_msgs << endl << "SERIAL PORT:     " << m_serial_port << endl;
+    m_msgs << endl << "IS CONNECTED:    " << m_bValidSerialConn<< endl;
     m_msgs << endl << "SCC STRING:      " << m_last_SCC_from_sensor << endl;
     m_msgs << endl << "LIGHT STRING:    " << m_last_Light_from_sensor << endl;
     m_msgs << endl << "WIND STRING:     " << m_last_Wind_from_sensor << endl;
+    m_msgs << endl << "SCC BAT VOLTAGE: " << m_batteryVoltage << endl;
+    m_msgs << endl << "LIGHT WHITE:     " << m_white << endl;
+    m_msgs << endl << "WIND SPEED:      " << m_windSpeed << endl;
+    
 	return true;
 }
 
@@ -184,7 +193,6 @@ void RPISERIAL::GetData()
   //Grab sentences from Arduino and ingest them in the NMEA parser
   while (m_serial->DataAvailable()) {
     string nmea = m_serial->GetNextSentence();
-    m_msgs_from_front++;
     ParseNMEAString(nmea); 
   }
   
@@ -208,13 +216,13 @@ bool RPISERIAL::ParseNMEAString(string nmea)
   string toParse = nmea.substr(0, nmea.size()-1);
   vector<string> parts = parseString(toParse, ',');
   string nmeaHeader = parts[0];
-  if   (nmeaHeader == "$PLIMU") {
+  if   (nmeaHeader == "$PLSCC") {
     m_last_SCC_from_sensor = nmea; 
     HandleSCC(toParse); }
-  else if (nmeaHeader == "$PLRAW") {
+  else if (nmeaHeader == "$PLLUX") {
     m_last_Light_from_sensor = nmea; 
     HandleLight(toParse); }
-  else if (nmeaHeader == "$PLMOT") {
+  else if (nmeaHeader == "$PLWND") {
     m_last_Wind_from_sensor = nmea; 
     HandleWind(toParse); }
   else {
@@ -340,7 +348,17 @@ bool RPISERIAL::HandleLight(string toParse){
 bool RPISERIAL::HandleWind(string toParse){
 
     vector<string> parts = parseString(toParse, ',');
-    string 
+    
+    string windReadingStr = parts[1];
+    string windSpeedStr = parts[2];
+    if(!windReadingStr.empty())
+    {
+        m_windReading = stod(windReadingStr);
+    }
+    if(!windReadingStr.empty())
+    {
+        m_windSpeed = stod(windSpeedStr);
+    }
     PublishWindRaw(m_windReading, m_windSpeed);
     
     return true;
