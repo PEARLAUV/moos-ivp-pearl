@@ -156,7 +156,9 @@ bool RPISerial::SetParam_PORT(std::string sVal)
 
 bool RPISerial::buildReport()
 {
-	m_msgs << endl << "NMEA HEADING :    " << m_nmea_heading_deg << endl;
+    m_msgs << endl << "SCC STRING:      " << m_last_SCC_from_sensor << endl;
+    m_msgs << endl << "LIGHT STRING:    " << m_last_Light_from_sensor << endl;
+    m_msgs << endl << "WIND STRING:     " << m_last_Wind_from_sensor << endl;
 	return true;
 }
 
