@@ -30,7 +30,8 @@ ProcessConfig = ANTLER
   Run = iDualGPS          @ NewConsole = false
   //Run = iChargeController @ NewConsole = false
   Run = uSunTracking      @ NewConsole = false
-  //Run = iGarmin           @ NewConsole = false
+  Run = iGarmin           @ NewConsole = false
+  Run = iRPISerial        @ NewConsole = false
   
 }                               
 
@@ -217,5 +218,17 @@ ProcessConfig = iGarmin
   PREFIX      = GAR
   DEV_TO_READ = 0
 
+}
+
+//-------------------------------
+// iRPISerial config block
+ProcessConfig = iRPISerial
+{
+  AppTick     = 10
+  CommsTick   = 10
+  
+  PREFIX      = RPISER
+  PORT        = "/dev/ttyACM0"
+  BAUDRATE    = 115200
 }
 

@@ -29,6 +29,7 @@ IF ( PEARL-OPTIONS STREQUAL all )
      ADD_SUBDIRECTORY(iGarmin)
      ADD_SUBDIRECTORY(uSunTracking)
      ADD_SUBDIRECTORY(pPearlPID)
+     ADD_SUBDIRECTORY(iRPISerial)
 ENDIF ()
 
 ##############################################################################

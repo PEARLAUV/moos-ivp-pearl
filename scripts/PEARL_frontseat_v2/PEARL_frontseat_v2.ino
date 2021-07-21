@@ -96,7 +96,7 @@ int turnLeft;
 int turnRight;
 int throttleMap;
 IBusBM ibusRC;
-HardwareSerial& ibusRCSerial = Serial1;
+HardwareSerial& ibusRCSerial = Serial2;
  
 void setup(void) 
 {
