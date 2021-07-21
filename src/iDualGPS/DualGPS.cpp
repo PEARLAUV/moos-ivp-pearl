@@ -481,10 +481,10 @@ bool DGPS::buildReport()
       m_msgs << "   Serial communicating properly on port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
     else
       m_msgs << "   Serial not connected to port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
-    if (m_serial_L->IsGoodSerialComms())
-      m_msgs << "   Serial communicating properly on port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
+    if (m_serial_R->IsGoodSerialComms())
+      m_msgs << "   Serial communicating properly on port " << m_serial_port_right << " at " << m_baudrate << " baud." << endl;
     else
-      m_msgs << "   Serial not connected to port " << m_serial_port_left << " at " << m_baudrate << " baud." << endl;
+      m_msgs << "   Serial not connected to port " << m_serial_port_right << " at " << m_baudrate << " baud." << endl;
   }
   else {
     if (m_serial_L->IsGoodSerialComms())
