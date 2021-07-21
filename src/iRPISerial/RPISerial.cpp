@@ -12,7 +12,7 @@
 
 using namespace std;
 
-RPISerial::RPISERIAL()
+RPISERIAL::RPISERIAL()
 {
 	//MOOS file parameters
 	m_prefix        = "RPISER";
@@ -154,7 +154,7 @@ bool RPISerial::SetParam_PORT(std::string sVal)
   return true;
 }
 
-bool RPISerial::buildReport()
+bool RPISERIAL::buildReport()
 {
     m_msgs << endl << "SCC STRING:      " << m_last_SCC_from_sensor << endl;
     m_msgs << endl << "LIGHT STRING:    " << m_last_Light_from_sensor << endl;
@@ -162,7 +162,7 @@ bool RPISerial::buildReport()
 	return true;
 }
 
-bool RPISerial::SerialSetup(){
+bool RPISERIAL::SerialSetup(){
   string errMsg = "";
   m_serial = new SerialComms(m_serial_port, m_baudrate, errMsg);
   if (m_serial->IsGoodSerialComms()) {
@@ -176,7 +176,7 @@ bool RPISerial::SerialSetup(){
   return false;
 }
 
-void RPISerial::GetData()
+void RPISERIAL::GetData()
 {
   if (!m_bValidSerialConn)
     return;
@@ -190,7 +190,7 @@ void RPISerial::GetData()
   
 }
 
-bool RPISerial::ParseNMEAString(string nmea)
+bool RPISERIAL::ParseNMEAString(string nmea)
 {
   size_t len = nmea.length();
   
@@ -225,7 +225,7 @@ bool RPISerial::ParseNMEAString(string nmea)
 }
 
 //Parsing Functions
-bool RPISerial::HandleSCC(string toParse){
+bool RPISERIAL::HandleSCC(string toParse){
     vector<string> parts = parseString(toParse, ',');
     string pvVoltageStr             =parts[1];
     string pvCurrentStr             =parts[2];
@@ -315,7 +315,7 @@ bool RPISerial::HandleSCC(string toParse){
     return true;
 }
 
-bool RPISerial::HandleLight(string toParse){
+bool RPISERIAL::HandleLight(string toParse){
 
     vector<string> parts = parseString(toParse, ',');
     string luxStr = parts[1];
@@ -337,7 +337,7 @@ bool RPISerial::HandleLight(string toParse){
     return true;
 }
 
-bool RPISerial::HandleWind(string toParse){
+bool RPISERIAL::HandleWind(string toParse){
 
     vector<string> parts = parseString(toParse, ',');
     string 
@@ -347,7 +347,7 @@ bool RPISerial::HandleWind(string toParse){
 }
 
 //Publishing Functions
-void RPISerial::PublishSCCRaw(double pvVoltage,    double pvCurrent,    double pvPowerL,    double pvPowerH,    double batteryVoltage,    double batteryCurrent,    double batteryNetCurrent,    double batteryPowerL,    double batteryPowerH,    double loadVoltage,    double loadCurrent,    double loadPowerL,    double loadPowerH,    double batterySOC,    double batteryTemperature,    double deviceTemperature){
+void RPISERIAL::PublishSCCRaw(double pvVoltage,    double pvCurrent,    double pvPowerL,    double pvPowerH,    double batteryVoltage,    double batteryCurrent,    double batteryNetCurrent,    double batteryPowerL,    double batteryPowerH,    double loadVoltage,    double loadCurrent,    double loadPowerL,    double loadPowerH,    double batterySOC,    double batteryTemperature,    double deviceTemperature){
     m_Comms.Notify("CHG_PV_VOLTAGE",pvVoltage);
     m_Comms.Notify("CHG_PV_CURRENT",pvCurrent);
     m_Comms.Notify("CHG_PV_POWER_L",pvPowerL);
@@ -365,12 +365,12 @@ void RPISerial::PublishSCCRaw(double pvVoltage,    double pvCurrent,    double p
     m_Comms.Notify("CHG_BATTERY_TEMP",batteryTemperature);
     m_Comms.Notify("CHG_DEVICE_TEMP",deviceTemperature);
 }
-void RPISerial::PublishLightRaw(double lux, double white, double rawALS){
+void RPISERIAL::PublishLightRaw(double lux, double white, double rawALS){
     m_Comms.Notify("LIGHT_LUX",lux);
     m_Comms.Notify("LIGHT_WHITE",white);
     m_Comms.Notify("LIGHT_RAW_ALS",rawALS);
 }
-void RPISerial::PublishWindRaw(double windReading, double windSpeed){
+void RPISERIAL::PublishWindRaw(double windReading, double windSpeed){
     m_Comms.Notify("WIND_READING",windReading);
     m_Comms.Notify("WIND_SPEED", windSpeed);
 }
