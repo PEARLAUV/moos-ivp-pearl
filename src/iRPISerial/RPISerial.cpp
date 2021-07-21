@@ -12,7 +12,7 @@
 
 using namespace std;
 
-RPISerial::RPISerial()
+RPISerial::RPISERIAL()
 {
 	//MOOS file parameters
 	m_prefix        = "RPISER";
@@ -307,7 +307,7 @@ bool RPISerial::HandleSCC(string toParse){
         m_batteryTemperature = stod(batteryTemperatureStr);
     }
     if(!deviceTemperatureStr.empty()){
-        m_deviceTemperatureStr = stod(deviceTemperatureStr);
+        m_deviceTemperature = stod(deviceTemperatureStr);
     }
     
     PublishSCCRaw(m_pvVoltage, m_pvCurrent, m_pvPowerL, m_pvPowerH, m_batteryVoltage, m_batteryCurrent, m_batteryNetCurrent, m_batteryPowerL, m_batteryPowerH, m_loadVoltage, m_loadCurrent, m_loadPowerL, m_loadPowerH, m_batterySOC, m_batteryTemperature, m_deviceTemperature); 
@@ -334,7 +334,7 @@ bool RPISerial::HandleLight(string toParse){
 
     PublishLightRaw(m_lux, m_white, m_rawALS);
 
-    return true
+    return true;
 }
 
 bool RPISerial::HandleWind(string toParse){
@@ -342,10 +342,12 @@ bool RPISerial::HandleWind(string toParse){
     vector<string> parts = parseString(toParse, ',');
     string 
     PublishWindRaw(m_windReading, m_windSpeed);
+    
+    return true;
 }
 
 //Publishing Functions
-void PublishSCCRaw(double pvVoltage,    double pvCurrent,    double pvPowerL,    double pvPowerH,    double batteryVoltage,    double batteryCurrent,    double batteryNetCurrent,    double batteryPowerL,    double batteryPowerH,    double loadVoltage,    double loadCurrent,    double loadPowerL,    double loadPowerH,    double batterySOC,    double batteryTemperature,    double deviceTemperature){
+void RPISerial::PublishSCCRaw(double pvVoltage,    double pvCurrent,    double pvPowerL,    double pvPowerH,    double batteryVoltage,    double batteryCurrent,    double batteryNetCurrent,    double batteryPowerL,    double batteryPowerH,    double loadVoltage,    double loadCurrent,    double loadPowerL,    double loadPowerH,    double batterySOC,    double batteryTemperature,    double deviceTemperature){
     m_Comms.Notify("CHG_PV_VOLTAGE",pvVoltage);
     m_Comms.Notify("CHG_PV_CURRENT",pvCurrent);
     m_Comms.Notify("CHG_PV_POWER_L",pvPowerL);
@@ -363,12 +365,12 @@ void PublishSCCRaw(double pvVoltage,    double pvCurrent,    double pvPowerL,   
     m_Comms.Notify("CHG_BATTERY_TEMP",batteryTemperature);
     m_Comms.Notify("CHG_DEVICE_TEMP",deviceTemperature);
 }
-void PublishLightRaw(double lux, double white, double rawALS){
+void RPISerial::PublishLightRaw(double lux, double white, double rawALS){
     m_Comms.Notify("LIGHT_LUX",lux);
     m_Comms.Notify("LIGHT_WHITE",white);
     m_Comms.Notify("LIGHT_RAW_ALS",rawALS);
 }
-void PublishWindRaw(double windReading, double windSpeed){
+void RPISerial::PublishWindRaw(double windReading, double windSpeed){
     m_Comms.Notify("WIND_READING",windReading);
     m_Comms.Notify("WIND_SPEED", windSpeed);
 }

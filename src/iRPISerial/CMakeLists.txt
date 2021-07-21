@@ -10,4 +10,5 @@ TARGET_LINK_LIBRARIES(iRPISerial
    NMEAParse
    mbutil
    geometry
+   m
    ${SYSTEM_LIBS} )
