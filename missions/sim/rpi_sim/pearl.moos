@@ -220,12 +220,13 @@ ProcessConfig = iGarmin
 
 //-------------------------------
 // iRPISerial config block
+
 ProcessConfig = iRPISerial
 {
-  AppTick     = 10
-  CommsTick   = 10
+  AppTick    = 1
+  CommsTick  = 1
   
-  PREFIX      = RPISER
-  PORT        = "/dev/ttyACM0"
-  BAUDRATE    = 115200
+  PORT       = /dev/ttyUSB1
+  BAUDRATE   = 115200
+  PREFIX     = RPI
 }

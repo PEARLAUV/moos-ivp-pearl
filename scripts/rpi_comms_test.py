@@ -86,13 +86,16 @@ veml_datastring = "No VEML7700,No VEML7700,No VEML7700"
 wind_datastring = "No Wind,No Wind"
 
 if scc_datastring[0:2]=="No":
-    scc_datastring = ",,,,,,,,,,,,,,,"
+    scc_datastring = "0,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-,-"     #Simulate no sensor connected
+#     scc_datastring = "1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16"     #Simulate sensor connected
     
 if veml_datastring[0:2]=="No":
-    veml_datastring = ",,"
+    veml_datastring = "0,-,-,-"     #Simulate no sensor connected
+#     veml_datastring = "1,101,102,103"     #Simulate sensor connected
     
 if wind_datastring[0:2]=="No":
-    wind_datastring = ","
+    wind_datastring = "0,-,-"     #Simulate no sensor connected
+#     wind_datastring = "1,201,202"     #Simulate sensor connected
 
 # Format data strings
 scc_moos_string = "$" + scc_ID + scc_datastring + "*"

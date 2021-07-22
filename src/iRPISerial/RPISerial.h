@@ -45,9 +45,12 @@ class RPISERIAL : public AppCastingMOOSApp
     
     //Appcast details
     unsigned int    m_msgs_from_serial;
-    string          m_last_SCC_from_sensor;
-    string          m_last_Light_from_sensor;
-    string          m_last_Wind_from_sensor;
+    string          m_last_PLSCC_from_sensor;
+    string          m_last_PLLUX_from_sensor;
+    string          m_last_PLWND_from_sensor;
+    bool            m_scc_connected;
+    bool            m_light_connected;
+    bool            m_wind_connected;
 
     //Values pulled from serial Strings
     //SCC values
@@ -76,6 +79,11 @@ class RPISERIAL : public AppCastingMOOSApp
     //Wind Sensor Data
     double m_windReading;
     double m_windSpeed;
+    
+    //Handle Config Params
+    bool SetParam_PORT(string sVal);
+    bool SetParam_BAUDRATE(string sVal);
+    bool SetParam_PREFIX(string sVal);
 
     //Various
     bool SerialSetup();
@@ -83,19 +91,14 @@ class RPISERIAL : public AppCastingMOOSApp
     bool ParseNMEAString(string nmea);
 
     //Serial Handling Functions
-    bool HandleSCC(string toParse);
-    bool HandleLight(string toParse);
-    bool HandleWind(string toParse);
+    bool HandlePLSCC(string toParse);
+    bool HandlePLLUX(string toParse);
+    bool HandlePLWND(string toParse);
 
     //Publishing functions
-    void PublishSCCRaw(double pvVoltage,    double pvCurrent,    double pvPowerL,    double pvPowerH,    double batteryVoltage,    double batteryCurrent,    double batteryNetCurrent,    double batteryPowerL,    double batteryPowerH,    double loadVoltage,    double loadCurrent,    double loadPowerL,    double loadPowerH,    double batterySOC,    double batteryTemperature,    double deviceTemperature);
-    void PublishLightRaw(double lux, double white, double rawALS);
-    void PublishWindRaw(double windReading, double windSpeed);
-
-	//Handle Config Params
-	bool SetParam_PREFIX(string sVal);
-	bool SetParam_PORT(string sVal);
-    bool SetParam_BAUDRATE(string sVal);
+    void PublishPLSCCRaw(double pvVoltage,    double pvCurrent,    double pvPowerL,    double pvPowerH,    double batteryVoltage,    double batteryCurrent,    double batteryNetCurrent,    double batteryPowerL,    double batteryPowerH,    double loadVoltage,    double loadCurrent,    double loadPowerL,    double loadPowerH,    double batterySOC,    double batteryTemperature,    double deviceTemperature);
+    void PublishPLLUXRaw(double lux, double white, double rawALS);
+    void PublishPLWNDRaw(double windReading, double windSpeed);
 	
 };
 #endif
