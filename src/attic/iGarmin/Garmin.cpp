@@ -9,8 +9,8 @@
 #include "MBUtils.h"
 #include "NMEAdefs.h"
 #include "Garmin.h"
-#include "NMEA2000_CAN.h"
-#include "N2kMessages.h"
+//#include "NMEA2000_CAN.h"
+//#include "N2kMessages.h"
 //#include "N2kMessagesEnumToStr.h" //Necessary if Printing to a stream
 
 
@@ -22,16 +22,14 @@ using namespace std;
  * must be overwritten because the default ParseMessages simply publishes to a stream.
  */
 vector<double> GARMIN::m_heading_vals = {};
+int GARMIN::m_sources = 0;
 
 GARMIN::GARMIN()
 {
 	//MOOS file parameters
-	m_prefix           = "GAR";
-	m_num_devices      = 0;
-	m_device_names     = {};
-	m_heading_offset   = 0.0;
-	
-	m_bValidCanBusConn = false;
+	m_prefix        = "GAR";
+	m_num_devices   = 0;
+	m_device_names  = {};
 }
 
 bool GARMIN::OnNewMail(MOOSMSG_LIST &NewMail)
@@ -68,20 +66,17 @@ bool GARMIN::OnStartUp()
 
 		if      (param == "PREFIX")         handled = SetParam_PREFIX(value);
 		else if (param == "NUM_DEVICES")	handled = SetParam_NUM_DEVICES(value);
-		else if (param == "DEVICE_NAMES")   handled = SetParam_DEVICE_NAMES(value);
-		else if (param == "HEADING_OFFSET") handled = SetParam_HEADING_OFFSET(value);
+		else if (param == "DEVICES_NAMES")  handled = SetParam_DEVICES_NAMES(value);
 		else
 		  reportUnhandledConfigWarning(orig); }
-	
-	CheckDeviceInit();
 	
 	RegisterForMOOSMessages();
 	MOOSPause(500);
 	
 	// Set up and start NMEA messages
-	NMEA2000.EnableForward(false);
-	NMEA2000.SetMsgHandler(HandleNMEA2000Msg);
-	m_bValidCanBusConn = NMEA2000.Open();
+//	NMEA2000.EnableForward(false);
+//	NMEA2000.SetMsgHandler(HandleNMEA2000Msg);
+//	NMEA2000.Open();
 	
 	return true;
 }
@@ -96,9 +91,9 @@ bool GARMIN::Iterate()
 {
 	AppCastingMOOSApp::Iterate();
 	
-	if (m_bValidCanBusConn && m_num_devices>0) {
+	if (m_num_devices>0) {
 		//Overwritten ParseMessages function will now call HandleNMEA2000Msg
-		NMEA2000.ParseMessages();
+		//NMEA2000.ParseMessages();
 	
 		PublishHeadings(m_device_names,m_heading_vals);
 	}
@@ -125,6 +120,7 @@ bool GARMIN::SetParam_NUM_DEVICES(string sVal)
 		ssMsg << "Param NUM_DEVICES must be an integer. Defaulting to 0.";
 	else
 		m_num_devices = stoi(sVal);
+		m_sources = m_num_devices;
 	string msg = ssMsg.str();
 	if (!msg.empty())
 		reportConfigWarning(msg);
@@ -132,57 +128,44 @@ bool GARMIN::SetParam_NUM_DEVICES(string sVal)
 	return true;
 }
 
-bool GARMIN::SetParam_DEVICE_NAMES(string sVal)
-{
-	if (!sVal.empty()) {
-		string names = toupper(sVal);
-		m_device_names = parseString(names, ',');
-	}		
-	return true;
-}
-
-bool GARMIN::SetParam_HEADING_OFFSET(std::string sVal)
-{
-  stringstream ssMsg;
-  if (!isNumber(sVal))
-    ssMsg << "Param HEADING_OFFSET must be a number in range (-180.0 180.0). Defaulting to 0.0.";
-  else 
-    m_heading_offset = strtod(sVal.c_str(), 0);
-  if (m_heading_offset <= -180.0 || m_heading_offset >= 180.0) {
-    ssMsg << "Param HEADING_OFFSET cannot be " << m_heading_offset << ". Must be in range (-180.0, 180.0). Defaulting to 0.0.";
-    m_heading_offset = 0.0; }
-  string msg = ssMsg.str();
-  if (!msg.empty())
-    reportConfigWarning(msg);
-  
-  return true;
-}
-
-void GARMIN::CheckDeviceInit()
+bool GARMIN::SetParam_DEVICES_NAMES(string sVal)
 {
 	stringstream ssMsg;
-	if (m_device_names.size() != m_num_devices) {
-		ssMsg << "Number of device names specified does not equal NUM_DEVICES. Setting NUM_DEVICES to 0.";
-		m_num_devices = 0;
+	if (!sVal.empty()) {
+		string names = toupper(sVal);
+		vector<string> m_device_names = parseString(names, ','); 
+		if (m_device_names.size() != m_num_devices) {
+			ssMsg << "Number of device names specified does not equal NUM_DEVICES. Setting NUM_DEVICES to 0.";
+			m_num_devices = 0;
+			m_sources = m_num_devices;
+		}
+		else {
+			for (int i = 0; i < m_num_devices; i++) {
+				m_heading_vals.push_back(BAD_DOUBLE);
+			}
+		}
 	}
 	else {
-		for (size_t i = 0; i != m_device_names.size(); i++) {
-			m_heading_vals.push_back(BAD_DOUBLE);
+		if (m_num_devices>0) {
+			ssMsg << "No device names specified. Setting NUM_DEVICES to 0.";
+			m_num_devices = 0;
+			m_sources = m_num_devices;
 		}
 	}
 	string msg = ssMsg.str();
 	if (!msg.empty())
 		reportConfigWarning(msg);
-	
+		
+	return true;
 }
 
 void GARMIN::PublishHeadings(vector<string> deviceNames, vector<double> headingVals)
 {
-	for (size_t i = 0; i != headingVals.size(); i++) {
+	for ( int i = 0; i < m_num_devices; i++) {
 		double dHeading = headingVals[i];
 		string name = deviceNames[i];
 		if (dHeading != BAD_DOUBLE)
-			m_Comms.Notify(m_prefix + name + "_HEADING", dHeading + m_heading_offset);
+			m_Comms.Notify(m_prefix + name, dHeading);
 		else
 			reportRunWarning("Did not receive heading info from: " + name);
 	}
@@ -194,26 +177,19 @@ bool GARMIN::buildReport()
 	m_msgs << "----------------------------------------" << endl;
 	m_msgs << "   Publish PREFIX:          " << m_prefix << endl;
 	m_msgs << "   Number of NMEA Devices:  " << m_num_devices << endl;
-	for (size_t i = 0; i != m_device_names.size(); i++) {
-		m_msgs << "   NMEA Device " << i+1 << ":           " << m_device_names[i] << endl;
+	for (int i = 0; i = m_num_devices-1; i++) {
+		m_msgs << "   NMEA Device " << i << ":           " << m_device_names[i] << endl;
 	}
-	m_msgs << "   HEADING_OFFSET:          " << doubleToString(m_heading_offset, 1) << endl;
 	
 	m_msgs << endl << "DEVICE STATUS" << endl;
 	m_msgs << "----------------------------------------" << endl;
-	if (m_bValidCanBusConn) {
-		m_msgs << "   Communicating properly with NMEA2000 network." << endl;
-		m_msgs << endl;
-		if (m_num_devices > 0) {
-			for (size_t i = 0; i != m_device_names.size(); i++) {
-				m_msgs << "   " << m_device_names[i] << " Heading [deg]: " << doubleToString(m_heading_vals[i] + m_heading_offset, 2) << endl;
-			}
+	if (m_num_devices > 0) {
+		for (int i = 0; i = m_num_devices-1; i++) {
+			m_msgs << "   " << m_device_names[i] << " Heading [deg]: " << m_heading_vals[i] << endl;
 		}
-		else
-			m_msgs << "   No connected devices to read from." << endl;
 	}
 	else
-		m_msgs << "   No communications with NMEA2000 network." << endl;
+		m_msgs << "   No connected devices to read from." << endl;
 	
 	return true;
 }
@@ -224,21 +200,22 @@ bool GARMIN::buildReport()
  * records to a static variable which can be written to the MOOSDB. Similar to Data Display
  * Examples given on GitHub here: https://github.com/ttlappalainen/NMEA2000
  */
-void GARMIN::HandleNMEA2000Msg(const tN2kMsg &N2kMsg)
-{
-	for (size_t i = 0; i != m_heading_vals.size(); i++) {
-		unsigned char SID;
-		tN2kHeadingReference HeadingReference;
-		double Heading = 0;
-		double Deviation = 0;
-		double Variation = 0;
-		int idx = 0;
-		//Provided Parsing function, Individual parsing functions given by N2kMessage file
-		if(N2kMsg.Source == i && ParseN2kHeading(N2kMsg, SID, Heading, Deviation, Variation, HeadingReference)){
-			m_heading_vals[i] = Heading*180/M_PI;
-		}
-	}
-}
+//void GARMIN::HandleNMEA2000Msg(const tN2kMsg &N2kMsg)
+//{
+//	int device;
+//	for (device = 0; device < m_sources; device++) {
+//		unsigned char SID;
+//		tN2kHeadingReference HeadingReference;
+//		double Heading = 0;
+//		double Deviation = 0;
+//		double Variation = 0;
+//		int idx = 0;
+//		//Provided Parsing function, Individual parsing functions given by N2kMessage file
+//		if(N2kMsg.Source == device && ParseN2kHeading(N2kMsg, SID, Heading, Deviation, Variation, HeadingReference)){
+//			m_heading_vals[device] = Heading*180/M_PI;
+//		}
+//	}
+//}
 
 
 

@@ -14,7 +14,7 @@
 #include <iostream>
 #include <math.h>
 #include "MOOS/libMOOS/Thirdparty/AppCasting/AppCastingMOOSApp.h"
-#include "N2kMsg.h"
+//#include "N2kMsg.h"
 
 class GARMIN : public AppCastingMOOSApp
 {
@@ -34,23 +34,17 @@ class GARMIN : public AppCastingMOOSApp
 	//Handle Config Params
 	bool SetParam_PREFIX(std::string sVal);
 	bool SetParam_NUM_DEVICES(std::string sVal);
-	bool SetParam_DEVICE_NAMES(std::string sVal);
-	bool SetParam_HEADING_OFFSET(std::string sVal);
-	
-	void CheckDeviceInit();
+	bool SetParam_DEVICES_NAMES(std::string sVal);
 	
 	void PublishHeadings(std::vector<std::string> deviceNames, std::vector<double> headingVals);
 	
 	//MOOS file parameters
-	std::string               m_prefix;
-	int                       m_num_devices;
+	std::string          m_prefix;
+	int      m_num_devices;
 	std::vector<std::string>  m_device_names;
-	double                    m_heading_offset;
-	
-	bool                      m_bValidCanBusConn;
 	
 	//NMEA 2000 custom message handler
-	static void HandleNMEA2000Msg(const tN2kMsg &N2kMsg);
+	//static void HandleNMEA2000Msg(const tN2kMsg &N2kMsg);
 	// void Heading(const tN2kMsg &N2kMsg)
 	
 	//Garmin Variables

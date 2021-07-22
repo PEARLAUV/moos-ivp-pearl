@@ -210,11 +210,16 @@ ProcessConfig = uSunTracking
 
 ProcessConfig = iGarmin
 {
-  AppTick     = 10
-  CommsTick   = 10
+  AppTick        = 10
+  CommsTick      = 10
   
-  PREFIX      = GAR
-  DEV_TO_READ = 0
+  PREFIX         = GAR
+  NUM_DEVICES    = 2
+  DEVICE_NAMES   = COMPASS1,COMPASS2 
+                  //NAME_1,NAME_2,...
+                  //Heading will be reported as PREFIX_NAME_1_HEADING
+  
+  HEADING_OFFSET = 0.0
 
 }
 
