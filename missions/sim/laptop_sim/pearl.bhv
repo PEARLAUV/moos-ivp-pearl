@@ -124,8 +124,8 @@ Behavior = BHV_Waypoint
 	capture_radius = 5
 	slip_radius    = 10
 
-	//points      = 60,20 : 0,0 : -20,30 : 0,0 : -60,-50 : 0,0 : 30,-30 : 0,0    //star pattern
-	points      = -70,5 : -50,-40 : -40,-36 : -60,9 : -50,13 : -30,-32 : -20,-28 : -40,17 : -30,21 : -10,-24 : 0,-20 : -20,25 : -10,29 : 10,-16 : 20,-12 : 0,33 : 10,37 : 30,-8 : 40,-4 : 20,41 : 30,45 : 45,10 : -60,-30 : -65,-20 : 40,25 : 35,35 : -70,-5    //lawnmower pattern
+	points      = 35,15 : 0,0 : -15,25 : 0,0 : -40,-20 : 0,0 : 10,-25 : 0,0    //star pattern
+	//points      = -70,5 : -50,-40 : -40,-36 : -60,9 : -50,13 : -30,-32 : -20,-28 : -40,17 : -30,21 : -10,-24 : 0,-20 : -20,25 : -10,29 : 10,-16 : 20,-12 : 0,33 : 10,37 : 30,-8 : 40,-4 : 20,41 : 30,45 : 45,10 : -60,-30 : -65,-20 : 40,25 : 35,35 : -70,-5    //lawnmower pattern
 	
 	repeat         = 1
 	order          = normal
@@ -160,7 +160,7 @@ Behavior = BHV_Waypoint
 	capture_radius = 5
 	slip_radius    = 10
 
-	points      = -50,20 : -70,-10 : -60,-50 : -15,-40 : 30,-30 : 70,-20 : 65,20 : 30,40 : -20,30 : -50,20     //perimeter pattern
+	points      = -40,10 : -50,-15 : -30,-25 : 5,-25 : 30,-15 : 45,10 : 35,25 : 10,30 : -15,25 : -40,10     //perimeter pattern
 	
 	repeat         = 1
 	order          = normal
@@ -195,7 +195,7 @@ Behavior = BHV_Waypoint
 	capture_radius = 5
 	slip_radius    = 10
 
-	points      = 70,-20 : 65,20 : 30,40 : -50,-50 : -70,-10 : -40,20     //figure eight pattern
+	points      = 30,-15 : 40,10 : 10,25 : -20,-30 : -40,-20 : -30,10     //figure eight pattern
 	
 	repeat         = 1
 	order          = normal

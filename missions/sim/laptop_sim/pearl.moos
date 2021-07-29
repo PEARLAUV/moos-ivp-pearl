@@ -8,8 +8,16 @@ Community    = pearl
 MOOSTimeWarp = 1
 
 // Deep Pond
-LatOrigin    = 41.739191
-LongOrigin   = -69.992287
+//LatOrigin    = 41.739191
+//LongOrigin   = -69.992287
+
+// Pleasant Bay
+//LatOrigin    = 41.728333
+//LongOrigin   = -69.990278
+
+// MIT Sailing Pavilion
+LatOrigin    = 42.358436
+LongOrigin   = -71.087448
 
 //------------------------------------------
 // Antler configuration  block
@@ -25,8 +33,54 @@ ProcessConfig = ANTLER
   Run = pMarineViewer	 @ NewConsole = true
   Run = uProcessWatch	 @ NewConsole = false
   Run = pNodeReporter	 @ NewConsole = false
-  Run = iRemote        @ NewConsole = false
 }                               
+//------------------------------------------
+// pMarineViewer config block
+
+ProcessConfig = pMarineViewer
+{
+  AppTick    = 4
+  CommsTick  = 4
+
+  // Deep Pond images
+  //tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/deep_pond.tif
+  
+  // Pleasant Bay images
+  //tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/pleasant_bay_high_res.tif
+  //tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/pleasant_bay.tif
+  
+  // MIT Sailing Pavilion images
+  tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/MIT_sailing_pavilion_high_res.tif
+  //tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/MIT_sailing_pavilion.tif
+
+  //set_pan_x            = -90
+  //set_pan_y            = -280
+  zoom                 = 0.35
+  vehicle_shape_scale  = 1.5
+
+  appcast_viewable     = true
+  appcast_color_scheme = indigo
+	appcast_font_size    = large
+	procs_font_size      = large
+	nodes_font_size      = xlarge
+  
+  ACTION  = MENU_KEY=simple       # SIMPLE=true  # SQUARE = false # STAR=false  # PERIMETER=false
+  ACTION+ = MENU_KEY=simple       # FIGURE_EIGHT=false
+  ACTION  = MENU_KEY=square       # SIMPLE=false # SQUARE = true  # STAR=false  # PERIMETER=false
+  ACTION+ = MENU_KEY=square       # FIGURE_EIGHT=false    
+  ACTION  = MENU_KEY=star         # SIMPLE=false # SQUARE = false # STAR=true  # PERIMETER=false
+  ACTION+ = MENU_KEY=star         # FIGURE_EIGHT=false
+  ACTION  = MENU_KEY=perimeter    # SIMPLE=false # SQUARE = false # STAR=false # PERIMETER=true
+  ACTION+ = MENU_KEY=perimeter    # FIGURE_EIGHT=false
+  ACTION  = MENU_KEY=figure-eight # SIMPLE=false # SQUARE = false # STAR=false # PERIMETER=false
+  ACTION+ = MENU_KEY=figure-eight # FIGURE_EIGHT=true
+  
+  BUTTON_ONE   = DEPLOY       # DEPLOY=true   # RETURN=false # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
+  BUTTON_TWO   = RETURN       # DEPLOY=true   # RETURN=true  # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
+  BUTTON_THREE = STATION-KEEP # DEPLOY=true   # RETURN=false # STATION_KEEP=true  # MOOS_MANUAL_OVERRIDE=false
+  BUTTON_FOUR  = ALLSTOP      # DEPLOY=false  # RETURN=false # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
+}
+
 
 //------------------------------------------
 // pLogger config block
@@ -122,45 +176,6 @@ ProcessConfig = pMarinePID
 }
 
 //------------------------------------------
-// pMarineViewer config block
-
-ProcessConfig = pMarineViewer
-{
-  AppTick    = 4
-  CommsTick  = 4
-
-  tiff_file            = deep_pond_sat.tif
-  tiff_file_b          = deep_pond_map.tif
-
-  //set_pan_x            = -90
-  //set_pan_y            = -280
-  zoom                 = 1.5
-  vehicle_shape_scale  = 1.5
-
-  appcast_viewable     = true
-  appcast_color_scheme = indigo
-	appcast_font_size    = large
-	procs_font_size      = large
-	nodes_font_size      = xlarge
-  
-  ACTION  = MENU_KEY=simple       # SIMPLE=true  # SQUARE = false # STAR=false  # PERIMETER=false
-  ACTION+ = MENU_KEY=simple       # FIGURE_EIGHT=false
-  ACTION  = MENU_KEY=square       # SIMPLE=false # SQUARE = true  # STAR=false  # PERIMETER=false
-  ACTION+ = MENU_KEY=square       # FIGURE_EIGHT=false    
-  ACTION  = MENU_KEY=star         # SIMPLE=false # SQUARE = false # STAR=true  # PERIMETER=false
-  ACTION+ = MENU_KEY=star         # FIGURE_EIGHT=false
-  ACTION  = MENU_KEY=perimeter    # SIMPLE=false # SQUARE = false # STAR=false # PERIMETER=true
-  ACTION+ = MENU_KEY=perimeter    # FIGURE_EIGHT=false
-  ACTION  = MENU_KEY=figure-eight # SIMPLE=false # SQUARE = false # STAR=false # PERIMETER=false
-  ACTION+ = MENU_KEY=figure-eight # FIGURE_EIGHT=true
-  
-  BUTTON_ONE   = DEPLOY       # DEPLOY=true   # RETURN=false # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
-  BUTTON_TWO   = RETURN       # DEPLOY=true   # RETURN=true  # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
-  BUTTON_THREE = STATION-KEEP # DEPLOY=true   # RETURN=false # STATION_KEEP=true  # MOOS_MANUAL_OVERRIDE=false
-  BUTTON_FOUR  = ALLSTOP      # DEPLOY=false  # RETURN=false # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
-}
-
-//------------------------------------------
 // pNodeReporter config block
 
 ProcessConfig = pNodeReporter
@@ -168,7 +183,8 @@ ProcessConfig = pNodeReporter
   AppTick    = 2
   CommsTick	 = 2
 
-  platform_type   = kayak
+  platform_type   = ship
+  platform_length = 2.2
 }
 
 //------------------------------------
@@ -203,19 +219,5 @@ ProcessConfig = uTimerScript
   event = var=DRIFT_VECTOR_ADD, val="$(ANG),{$(MAG)*-0.2}", time=28
 } 
 
-//------------------------------------------------
-//iRemote config
-
-ProcessConfig = iRemote
-{
-   CustomKey = 1 : DEPLOY         @ "true"
-   CustomKey = 2 : DEPLOY         @ "false"
-   CustomKey = 3 : RETURN         @ "true"
-   CustomKey = 4 : RETURN         @ "false"
-   CustomKey = 5 : STATION-KEEP   @ "true"
-   CustomKey = 6 : STATION-KEEP   @ "false"
-   CustomKey = 7 : ALLSTOP        @ "true"
-   CustomKey = 9 : ALLSTOP        @ "false"
-}
 
 
