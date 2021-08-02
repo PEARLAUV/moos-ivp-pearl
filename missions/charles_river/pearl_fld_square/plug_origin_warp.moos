@@ -1,13 +1,6 @@
 MOOSTimeWarp = $(WARP)
 
-//Charles River
-LatOrigin    = 42.356199
-LongOrigin   = -71.0872975
+//Charles River/MIT Sailing Pavilion
+LatOrigin    = 42.358436
+LongOrigin   = -71.087448
 
-//Deep Pond
-//LatOrigin    = 41.739191
-//LongOrigin   = -69.992287
-
-//Huntersville, NC
-//LatOrigin = 35.384233
-//LongOrigin = -80.922027

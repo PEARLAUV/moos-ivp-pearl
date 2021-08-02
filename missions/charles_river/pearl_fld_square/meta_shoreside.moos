@@ -62,11 +62,13 @@ ProcessConfig = pMarineViewer
   AppTick    = 4
   CommsTick  = 4
 
-  tiff_file     = MIT_sailing_pavilion_high_res.tif
-  tiff_file_b   = MIT_sailing_pavilion.tif
+  // MIT Sailing Pavilion Images
+    tiff_file     = /moos-ivp-pearl/missions/images/MIT_sailing_pavilion_high_res.tif
+    //tiff_file     = /moos-ivp-pearl/missions/images/MIT_sailing_pavilion.tif
+    
   //set_pan_x            = 0
   //set_pan_y            = 0
-  zoom                 = 1.5
+  zoom                 = 0.35
   vehicles_shape_scale = 1.5
 
   appcast_viewable     = true

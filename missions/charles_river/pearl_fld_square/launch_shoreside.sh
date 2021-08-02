@@ -9,7 +9,7 @@
 TIME_WARP=1
 JUST_MAKE="no"
 AUTO=""
-REGION="deep_pond"
+REGION="charles_river"
 SHORE_IP="192.168.20.158"  #IP address of the shoreside laptop
 SHORESIDE_PORT="9000"
 SHORE_LISTEN="9300"
@@ -23,7 +23,7 @@ for ARGI; do
 	echo "launch_shoreside.sh [SWITCHES] [time_warp]        "
 	echo "  --just_make, -j                                 "
 	echo "  --auto, -a        Auto-launched. uMAC not used. "
-	echo "  --deep_pond       Set region to be Deep Pond (Default is Deep Pond)"
+	echo "  --charles_river       Set region to be Charles River (Default is Charles River)"
 	echo "  --ip=<addr>       (Default is 192.168.20.158)   "
 	echo "  --sport=<port>    (Default is 9000)             "
 	echo "  --slisten=<port>  (Default is 9300)             " 
@@ -35,8 +35,8 @@ for ARGI; do
 	JUST_MAKE="yes"
     elif [ "${ARGI}" = "--auto" -o "${ARGI}" = "-a" ]; then
         AUTO="yes"
-    elif [ "${ARGI}" = "--deep_pond" ]; then
-        REGION="deep_pond"
+    elif [ "${ARGI}" = "--charles_river" ]; then
+        REGION="charles_river"
     elif [ "${ARGI:0:5}" = "--ip=" ]; then
         SHORE_IP="${ARGI#--ip=*}"
     elif [ "${ARGI:0:8}" = "--sport=" ]; then

@@ -10,7 +10,7 @@ TIME_WARP=1
 JUST_MAKE="no"
 AUTO=""
 VNAME="pearl"
-REGION="deep_pond"
+REGION="charles_river"
 START_POS="0,0"  
 
 PEARL_IP="192.168.20.137"  #IP address of the RPi on PEARL
@@ -30,7 +30,7 @@ for ARGI; do
 	echo "  --just_make, -j                                      "
 	echo "  --auto, -a        Auto-launched. uMAC not used.      "
 	echo "  --vname=VNAME     Vehicle name (Default is 'pearl')  "
-	echo "  --deep_pond       Set region to be Deep Pond (Default is Deep Pond)"
+	echo "  --charles_river   Set region to be Charles River(Default is Charles River)"
 	echo "  --startpos=X,Y    (Default is 0,0)                   "
 	echo "  --ip=<addr>       (Default is 192.168.20.137)        "
 	echo "  --shore=<addr>    (Default is 192.168.20.158)        "
@@ -47,8 +47,8 @@ for ARGI; do
         AUTO="yes"
     elif [ "${ARGI:0:8}" = "--vname=" ]; then
         VNAME="${ARGI#--vname=*}"
-    elif [ "${ARGI}" = "--deep_pond" ]; then
-        REGION="deep_pond"
+    elif [ "${ARGI}" = "--charles_river" ]; then
+        REGION="charles_river"
     elif [ "${ARGI:0:11}" = "--startpos=" ]; then
         START_POS="${ARGI#--startpos=*}"
     elif [ "${ARGI:0:5}" = "--ip=" ]; then

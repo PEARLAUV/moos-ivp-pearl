@@ -26,31 +26,57 @@ void setup() {
     Serial.println("Loaded existing calibration");
   }
 
-  // in uTesla - updated by MNH on 3/21/2021 at 3pm after data analysis
-  cal.mag_hardiron[0] = -6.7;
-  cal.mag_hardiron[1] = -13.3;
-  cal.mag_hardiron[2] = -103.65;
+    // in uTesla - reset all calibrations
+  cal.mag_hardiron[0] = 0.0;
+  cal.mag_hardiron[1] = 0.0;
+  cal.mag_hardiron[2] = 0.0;
 
   // in uTesla
-  cal.mag_softiron[0] = 1;
-  cal.mag_softiron[1] = 0;
-  cal.mag_softiron[2] = 0;  
-  cal.mag_softiron[3] = 0;
-  cal.mag_softiron[4] = 1;
-  cal.mag_softiron[5] = 0;  
-  cal.mag_softiron[6] = 0;
-  cal.mag_softiron[7] = 0;
-  cal.mag_softiron[8] = 1;  
+  cal.mag_softiron[0] = 1.0;
+  cal.mag_softiron[1] = 0.0;
+  cal.mag_softiron[2] = 0.0;  
+  cal.mag_softiron[3] = 0.0;
+  cal.mag_softiron[4] = 1.0;
+  cal.mag_softiron[5] = 0.0;  
+  cal.mag_softiron[6] = 0.0;
+  cal.mag_softiron[7] = 0.0;
+  cal.mag_softiron[8] = 1.0;  
 
   // in Radians/s
-  cal.gyro_zerorate[0] = 0.015679916;
-  cal.gyro_zerorate[1] = 0.008437045;
-  cal.gyro_zerorate[2] = 0.00865618;
+  cal.gyro_zerorate[0] = 0.0;
+  cal.gyro_zerorate[1] = 0.0;
+  cal.gyro_zerorate[2] = 0.0;
 
   // in m/s^2
-  cal.accel_zerog[0] = 0.162939796;
-  cal.accel_zerog[1] = -0.505682653;
-  cal.accel_zerog[2] = 0.525580102;
+  cal.accel_zerog[0] = 0.0;
+  cal.accel_zerog[1] = 0.0;
+  cal.accel_zerog[2] = 0.0;
+
+//  // in uTesla - updated by MNH on 3/21/2021 at 3pm after data analysis
+//  cal.mag_hardiron[0] = -6.7;
+//  cal.mag_hardiron[1] = -13.3;
+//  cal.mag_hardiron[2] = -103.65;
+//
+//  // in uTesla
+//  cal.mag_softiron[0] = 1;
+//  cal.mag_softiron[1] = 0;
+//  cal.mag_softiron[2] = 0;  
+//  cal.mag_softiron[3] = 0;
+//  cal.mag_softiron[4] = 1;
+//  cal.mag_softiron[5] = 0;  
+//  cal.mag_softiron[6] = 0;
+//  cal.mag_softiron[7] = 0;
+//  cal.mag_softiron[8] = 1;  
+//
+//  // in Radians/s
+//  cal.gyro_zerorate[0] = 0.015679916;
+//  cal.gyro_zerorate[1] = 0.008437045;
+//  cal.gyro_zerorate[2] = 0.00865618;
+//
+//  // in m/s^2
+//  cal.accel_zerog[0] = 0.162939796;
+//  cal.accel_zerog[1] = -0.505682653;
+//  cal.accel_zerog[2] = 0.525580102;
 
 //---------- Previous Calibrations -----------//
 //LSM9DS1 calibrations with Uno
