@@ -19,7 +19,7 @@ int leftBackwardLED = 13;
 #include <Wire.h>
 #include <Adafruit_Sensor_Calibration.h>
 #include <Adafruit_AHRS.h>
-#include <ArduinoBlue.h>
+//#include <ArduinoBlue.h>
 #include <IBusBM.h>
 
 /*----------Setup IMU and sensor fusion----------*/

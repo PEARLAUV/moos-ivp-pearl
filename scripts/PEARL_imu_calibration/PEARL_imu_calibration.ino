@@ -3,9 +3,9 @@ int rightMotorPin = 8;
 int leftMotorPin = 9;
 
 /*------------Mag Calibrations-----------*/
-float MAG_CAL_X = 0.0;
-float MAG_CAL_Y = 0.0;
-float MAG_CAL_Z = 0.0;
+float MAG_CAL_X = 17.8;
+float MAG_CAL_Y = -96.85;
+float MAG_CAL_Z = -19.2;
 
 /*---------------------------------------*/
 #include <Wire.h>
@@ -96,12 +96,13 @@ int turnLeft;
 int turnRight;
 int throttleMap;
 IBusBM ibusRC;
-HardwareSerial& ibusRCSerial = Serial1;
+
+HardwareSerial& ibusRCSerial = Serial2;
 
 void setup(void) {
   /*-----Setup for RC Control-----*/
   ibusRC.begin(ibusRCSerial);
-  while (!Serial1) {
+  while (!Serial2) {
     delay(1);
   }
 

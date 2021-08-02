@@ -28,7 +28,7 @@ ProcessConfig = ANTLER
   Run = iDualGPS          @ NewConsole = false
   //Run = iChargeController @ NewConsole = false
   Run = uSunTracking      @ NewConsole = false
-  Run = iGarmin           @ NewConsole = false
+  //Run = iGarmin           @ NewConsole = false
   Run = iRPISerial        @ NewConsole = false
   
 }                               
@@ -154,7 +154,7 @@ ProcessConfig = iDualGPS
   AppTick     = 10
   CommsTick   = 10
   
-  DUAL_GPS          = false
+  DUAL_GPS          = true
   PORT_1            = /dev/ttyUSB0
   PORT_2            = /dev/ttyUSB2
   BAUDRATE          = 9600
