@@ -1,8 +1,12 @@
 MOOSTimeWarp = $(WARP)
 
+//Charles River
+LatOrigin    = 42.356199
+LongOrigin   = -71.0872975
+
 //Deep Pond
-LatOrigin    = 41.739191
-LongOrigin   = -69.992287
+//LatOrigin    = 41.739191
+//LongOrigin   = -69.992287
 
 //Huntersville, NC
 //LatOrigin = 35.384233
