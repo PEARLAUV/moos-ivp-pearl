@@ -3,9 +3,9 @@ int rightMotorPin = 8;
 int leftMotorPin = 9;
 
 /*------------Mag Calibrations-----------*/
-float MAG_CAL_X = -43.4;
-float MAG_CAL_Y = -84.5;
-float MAG_CAL_Z = -49.65;
+float MAG_CAL_X = 0.0;
+float MAG_CAL_Y = 0.0;
+float MAG_CAL_Z = 0.0;
 
 /*---------------------------------------*/
 #include <Wire.h>
@@ -57,14 +57,11 @@ bool cal_finished = false;
 /*--------Setup RC Variables--------*/
 int rotateCH = 0;
 int throttleCH = 2;
-int turnCH = 9;    //*******
+int turnCH = 3;
 int calibrateCH = 4;
 int drivemodeCH = 5;
-//int sensorCH = 6;
-//int writeCalCH = 7;
-
-int sensorCH = 1;
-int writeCalCH = 3;
+int sensorCH = 6;
+int writeCalCH = 7;
 
 int rotateVal = 0;
 int throttleVal = 0;
