@@ -1,0 +1,77 @@
+Calibration procedure for NXP IMU onboard PEARL:
+
+The calibration process is controlled through the RC system
+Full motor control with the sticks is still enabled. The 
+auxiliary switches are now bound to the following commands:
+  SWA: switch between forward and reverse thrust (same as normal
+       frontseat sketch)
+  SWB: write the newly obtained calibration to the Arduino memory
+  SWC: three-way switch to select the sensor to calibrate
+       Up = Accelerometer, Middle = Gyroscope, Down = Magnetometer
+  SWD: Enter calibration mode for the selected sensor
+
+
+1. Upload the PEARL_imu_calibration sketch to the Arduino frontseat
+
+2. Turn on RC transmitter and open serial monitor in Arduino IDE
+
+3. Select sensor to calibrate using SWC switch
+
+For the ACCELEROMETER/GYROSCOPE:
+4. Flip SWD switch down to enter calibration mode. The IMU should be 
+   as still as possible to calibrate these sensors.
+
+   The serial monitor will display the uncalibrated XYZ values, the
+   calibrated XYZ values, and whether the calibration is good enough
+   to be written.
+
+5. Once satisfied with calibrated values, cycle the SWB switch to
+   write the new calibration to the Arduino memory.
+
+   The serial monitor will now display the newly calibrated XYZ values.
+
+   ***If you want to redo the calibration, just cycle the SWD
+      switch to exit and re-enter calibration mode
+
+6. If satisfied with calibration, flip SWD switch up to exit calibration
+   mode
+
+   ***If you exit calibration mode without writing a new calibration,
+      the original calibration will be rewritten to the Arduino.
+
+For the MAGNETOMETER (this calibration requires PEARL to be rotated in place):
+4. Flip SWD switch down to enter calibration mode.
+
+5. Close the serial monitor in the Arduino IDE and run the MagCalPlot.py
+   python script. A plot will be generated and data points should start
+   appearing.
+
+6. Start rotating the platform. This can either be done by hand or with
+   the motors (keep the thrust to a minimum if using motors). The platform
+   should be rotated through 2-3 revolutions. Direction and speed of 
+   rotation does not matter. 
+
+7. After completing a full rotation, the plot will show a solid circle and 
+   two solid lines representing the uncalibrated magnetometer readings, and
+   a dashed circle and two dashed lines representing the calibrated
+   magnetometer readings. The calibrated circle and lines should be centered
+   at the origin for a good calibration. 
+
+8. After completing the rotations, note the X, Y, and Z offsets labeled
+   at the top right of the plot. Add these offsets to the beginning of 
+   the PEARL_imu_calibration sketch as MAG_CAL_X, MAG_CAL_Y, and MAG_CAL_Z, 
+   respectively. Stop the python script.
+
+9. Reupload the PEARL_imu_calibration sketch to the Arduino and cycle the 
+   SWB switch to write the new calibration to the Arduino memory
+
+   ***If you want to redo the calibration, just restart MagCalPlot.py and 
+      repeat steps 6-9
+
+10. If satisfied with calibration, flip SWD switch up to exit calibration
+   mode
+
+   ***If you exit calibration mode without writing a new calibration,
+      the original calibration will be rewritten to the Arduino.
+
+
