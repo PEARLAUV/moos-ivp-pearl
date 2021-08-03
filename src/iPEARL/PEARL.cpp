@@ -90,8 +90,8 @@ PEARL::PEARL()
   m_direct_L              = 0.0;
   m_direct_R              = 0.0;
   
-  m_max_thrust            = 0.0;
-  m_max_rudder            = 0.0;
+  m_max_thrust            = 100.0;
+  m_max_rudder            = 50.0;
   
   node_broker_msg        = "";
   last_node_ack          = 0;
@@ -135,11 +135,11 @@ bool PEARL::OnNewMail(MOOSMSG_LIST &NewMail)
     else if (key == "DIRECT_THRUST_DECREASE") {
       m_direct_thrust_down = (toupper(sVal) == "TRUE"); }
       
-    else if (key == "CHG_MAX_THRUST") {
-      m_max_thrust = dVal; }
+    //else if (key == "CHG_MAX_THRUST") {
+    //  m_max_thrust = dVal; }
       
-    else if (key == "CHG_MAX_RUDDER") {
-      m_max_rudder = dVal; } 
+    //else if (key == "CHG_MAX_RUDDER") {
+    //  m_max_rudder = dVal; } 
       
     else if (key == "NODE_BROKER_ACK") {
       node_broker_msg = sVal; }
@@ -157,8 +157,8 @@ void PEARL::RegisterForMOOSMessages()
   Register("DIRECT_THRUST_DECREASE");
   Register("DIRECT_THRUST_INCREASE");
   Register("IVPHELM_ALLSTOP");
-  Register("CHG_MAX_THRUST");
-  Register("CHG_MAX_RUDDER");
+  //Register("CHG_MAX_THRUST");
+  //Register("CHG_MAX_RUDDER");
   Register("NODE_BROKER_ACK");
 }
 
