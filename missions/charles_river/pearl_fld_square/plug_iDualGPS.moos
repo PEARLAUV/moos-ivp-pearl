@@ -7,8 +7,8 @@ ProcessConfig = iDualGPS
   CommsTick   = 10
   
   DUAL_GPS		= false
-  PORT_1		  = dev/ttyUSB0
-  PORT_2		  = dev/ttyUSB2
+  PORT_1		  = /dev/ttyUSB0
+  PORT_2		  = /dev/ttyUSB2
   BAUDRATE		= 9600
   PREFIX		  = GPS
   
