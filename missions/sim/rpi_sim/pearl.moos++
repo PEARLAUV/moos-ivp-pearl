@@ -30,7 +30,7 @@ ProcessConfig = ANTLER
   Run = iDualGPS          @ NewConsole = false
   //Run = iChargeController @ NewConsole = false
   Run = uSunTracking      @ NewConsole = false
-  Run = iGarmin           @ NewConsole = false
+  //Run = iGarmin           @ NewConsole = false
   Run = iRPISerial        @ NewConsole = false
   
 }                               
@@ -156,7 +156,7 @@ ProcessConfig = iDualGPS
   AppTick     = 10
   CommsTick   = 10
   
-  DUAL_GPS          = false
+  DUAL_GPS          = true
   PORT_1            = /dev/ttyUSB0
   PORT_2            = /dev/ttyUSB2
   BAUDRATE          = 9600
@@ -212,23 +212,29 @@ ProcessConfig = uSunTracking
 
 ProcessConfig = iGarmin
 {
-  AppTick     = 10
-  CommsTick   = 10
+  AppTick        = 10
+  CommsTick      = 10
   
-  PREFIX      = GAR
-  DEV_TO_READ = 0
+  PREFIX         = GAR
+  NUM_DEVICES    = 2
+  DEVICE_NAMES   = COMPASS1,COMPASS2 
+                  //NAME_1,NAME_2,...
+                  //Heading will be reported as PREFIX_NAME_1_HEADING
+  
+  HEADING_OFFSET = 0.0
 
 }
 
 //-------------------------------
 // iRPISerial config block
+
 ProcessConfig = iRPISerial
 {
-  AppTick     = 10
-  CommsTick   = 10
+  AppTick    = 1
+  CommsTick  = 1
   
-  PREFIX      = RPISER
-  PORT        = "/dev/ttyACM0"
-  BAUDRATE    = 115200
+  PORT       = /dev/ttyUSB1
+  BAUDRATE   = 115200
+  PREFIX     = RPI
 }
 
