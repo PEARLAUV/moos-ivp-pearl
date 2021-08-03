@@ -62,11 +62,14 @@ float oldCalX,oldCalY,oldCalZ;
 /*--------Setup RC Variables--------*/
 int rotateCH = 0;
 int throttleCH = 2;
-int turnCH = 3;
+int turnCH = 9;    //*******
 int calibrateCH = 4;
 int drivemodeCH = 5;
-int sensorCH = 6;
-int writeCalCH = 7;
+//int sensorCH = 6;
+//int writeCalCH = 7;
+
+int sensorCH = 1;
+int writeCalCH = 3;
 
 int rotateVal = 0;
 int throttleVal = 0;
