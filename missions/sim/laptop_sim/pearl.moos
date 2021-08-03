@@ -43,15 +43,15 @@ ProcessConfig = pMarineViewer
   CommsTick  = 4
 
   // Deep Pond images
-  //tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/deep_pond.tif
+  //tiff_file            = ~/moos-ivp-pearl/missions/images/deep_pond.tif
   
   // Pleasant Bay images
-  //tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/pleasant_bay_high_res.tif
-  //tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/pleasant_bay.tif
+  //tiff_file            = ~/moos-ivp-pearl/missions/images/pleasant_bay_high_res.tif
+  //tiff_file            = ~/moos-ivp-pearl/missions/images/pleasant_bay.tif
   
   // MIT Sailing Pavilion images
-  tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/MIT_sailing_pavilion_high_res.tif
-  //tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/MIT_sailing_pavilion.tif
+  tiff_file            = /home/henry/moos-ivp-pearl/missions/images/MIT_sailing_pavilion_high_res.tif
+  //tiff_file            = /home/henry/moos-ivp-pearl/missions/images/MIT_sailing_pavilion.tif
 
   //set_pan_x            = -90
   //set_pan_y            = -280

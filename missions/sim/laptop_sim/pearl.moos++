@@ -36,6 +36,53 @@ ProcessConfig = ANTLER
   Run = uProcessWatch	 @ NewConsole = false
   Run = pNodeReporter	 @ NewConsole = false
 }                               
+//------------------------------------------
+// pMarineViewer config block
+
+ProcessConfig = pMarineViewer
+{
+  AppTick    = 4
+  CommsTick  = 4
+
+  // Deep Pond images
+  //tiff_file            = ~/moos-ivp-pearl/missions/images/deep_pond.tif
+  
+  // Pleasant Bay images
+  //tiff_file            = ~/moos-ivp-pearl/missions/images/pleasant_bay_high_res.tif
+  //tiff_file            = ~/moos-ivp-pearl/missions/images/pleasant_bay.tif
+  
+  // MIT Sailing Pavilion images
+  tiff_file            = /home/henry/moos-ivp-pearl/missions/images/MIT_sailing_pavilion_high_res.tif
+  //tiff_file            = /home/henry/moos-ivp-pearl/missions/images/MIT_sailing_pavilion.tif
+
+  //set_pan_x            = -90
+  //set_pan_y            = -280
+  zoom                 = 0.35
+  vehicle_shape_scale  = 1.5
+
+  appcast_viewable     = true
+  appcast_color_scheme = indigo
+	appcast_font_size    = large
+	procs_font_size      = large
+	nodes_font_size      = xlarge
+  
+  ACTION  = MENU_KEY=simple       # SIMPLE=true  # SQUARE = false # STAR=false  # PERIMETER=false
+  ACTION+ = MENU_KEY=simple       # FIGURE_EIGHT=false
+  ACTION  = MENU_KEY=square       # SIMPLE=false # SQUARE = true  # STAR=false  # PERIMETER=false
+  ACTION+ = MENU_KEY=square       # FIGURE_EIGHT=false    
+  ACTION  = MENU_KEY=star         # SIMPLE=false # SQUARE = false # STAR=true  # PERIMETER=false
+  ACTION+ = MENU_KEY=star         # FIGURE_EIGHT=false
+  ACTION  = MENU_KEY=perimeter    # SIMPLE=false # SQUARE = false # STAR=false # PERIMETER=true
+  ACTION+ = MENU_KEY=perimeter    # FIGURE_EIGHT=false
+  ACTION  = MENU_KEY=figure-eight # SIMPLE=false # SQUARE = false # STAR=false # PERIMETER=false
+  ACTION+ = MENU_KEY=figure-eight # FIGURE_EIGHT=true
+  
+  BUTTON_ONE   = DEPLOY       # DEPLOY=true   # RETURN=false # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
+  BUTTON_TWO   = RETURN       # DEPLOY=true   # RETURN=true  # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
+  BUTTON_THREE = STATION-KEEP # DEPLOY=true   # RETURN=false # STATION_KEEP=true  # MOOS_MANUAL_OVERRIDE=false
+  BUTTON_FOUR  = ALLSTOP      # DEPLOY=false  # RETURN=false # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
+}
+
 
 //------------------------------------------
 // pLogger config block
@@ -128,53 +175,6 @@ ProcessConfig = pMarinePID
   // A non-zero SPEED_FACTOR overrides use of SPEED_PID
   // Will set DESIRED_THRUST = DESIRED_SPEED * SPEED_FACTOR
   speed_factor = 0
-}
-
-//------------------------------------------
-// pMarineViewer config block
-
-ProcessConfig = pMarineViewer
-{
-  AppTick    = 4
-  CommsTick  = 4
-
-  // Deep Pond images
-  //tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/deep_pond.tif
-  
-  // Pleasant Bay images
-  //tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/pleasant_bay_high_res.tif
-  //tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/pleasant_bay.tif
-  
-  // MIT Sailing Pavilion images
-  tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/MIT_sailing_pavilion_high_res.tif
-  //tiff_file            = /home/ethan/moos-ivp-pearl/missions/images/MIT_sailing_pavilion.tif
-
-  //set_pan_x            = -90
-  //set_pan_y            = -280
-  zoom                 = 0.35
-  vehicle_shape_scale  = 1.5
-
-  appcast_viewable     = true
-  appcast_color_scheme = indigo
-	appcast_font_size    = large
-	procs_font_size      = large
-	nodes_font_size      = xlarge
-  
-  ACTION  = MENU_KEY=simple       # SIMPLE=true  # SQUARE = false # STAR=false  # PERIMETER=false
-  ACTION+ = MENU_KEY=simple       # FIGURE_EIGHT=false
-  ACTION  = MENU_KEY=square       # SIMPLE=false # SQUARE = true  # STAR=false  # PERIMETER=false
-  ACTION+ = MENU_KEY=square       # FIGURE_EIGHT=false    
-  ACTION  = MENU_KEY=star         # SIMPLE=false # SQUARE = false # STAR=true  # PERIMETER=false
-  ACTION+ = MENU_KEY=star         # FIGURE_EIGHT=false
-  ACTION  = MENU_KEY=perimeter    # SIMPLE=false # SQUARE = false # STAR=false # PERIMETER=true
-  ACTION+ = MENU_KEY=perimeter    # FIGURE_EIGHT=false
-  ACTION  = MENU_KEY=figure-eight # SIMPLE=false # SQUARE = false # STAR=false # PERIMETER=false
-  ACTION+ = MENU_KEY=figure-eight # FIGURE_EIGHT=true
-  
-  BUTTON_ONE   = DEPLOY       # DEPLOY=true   # RETURN=false # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
-  BUTTON_TWO   = RETURN       # DEPLOY=true   # RETURN=true  # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
-  BUTTON_THREE = STATION-KEEP # DEPLOY=true   # RETURN=false # STATION_KEEP=true  # MOOS_MANUAL_OVERRIDE=false
-  BUTTON_FOUR  = ALLSTOP      # DEPLOY=false  # RETURN=false # STATION_KEEP=false # MOOS_MANUAL_OVERRIDE=false
 }
 
 //------------------------------------------
