@@ -43,7 +43,7 @@ Behavior = BHV_Waypoint
 	capture_radius = 5
 	slip_radius    = 10
 
-	points      = 0,-40 : 0,-70 : -30,-70 : -30,-40
+	points      = -26,-24 // 0,-40 : 0,-70 : -30,-70 : -30,-40
 	
 
 	repeat         = 1
@@ -72,5 +72,5 @@ Behavior = BHV_Waypoint
 	capture_radius = 2
 	slip_radius    = 8
 
-	points = 0,-5
+	points = -37, -14 // 0,-5
 }

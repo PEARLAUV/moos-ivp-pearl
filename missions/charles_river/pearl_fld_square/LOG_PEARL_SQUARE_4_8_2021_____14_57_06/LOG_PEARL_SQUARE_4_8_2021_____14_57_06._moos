@@ -1,0 +1,293 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% LOG FILE:       ./LOG_PEARL_SQUARE_4_8_2021_____14_57_06/LOG_PEARL_SQUARE_4_8_2021_____14_57_06._moos
+%% FILE OPENED ON  Wed Dec 31 19:00:00 1969
+%% LOGSTART               1628103425.36
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+//*******************************************************
+// Vehicle MOOS configuration file
+
+ServerHost = 192.168.1.4
+ServerPort = 9001
+
+// Community name IS the vehicle name
+Community  = pearl
+
+MOOSTimeWarp = 1
+
+//Charles River/MIT Sailing Pavilion
+LatOrigin    = 42.358436
+LongOrigin   = -71.087448
+
+
+  
+//------------------------------------------------------------
+Processconfig = ANTLER
+{
+  MSBetweenLaunches = 100
+   
+  Run = MOOSDB            @ NewConsole = false
+  Run = pLogger           @ NewConsole = false
+  Run = pEchoVar          @ NewConsole = false
+  Run = pNodeReporter     @ NewConsole = false
+  Run = pPearlPID         @ NewConsole = false
+  Run = uProcessWatch     @ NewConsole = false
+  Run = iDualGPS	        @ NewConsole = false
+  Run = iPEARL            @ NewConsole = false
+  Run = uSunTracking      @ NewConsole = false
+  Run = iRPISerial	      @ NewConsole = false
+  
+  Run = pShare            @ NewConsole = false
+  Run = pHostInfo         @ NewConsole = false
+  Run = uFldNodeBroker    @ NewConsole = false
+  
+  Run = pHelmIvP          @ NewConsole = false
+}
+
+//--------------------------------------------------
+// pLogger Configuration Block (Created from Plugin)
+
+ProcessConfig = pLogger
+{
+  AppTick 	= 10
+  CommsTick 	= 10
+  
+  File		= LOG_PEARL_SQUARE
+  PATH		= ./
+  SyncLog 	= true @ 0.2
+  AsyncLog 	= true
+  FileTimeStamp = true
+
+  Log = IVPHELM_LIFE_EVENT @ 0 nosync
+
+  // Log it all!!!!!
+  LogAuxSrc = true
+  WildCardLogging = true 
+  WildCardOmitPattern = *_STATUS
+  WildCardOmitPattern = DB_VARSUMMARY
+  WildCardOmitPattern = DB_RWSUMMARY
+
+  CompressAlogs = false
+}
+
+//---------------------------------
+// pEchoVar configuration block
+
+ProcessConfig = pEchoVar
+{
+  AppTick   = 10
+  CommsTick = 10
+    
+  Echo  = GPS_LATITUDE  -> NAV_LAT
+  Echo  = GPS_LONGITUDE -> NAV_LONG
+  Echo  = GPS_X         -> NAV_X
+  Echo  = GPS_Y         -> NAV_Y
+  Echo  = GPS_HEADING_GPRMC -> NAV_HEADING
+//  Echo  = GPS_HEADING_DUAL -> NAV_HEADING
+//  Echo  = IMU_HEADING   -> NAV_HEADING
+  Echo  = IMU_PITCH     -> NAV_PITCH
+  Echo  = IMU_ROLL      -> NAV_ROLL
+  Echo  = GPS_SPEED     -> NAV_SPEED
+}
+
+//--------------------------------------------------------
+// pNodeReporter Configuration Block (Created from Plugin)
+
+ProcessConfig = pNodeReporter
+{
+  AppTick     = 2
+  CommsTick   = 2
+  
+  platform_type = ship
+  platform_length = 2.2
+}
+
+//-----------------------------------------------------
+// pPearlPID Configuration Block (created from plugin)
+
+ProcessConfig = pPearlPID
+{
+  AppTick    = 10
+  CommsTick  = 10
+  
+  VERBOSE       = true
+  DEPTH_CONTROL = false
+  ACTIVE_START  = true
+  
+  SUN_TRACKING = false
+  HEADING_DEADBAND = 5    // +/- degrees
+  
+  // Yaw PID controller
+  YAW_PID_KP             = 0.4
+  YAW_PID_KI             = 0.04
+  YAW_PID_KD             = 4
+  YAW_PID_INTEGRAL_LIMIT = 0.07
+  
+  // Speed PID controller
+  SPEED_PID_KP           = 1.0
+  SPEED_PID_KD           = 0.0
+  SPEED_PID_KI           = 0.0
+  SPEED_PID_INTEGRAL_LIMIT = 0.07
+  
+  // A non-zero SPEED_FACTOR overrides use of SPEED_PID
+  // Will set DESIRED_THRUST = DESIRED_SPEED * SPEED_FACTOR
+  SPEED_FACTOR = 0
+}
+
+//--------------------------------------------------------
+// uProcessWatch Configuration Block (Created from Plugin)
+
+ProcessConfig = uProcessWatch
+{
+  AppTick   = 2
+  CommsTick = 2
+
+  nowatch = uMAC*  
+  nowatch = uXMS*
+  
+  watch  = pLogger
+  watch  = pEchoVar
+  watch  = pNodeReporter
+  watch  = pPearlPID
+  watch  = pHelmIvP
+  watch  = iDualGPS
+  watch  = iPEARL
+  watch  = uSunTracking
+  watch  = iRPISerial
+}
+
+
+
+//-------------------------------
+// iDualGPS configuration block from plugin
+
+ProcessConfig = iDualGPS
+{
+  AppTick     = 10
+  CommsTick   = 10
+  
+  DUAL_GPS		= false
+  PORT_1		  = /dev/ttyUSB0
+  PORT_2		  = /dev/ttyUSB2
+  BAUDRATE		= 9600
+  PREFIX		  = GPS
+  
+  HEADING_OFFSET	= 0.0
+  
+  PUBLISH_RAW		= true
+  PUBLISH_HDOP	= true
+  
+  TRIGGER_MSG		= ""
+}
+
+//--------------------------------
+// iPEARL config block from plugin
+
+ProcessConfig = iPEARL
+{
+  AppTick     = 10
+  CommsTick   = 10
+
+  PORT           = /dev/ttyACM0
+  BAUDRATE       = 115200
+  PREFIX         = IMU
+  HEADING_OFFSET = 0.0 //13.0
+  
+  LEFT_MOTOR_FRAC = 1.0   //Thrust commanded to left motor is multipled by this fraction
+                          //Must be in range (0.0,1.0], 1.0 means no offset is applied
+  RIGHT_MOTOR_FRAC = 1.0  //Thrust commanded to right motor is multipled by this fraction
+                          //Must be in range (0.0,1.0], 1.0 means no offset is applied
+}
+
+//--------------------------------
+// uSunTracking config block from plugin
+
+ProcessConfig = uSunTracking
+{
+  AppTick     = 10
+  CommsTick   = 10
+
+  PREFIX              = SOLAR
+  SUN_HEADING_OFFSET  = 0.0
+  PUBLISH_ANGLES      = true
+}
+
+//-------------------------------
+// iRPISerial configuration block from plugin
+
+ProcessConfig = iRPISerial
+{
+  AppTick     = 10
+  CommsTick   = 10
+  
+  Port        = /dev/ttyUSB1
+  BaudRate    = 115200
+  PREFIX      = RPI
+}
+
+
+//---------------------------------------------------------
+// pShare Config Block  (Created from Plugin)
+
+ProcessConfig = pShare
+{
+  AppTick    = 2
+  CommsTick  = 2
+
+  input = route =  192.168.1.4:9301
+}
+
+
+//--------------------------------------------------
+// pHostInfo configuration block from plugin
+
+ProcessConfig = pHostInfo
+{
+  AppTick 	= 1
+  CommsTick = 1
+
+  default_hostip_force = 192.168.1.4
+}
+
+
+//--------------------------------------------------
+// uFldNodeBroker configuration block from plugin
+
+ProcessConfig = uFldNodeBroker
+{
+  AppTick   = 1
+  CommsTick = 1
+
+  try_shore_host = pshare_route=192.168.1.6:9300
+  
+  bridge  = src=MOOS_MANUAL_OVERRIDE, alias=MOOS_MANUAL_OVERRIDE
+  
+  bridge  = src=VIEW_POLYGON
+  bridge  = src=VIEW_POINT
+  bridge  = src=VIEW_SEGLIST
+  bridge  = src=VIEW_CIRCLE
+  bridge  = src=APPCAST
+  bridge  = src=NODE_REPORT_LOCAL,  alias=NODE_REPORT
+  bridge  = src=NODE_MESSAGE_LOCAL, alias=NODE_MESSAGE
+}
+
+
+
+//----------------------------------------------------
+// pHelmIvP Configuration Block  (Created from Plugin)
+
+ProcessConfig = pHelmIvP
+{
+  AppTick    = 4
+  CommsTick  = 4
+
+  ok_skew      = any
+  
+  Behaviors    = targ_pearl.bhv  
+  Domain       = course:0:359:360
+  Domain       = speed:0:0.5:11
+}
+
+
+
+
+
