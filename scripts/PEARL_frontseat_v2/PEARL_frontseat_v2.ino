@@ -25,6 +25,7 @@ int leftBackwardLED = 13;
 IBusBM ibusRC;
 HardwareSerial& ibusRCSerial = Serial2;  //RC receiver
 HardwareSerial& moos = Serial;   //comms with navigation RPi/MOOS-IvP
+HardwareSerial& debug = Serial3; 
 
 /*----------Setup IMU and sensor fusion----------*/
 Adafruit_Sensor *accelerometer, *gyroscope, *magnetometer;
@@ -126,6 +127,11 @@ void setup(void)
   /*------Setup for front seat comms--------*/
   moos.begin(115200);
   while (!moos) {
+    delay(1);
+  }
+
+  debug.begin(115200);
+  while (!debug) {
     delay(1);
   }
 
@@ -256,6 +262,7 @@ void loop(void)
     moos.println(NMEA_RAW);
     moos.println(NMEA_MOTOR);
   }
+  debug.print(curLeft);debug.print(" ");debug.println(curRight);
 
 }
 

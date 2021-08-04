@@ -3,7 +3,7 @@
 //If true writes thrust commands to specified LED pins
 //If false writes thrust commands to specified motor controller pins
 bool TEST_MODE = false;
-bool DEBUG_MODE = true;
+bool DEBUG_MODE = false;
 
 //Pin assignments
 int rightMotorPin = 8;
@@ -19,7 +19,7 @@ int leftBackwardLED = 13;
 #include <Wire.h>
 #include <Adafruit_Sensor_Calibration.h>
 #include <Adafruit_AHRS.h>
-//#include <ArduinoBlue.h>
+#include <ArduinoBlue.h>
 #include <IBusBM.h>
 
 /*----------Setup IMU and sensor fusion----------*/

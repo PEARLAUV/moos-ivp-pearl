@@ -263,6 +263,8 @@ void PEARL::GetData()
 
 bool PEARL::SendToFront()
 {
+  static int msgCount = 0;
+  
   ThrustRudderToLR();
   
   string message = "$";
@@ -318,12 +320,15 @@ bool PEARL::SendToFront()
     message += doubleToString(m_commanded_R);
     message += "*"; }
   
-  m_last_msg_to_front = message;
+  if (msgCount > 5) {
+    m_last_msg_to_front = message;
+    m_serial->WriteToSerialPort(message);
   
-  m_serial->WriteToSerialPort(message);
+    m_Comms.Notify("DIRECT_THRUST_INCREASE", "false");
+    m_Comms.Notify("DIRECT_THRUST_DECREASE", "false");
+  }
   
-  m_Comms.Notify("DIRECT_THRUST_INCREASE", "false");
-  m_Comms.Notify("DIRECT_THRUST_DECREASE", "false");
+  msgCount++;
   
   return true;
 }
