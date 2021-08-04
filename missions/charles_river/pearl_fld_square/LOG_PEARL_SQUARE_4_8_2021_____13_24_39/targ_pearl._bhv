@@ -1,0 +1,77 @@
+//----------FILE: meta_vehicle.bhv---------
+
+initialize  DEPLOY               = false
+initialize  RETURN               = false
+initialize  STATION_KEEP         = false
+initialize  MOOS_MANUAL_OVERRIDE = true
+
+//-----------------------------------------
+Behavior = BHV_StationKeep
+{
+  name      = station-keep
+  pwt       = 100
+  condition = DEPLOY=true
+  condition = RETURN=false
+  condition = STATION_KEEP=true
+  condition = MOOS_MANUAL_OVERRIDE=false
+
+	center_activate    = true
+	inner_radius       = 5
+	outer_radius       = 10
+	hibernation_radius = 10
+	outer_speed        = 0.5   //meters per second
+	transit_speed      = 0.5   //meters per second
+	swing_time         = 3
+	visual_hints       = vertex_size=0, edge_color=blue
+}
+//-----------------------------------------
+Behavior = BHV_Waypoint
+{
+  name      = waypt_square
+  pwt       = 100
+  condition = DEPLOY=true
+  condition = RETURN=false
+  condition = STATION_KEEP=false
+  condition = MOOS_MANUAL_OVERRIDE=false
+  endflag   = RETURN=true
+  UPDATES   = WPT_UPDATE
+  
+	lead           = 8
+	lead_damper    = 1
+	speed          = 0.5   //meters per second
+	capture_line   = true
+	capture_radius = 5
+	slip_radius    = 10
+
+	points      = 0,-40 : 0,-70 : -30,-70 : -30,-40
+	
+
+	repeat         = 1
+	order          = normal
+
+	visual_hints = nextpt_color=yellow
+	visual_hints = nextpt_vertex_size=8
+	visual_hints = nextpt_lcolor=gray70
+	visual_hints = vertex_color=dodger_blue, edge_color=white
+	visual_hints = vertex_size=5, edge_size=1
+}
+//-----------------------------------------
+Behavior = BHV_Waypoint
+{
+  name      = waypt_return
+  pwt       = 100
+  condition = DEPLOY=true
+  condition = RETURN=true
+  condition = STATION_KEEP=false
+  condition = MOOS_MANUAL_OVERRIDE=false
+  perpetual = true
+  endflag   = RETURN=false
+  endflag   = STATION_KEEP=true
+
+	speed          = 0.5   //meters per second
+	capture_radius = 2
+	slip_radius    = 8
+
+	points = 0,-5
+}
+
