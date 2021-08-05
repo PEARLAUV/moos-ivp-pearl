@@ -46,3 +46,11 @@ permanent memory on the board. Inputs within the scripts are:
 
 You can use the sketch at Examples->Adafruit Sensor Calibration->sensor_calibration_read
 to view the current calibrations stored on the board.
+
+#========================================================================
+# arduino[Accel/Euler/Gyro/Mag]Plot.py
+#========================================================================
+Python scripts for plotting IMU data from the frontseat in real-time. To
+use, set DEBUG_MODE=true in PEARL_frontseat_v2 sketch and set debug_type
+to the desired quantity. Reupload the sketch and run the appropriate 
+Python script. 
