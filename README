@@ -1,3 +1,10 @@
+***8/4/2021: There is currently a bug in the latest version of MOOS-IvP 
+causing the pEchoVar app to not work. This can be fixed by opening
+/moos-ivp/ivp/src/lib_logic/LogicBuffer.h and changing line 37 from
+{m_info_buffer=0} to {m_info_buffer=new InfoBuffer;}. Rebuild MOOS-IvP using
+the instructions below.
+
+
 ##############################################################################
 # FILE:        moos-ivp-pearl/README
 # DATE:        01/14/2021
@@ -16,56 +23,37 @@ a Raspberry Pi 4B board running Raspbian OS.
 #=============================================================================
 The directory structure for the moos-ivp-extend is decribed below:
 
-bin              - Directory for generated executable files
-build.sh         - Script for building moos-ivp-extend
-CMakeLists.txt   - CMake configuration file for the project
-data             - Directory for storing data
 missions         - Directory for mission files
-README           - Contains helpful information - (this file).
-scripts          - Directory for script files, including front seat Arduino
-                   sketches and documentation
+scripts          - Directory for script files, including frontseat code
 src              - Directory for source code
-
-
-#=============================================================================
-# MOOS App 1: iGPS
-#=============================================================================
-MOOS-IvP app built for reading GPS data from an Adafruit Ultimate GPS module 
-connected directly to the Raspberry Pi over a USB serial connection. Currently
-reads and parses GPGGA and GPRMC format NMEA sentences.
+CMakeLists.txt   - CMake configuration file for the project
+README           - Contains helpful information - (this file).
+build.sh         - Script for building moos-ivp-pearl
+clean.sh         - Script for removing moos-ivp-pearl build files
 
 #=============================================================================
-# MOOS App 2: iPearl
+# Update Instructions
 #=============================================================================
-MOOS-IvP app built to interface with PEARL's front seat (an Arduino Mega).
-Reads and parses IMU data sent from the front seat over USB serial in a NMEA 
-sentence. Subscribes to desired thrust and rudder commands published by
-pPearlPID, converts to left and right motor thrust commands, and sends to
-front seat over USB serial in a custom NMEA sentence.
+#--------------------
+# moos-ivp
+#--------------------
+To update MOOS-IvP to the latest version, execute the following from terminal:
 
-#=============================================================================
-# MOOS App 3: iChargeController
-#=============================================================================
-MOOS-IvP app built to interface with an EP Xtra-N MPPT Controller. Monitors
-battery charge levels and adjusts the maximum possible thrust/rudder
-parameters to preserve battery life. 
+	$ cd ~
+	$ cd moos-ivp
+	$ svn update
+	$ ./build-moos.sh
+	$ ./build-ivp.sh
+	
+#-------------------
+# moos-ivp-pearl
+#-------------------
+To update moos-ivp-pearl, execute the following from terminal:
 
-#=============================================================================
-# MOOS App 4: uSunTracking
-#=============================================================================
-MOOS-IvP app built to compute the best possible orientation for PEARL to
-collect solar energy. Implements equations from the NOAA Solar Position
-Calculator: https://www.esrl.noaa.gov/gmd/grad/solcalc/calcdetails.html
-Reads in UTC time and date from GPS and produces solar elevation and azimuth
-angles. While PEARL is station-keeping and commanded thrust is zero, this app
-produces the desired heading which is fed into pPearlPID. 
-
-#=============================================================================
-# MOOS App 5: pPearlPID
-#=============================================================================
-This app is a near direct copy of the pMarinePID controller app found in the
-baseline MOOS-IvP package. Modified to read desired heading from uSolarHeading
-app when PEARL is station-keeping.
+	$ cd ~
+	$ cd moos-ivp-pearl
+	$ git pull
+	$ ./build.sh
 
 #=============================================================================
 # Installation Instructions -- for MacOS
@@ -73,7 +61,7 @@ app when PEARL is station-keeping.
 #--------------------
 # moos-ivp setup
 #--------------------
-To set up MOOS-IvP, execute the following from the terminal:
+To set up MOOS-IvP, execute the following from terminal:
 
 	$ cd ~
 	$ sudo port install cmake
@@ -90,7 +78,7 @@ To set up MOOS-IvP, execute the following from the terminal:
 	export PATH=$PATH:~/moos-ivp/bin
 	$ source ~/.bashrc
 	
-	Follow the moos-ivp-pearl installation instructions below.
+Follow the moos-ivp-pearl installation instructions below.
 	
 Setup guide from 2.680 labs: https://oceanai.mit.edu/ivpman/pmwiki/pmwiki.php?n=Lab.ClassSetup
 
@@ -100,7 +88,7 @@ Setup guide from 2.680 labs: https://oceanai.mit.edu/ivpman/pmwiki/pmwiki.php?n=
 #--------------------
 # moos-ivp setup
 #--------------------
-To set up MOOS-IvP, execute the following from the terminal:
+To set up MOOS-IvP, execute the following from terminal:
 
 	$ cd ~
 	$ sudo apt-get install subversion
@@ -119,7 +107,7 @@ To set up MOOS-IvP, execute the following from the terminal:
 #----------------------------------------------------------------
 # moos-ivp-pearl extension setup -- same for MacOS and Linux
 #----------------------------------------------------------------
-Next, to set up the moos-ivp-pearl extension, execute the following from the terminal:
+To set up moos-ivp-pearl, execute the following from terminal:
 
 	$ cd ~
 	$ git clone https://github.com/PEARLAUV/moos-ivp-pearl.git
@@ -130,11 +118,8 @@ Next, to set up the moos-ivp-pearl extension, execute the following from the ter
 	Add this line to the end of the .bashrc file: 
 	export PATH=$PATH:~/moos-ivp-pearl/bin
 	$ source ~/.bashrc
-
-#=============================================================================
-# Running Instructions
-#=============================================================================
-Each mission folder contains a README file with launch instructions.
+	
+Add all files from the /missions/images folder to /moos-ivp/ivp/data 
 
 ##############################################################################
 #                               END of README
