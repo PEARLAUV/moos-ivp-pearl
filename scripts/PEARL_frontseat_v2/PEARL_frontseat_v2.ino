@@ -9,23 +9,24 @@
 bool TEST_MODE = false;
 //If true sends data output to Serial port for use with Python real-time plotting scripts
 bool DEBUG_MODE = false;
+//Values to plot in Python, valid options are "euler","accelerometer","gyroscope","magnetometer"
+char debug_type[] = "euler";   
 
 //Pin assignments
-int anchorMotorPin = 7;
+const int anchorMotorPin = 7;
 
-int rightMotorPin = 8;
-int leftMotorPin = 9;
+const int rightMotorPin = 8;
+const int leftMotorPin = 9;
 
-int rightForwardLED = 10;
-int leftForwardLED = 11;
-int rightBackwardLED = 12;
-int leftBackwardLED = 13;
+const int rightForwardLED = 10;
+const int leftForwardLED = 11;
+const int rightBackwardLED = 12;
+const int leftBackwardLED = 13;
 
 //Serial port assignments
 IBusBM ibusRC;
 HardwareSerial& ibusRCSerial = Serial2;  //RC receiver
 HardwareSerial& moos = Serial;   //comms with navigation RPi/MOOS-IvP
-HardwareSerial& debug = Serial3; 
 
 /*----------Setup IMU and sensor fusion----------*/
 Adafruit_Sensor *accelerometer, *gyroscope, *magnetometer;
@@ -127,11 +128,6 @@ void setup(void)
   /*------Setup for front seat comms--------*/
   moos.begin(115200);
   while (!moos) {
-    delay(1);
-  }
-
-  debug.begin(115200);
-  while (!debug) {
     delay(1);
   }
 
@@ -240,30 +236,20 @@ void loop(void)
 
 
   if (DEBUG_MODE) {
-    float accx = accel.acceleration.x;
-    float accy = accel.acceleration.y;
-    float accz = accel.acceleration.z;
-    float gyrox = gyro.gyro.x * SENSORS_RADS_TO_DPS;
-    float gyroy = gyro.gyro.y * SENSORS_RADS_TO_DPS;
-    float gyroz = gyro.gyro.z * SENSORS_RADS_TO_DPS;
-    float magx = mag.magnetic.x;
-    float magy = mag.magnetic.y;
-    float magz = mag.magnetic.z;
-    float HEADING = new_heading;
-    float PITCH   = pitch;
-    float ROLL    = roll;
-//   sendToPython(&accx, &accy, &accz);
-//   sendToPython(&gyrox, &gyroy, &gyroz);
-//   sendToPython(&magx, &magy, &magz);
-    sendToPython(&HEADING, &PITCH, &ROLL);
+    if (strcmp(debug_type,"euler")==0)
+      sendToPython(&new_heading, &pitch, &roll);
+    else if (strcmp(debug_type,"accelerometer")==0)
+      sendToPython(&ax, &ay, &az);
+    else if (strcmp(debug_type,"gyroscope")==0)
+      sendToPython(&gx, &gy, &gz);
+    else if (strcmp(debug_type,"magnetometer")==0)
+      sendToPython(&mx, &my, &mz);
   }
   else {
     moos.println(NMEA_EULER);
     moos.println(NMEA_RAW);
     moos.println(NMEA_MOTOR);
   }
-  debug.print(curLeft);debug.print(" ");debug.println(curRight);
-
 }
 
 String generateNMEAString(String payload, String prefix, String id) {
