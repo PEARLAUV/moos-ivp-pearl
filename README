@@ -48,12 +48,12 @@ To update MOOS-IvP to the latest version, execute the following from terminal:
 #-------------------
 # moos-ivp-pearl
 #-------------------
-To update moos-ivp-pearl, execute the following from terminal:
+To update moos-ivp-pearl to the latest version, execute the following from terminal:
 
 	$ cd ~
 	$ cd moos-ivp-pearl
 	$ git pull
-	$ ./build.sh
+	$ ./build.sh [--mac] (use --mac flag if building on a Mac) 
 
 #=============================================================================
 # Installation Instructions -- for MacOS
@@ -114,7 +114,7 @@ To set up moos-ivp-pearl, execute the following from terminal:
 	$ cd ~/moos-ivp-pearl
 	$ mkdir build
 	$ mkdir lib
-	$ ./build.sh
+	$ ./build.sh [--mac] (use --mac flag if building on a Mac) 
 	Add this line to the end of the .bashrc file: 
 	export PATH=$PATH:~/moos-ivp-pearl/bin
 	$ source ~/.bashrc
