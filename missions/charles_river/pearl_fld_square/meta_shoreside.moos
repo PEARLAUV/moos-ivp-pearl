@@ -63,8 +63,8 @@ ProcessConfig = pMarineViewer
   CommsTick  = 4
 
   // MIT Sailing Pavilion Images
-    tiff_file     = /home/henry/moos-ivp-pearl/missions/images/MIT_sailing_pavilion_high_res.tif
-    //tiff_file     = /moos-ivp-pearl/missions/images/MIT_sailing_pavilion.tif
+    tiff_file     = MIT_sailing_pavilion_high_res.tif
+    //tiff_file     = MIT_sailing_pavilion.tif
     
   //set_pan_x            = 0
   //set_pan_y            = 0
