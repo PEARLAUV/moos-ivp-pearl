@@ -1,0 +1,103 @@
+//*******************************************************
+// ShoreSide Configuration File
+
+ServerHost = $(SHORE_IP)
+ServerPort = $(SPORT)
+Community  = shoreside
+
+#include plug_origin_warp.moos
+  
+//--------------------------------------------------------
+Processconfig = ANTLER
+{
+  MSBetweenLaunches = 100
+
+  Run = MOOSDB          @ NewConsole = false
+  Run = pMarineViewer   @ NewConsole = false
+
+  Run = pShare          @ NewConsole = false
+  Run = pHostInfo       @ NewConsole = false
+  Run = uFldShoreBroker @ NewConsole = false
+}
+
+//---------------------------------------------------------
+// pShare Config Block
+
+ProcessConfig = pShare
+{
+  AppTick    = 2
+  CommsTick  = 2
+
+  input = route = $(SHORE_IP):$(SHARE_LISTEN)
+}
+
+//--------------------------------------------------
+// pHostInfo Config Block
+
+ProcessConfig = pHostInfo
+{
+  AppTick   = 1
+  CommsTick = 1
+  
+  default_hostip_force = $(SHORE_IP)
+}
+
+//--------------------------------------------------
+// uFldShoreBroker Configuration Block
+
+ProcessConfig = uFldShoreBroker
+{
+  AppTick   = 1
+  CommsTick = 1
+
+  qbridge = DEPLOY, RETURN, STATION_KEEP
+  qbridge = NODE_REPORT, NODE_MESSAGE, APPCAST_REQ
+
+  bridge  = src=REGION_INFO,  alias=REGION_INFO
+}
+
+//--------------------------------------------------------
+ProcessConfig = pMarineViewer
+{
+  AppTick    = 4
+  CommsTick  = 4
+
+  // MIT Sailing Pavilion Images
+  //  tiff_file     = /home/henry/moos-ivp-pearl/missions/images/MIT_sailing_pavilion_high_res.tif
+    //tiff_file     = /moos-ivp-pearl/missions/images/MIT_sailing_pavilion.tif
+    
+    tiff_file     = /home/henry/moos-ivp-pearl/missions/images/pleasant_bay_high_res.tif
+    
+  //set_pan_x            = 0
+  //set_pan_y            = 0
+  zoom                 = 0.35
+  vehicles_shape_scale = 1.5
+
+  appcast_viewable     = true
+  appcast_color_scheme = indigo
+	appcast_font_size    = large
+	procs_font_size      = large
+	nodes_font_size      = xlarge
+	
+  comms_pulse_viewable_all = false
+  vehicles_name_mode       = names+mode
+  vehicles_active_color    = green
+  vehicles_inactive_color  = red
+  trails_length            = 10000
+
+  stale_report_thresh = 1800    //seconds
+  stale_remove_thresh = 2100    //seconds
+
+  scope = PHI_HOST_INFO
+  scope = DEPLOY_ALL
+  scope = RETURN_ALL
+  scope = STATION_KEEP_ALL
+  scope = MOOS_MANUAL_OVERRIDE
+
+  BUTTON_ONE   = DEPLOY       # DEPLOY_ALL=true   # RETURN_ALL=false # STATION_KEEP_ALL=false
+  BUTTON_TWO   = RETURN       # DEPLOY_ALL=true   # RETURN_ALL=true  # STATION_KEEP_ALL=false
+  BUTTON_THREE = STATION-KEEP # DEPLOY_ALL=true   # RETURN_ALL=false # STATION_KEEP_ALL=true
+  BUTTON_FOUR  = ALLSTOP      # DEPLOY_ALL=false  # RETURN_ALL=false # STATION_KEEP_ALL=false
+  
+  //left_context[view_point]  = VIEW_POINT = x=$(XPOS),y=$(YPOS),label=hello
+}

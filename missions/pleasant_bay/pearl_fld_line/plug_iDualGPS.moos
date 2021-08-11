@@ -1,0 +1,21 @@
+//-------------------------------
+// iDualGPS configuration block from plugin
+
+ProcessConfig = iDualGPS
+{
+  AppTick     = 10
+  CommsTick   = 10
+  
+  DUAL_GPS		= false
+  PORT_1		  = /dev/ttyUSB0
+  PORT_2		  = /dev/ttyUSB2
+  BAUDRATE		= 9600
+  PREFIX		  = GPS
+  
+  HEADING_OFFSET	= 0.0
+  
+  PUBLISH_RAW		= true
+  PUBLISH_HDOP	= true
+  
+  TRIGGER_MSG		= ""
+}
