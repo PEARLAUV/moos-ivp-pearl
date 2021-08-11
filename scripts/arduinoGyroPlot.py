@@ -38,6 +38,7 @@ class serialPlot:
         print('Trying to connect to: ' + str(serialPort) + ' at ' + str(serialBaud) + ' BAUD.')
         try:
             self.serialConnection = serial.Serial(serialPort, serialBaud, timeout=4)
+            time.sleep(5)
             print('Connected to ' + str(serialPort) + ' at ' + str(serialBaud) + ' BAUD.')
         except:
             print("Failed to connect with " + str(serialPort) + ' at ' + str(serialBaud) + ' BAUD.')

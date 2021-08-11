@@ -39,6 +39,9 @@ for ARGI; do
     if [ "${ARGI}" = "clean" ] ; then
 	CLEAN="yes"
     fi 
+    if [ "${ARGI}" = "--mac" ] ; then
+    	PEARLOPTIONS="mac"
+    fi
 done
 
 export PEARLOPTIONS=${PEARLOPTIONS}
