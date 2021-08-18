@@ -79,8 +79,10 @@ const float RIGHT_BACKWARD_MAX = LEFT_BACKWARD_MIN - LIMIT_THRUST;
 const float TURN_SPEED = 10;
 
 //Anchor Constants
-const float ANCHOR_UP_MAX = STILL + LIMIT;
-const float ANCHOR_DOWN_MAX = STILL + LIMIT;
+const float ANCHOR_UP_MAX = STILL + LIMIT_ANCHOR;
+const float ANCHOR_DOWN_MAX = STILL - LIMIT_ANCHOR;
+
+int curAnchor = STILL;
 
 //RC variables
 int rotateCH = 0;
@@ -99,7 +101,7 @@ int drivemodeCH = 5;
 bool BACKWARD;
 
 int anchorCH = 6;
-bool ANCHOR_STATE;
+int ANCHOR_STATE;
 
 int turnMax = 30;
 int turnLeft;
@@ -158,7 +160,7 @@ const String ID_RAW    = "RAW";  // Sentence ID for raw IMU readings
 const String ID_MOTOR  = "MOT";  // Sentence ID for notifying MOOS-IvP of current motor commands
 
 //Anchor
-const String ID_ANCHOR = "ANC"   // Semtemce ID for notifying MOOS-IvP of current anchor status
+const String ID_ANCHOR = "ANC";   // Semtemce ID for notifying MOOS-IvP of current anchor status
 
 void loop(void)
 {
@@ -347,7 +349,7 @@ void handleRC() {
   BACKWARD = readSwitch(drivemodeCH, false);
 
   //Anchor
-  ANCHOR = readSwitch_3state(drivemodeCH, false);
+  ANCHOR_STATE = readSwitch3(anchorCH, 0);
 
   rotateVal = readChannel(rotateCH, -100, 100, 0);
   throttleVal = readChannel(throttleCH, -100, 100, 0);
@@ -368,43 +370,56 @@ void handleRC() {
   }
   /*------------------------------------*/
 
-  if (manualControl == 1) {
-    if (rotateVal > 0) {
-      curLeft = map(rotateVal, 1, 100, LEFT_FORWARD_MIN, LEFT_FORWARD_MAX);
-      curRight = map(rotateVal, 1, 100, RIGHT_BACKWARD_MIN, RIGHT_BACKWARD_MAX);
-    }
-    else if (rotateVal < 0) {
-      curLeft = map(rotateVal, -1, -100, LEFT_BACKWARD_MIN, LEFT_BACKWARD_MAX);
-      curRight = map(rotateVal, -1, -100, RIGHT_FORWARD_MIN, RIGHT_FORWARD_MAX);
-    }
-    else {
-      if (!BACKWARD) {
-        throttleMap = map(throttleVal, -95, 100, LEFT_FORWARD_MIN, LEFT_FORWARD_MAX);
-        if (throttleMap >= LEFT_FORWARD_MIN) {
-          curLeft = throttleMap - turnLeft;
-          curRight = throttleMap - turnRight;
+  if (manualControl == 0) {
+    curAnchor = STILL;
+    if( ANCHOR_STATE == 0){ //Only throttle when anchor is not being moved
+      if (rotateVal > 0) {
+        curLeft = map(rotateVal, 1, 100, LEFT_FORWARD_MIN, LEFT_FORWARD_MAX);
+        curRight = map(rotateVal, 1, 100, RIGHT_BACKWARD_MIN, RIGHT_BACKWARD_MAX);
+      }
+      else if (rotateVal < 0) {
+        curLeft = map(rotateVal, -1, -100, LEFT_BACKWARD_MIN, LEFT_BACKWARD_MAX);
+        curRight = map(rotateVal, -1, -100, RIGHT_FORWARD_MIN, RIGHT_FORWARD_MAX);
+      }
+      else {
+        if (!BACKWARD) {
+          throttleMap = map(throttleVal, -95, 100, LEFT_FORWARD_MIN, LEFT_FORWARD_MAX);
+          if (throttleMap >= LEFT_FORWARD_MIN) {
+            curLeft = throttleMap - turnLeft;
+            curRight = throttleMap - turnRight;
+          }
+          else {
+            curLeft = STILL;
+            curRight = STILL;
+          }
         }
-        else {
-          curLeft = STILL;
-          curRight = STILL;
+        else if (BACKWARD) {
+          throttleMap = map(throttleVal, -95, 100, LEFT_BACKWARD_MIN, LEFT_BACKWARD_MAX);
+          if (throttleMap <= LEFT_BACKWARD_MIN) {
+            curLeft = throttleMap + turnLeft;
+            curRight = throttleMap + turnRight;
+          }
+          else {
+            curLeft = STILL;
+            curRight = STILL;
+          }
         }
       }
-      else if (BACKWARD) {
-        throttleMap = map(throttleVal, -95, 100, LEFT_BACKWARD_MIN, LEFT_BACKWARD_MAX);
-        if (throttleMap <= LEFT_BACKWARD_MIN) {
-          curLeft = throttleMap + turnLeft;
-          curRight = throttleMap + turnRight;
-        }
-        else {
-          curLeft = STILL;
-          curRight = STILL;
-        }
+    }
+    else{
+      curLeft = STILL;
+      curRight = STILL;
+      if(ANCHOR_STATE == 2){
+        curAnchor = ANCHOR_UP_MAX;
       }
-      // ADD Anchor commands
+      else{
+        curAnchor = ANCHOR_DOWN_MAX;
+      }
     }
     if (!TEST_MODE) {
       analogWrite(leftMotorPin, curLeft);
       analogWrite(rightMotorPin, curRight);
+      analogWrite(anchorMotorPin, curAnchor);
     }
   }
 }
@@ -425,9 +440,10 @@ bool readSwitch(byte channelInput, bool defaultValue) {
 }
 
 //Anchor switch (3 state switch)
-int readSwitch_3state(byte channelInput, int defaultValue){
-  //TODO: Parse channel data to 3 states (0, 1, 2)
-  return 0
+int readSwitch3(byte channelInput, int defaultValue) {
+  // Read the 3-way switch and return an integer value
+  int ch = readChannel(channelInput, 0, 2, defaultValue);
+  return ch;
 }
 
 void sendToPython(float* x, float* y, float* z) {
