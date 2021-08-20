@@ -100,7 +100,7 @@ bool MANUAL;
 int drivemodeCH = 5;
 bool BACKWARD;
 
-int anchorCH = 6;
+int anchorCH = 7;
 int ANCHOR_STATE;
 
 int turnMax = 30;
@@ -372,7 +372,7 @@ void handleRC() {
 
   if (manualControl == 0) {
     curAnchor = STILL;
-    if( ANCHOR_STATE == 0){ //Only throttle when anchor is not being moved
+    if( ANCHOR_STATE == 2){ //Only throttle when anchor is not being moved
       if (rotateVal > 0) {
         curLeft = map(rotateVal, 1, 100, LEFT_FORWARD_MIN, LEFT_FORWARD_MAX);
         curRight = map(rotateVal, 1, 100, RIGHT_BACKWARD_MIN, RIGHT_BACKWARD_MAX);
@@ -409,7 +409,7 @@ void handleRC() {
     else{
       curLeft = STILL;
       curRight = STILL;
-      if(ANCHOR_STATE == 2){
+      if(ANCHOR_STATE == 1){
         curAnchor = ANCHOR_UP_MAX;
       }
       else{
@@ -485,9 +485,12 @@ void commandThrust() {
       curLeft = round(leftVal);
       curRight = round(rightVal);
 
+      curAnchor = STILL;
+
       if (!TEST_MODE) {
         analogWrite(leftMotorPin, curLeft);
         analogWrite(rightMotorPin, curRight);
+        analogWrite(anchorMotorPin, curAnchor);
       }
     }
   }
