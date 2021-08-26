@@ -61,6 +61,11 @@ float rightSend = 0.0;
 boolean newData = false;
 int manualControl = 0;   //0 = manual control off, 1 = manual control on
 
+//anchor constants
+const int anchor_stop = 1;
+const int anchor_up = 0;
+const int anchor_down = 2;
+
 const float THROTTLE_ZERO_THRESHOLD = 5;
 int LIMIT_THRUST = 32; //this is the PWM step limit, must be <= 65
 //forward PWM values are 191-254 (63 steps), and then limited to 191 + LIMIT_THRUST
@@ -370,9 +375,9 @@ void handleRC() {
   }
   /*------------------------------------*/
 
-  if (manualControl == 0) {
+  if (manualControl == 1) {
     curAnchor = STILL;
-    if( ANCHOR_STATE == 2){ //Only throttle when anchor is not being moved
+    if( ANCHOR_STATE == anchor_stop){ //Only throttle when anchor is not being moved
       if (rotateVal > 0) {
         curLeft = map(rotateVal, 1, 100, LEFT_FORWARD_MIN, LEFT_FORWARD_MAX);
         curRight = map(rotateVal, 1, 100, RIGHT_BACKWARD_MIN, RIGHT_BACKWARD_MAX);
@@ -409,7 +414,7 @@ void handleRC() {
     else{
       curLeft = STILL;
       curRight = STILL;
-      if(ANCHOR_STATE == 1){
+      if(ANCHOR_STATE == anchor_up){
         curAnchor = ANCHOR_UP_MAX;
       }
       else{
