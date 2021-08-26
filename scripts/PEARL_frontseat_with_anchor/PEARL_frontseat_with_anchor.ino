@@ -62,9 +62,13 @@ boolean newData = false;
 int manualControl = 0;   //0 = manual control off, 1 = manual control on
 
 //anchor constants
+// Switch positions for SwC
+// top of controller \ | / bottom of controller
+//                   2 1 0
+// 2 is the default state when controller is turned on (all switches must be turned up when on)
 const int anchor_stop = 1;
-const int anchor_up = 0;
-const int anchor_down = 2;
+const int anchor_up = 2;
+const int anchor_down = 0;
 
 const float THROTTLE_ZERO_THRESHOLD = 5;
 int LIMIT_THRUST = 32; //this is the PWM step limit, must be <= 65
