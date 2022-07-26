@@ -9,9 +9,6 @@ bool DEBUG_MODE = false;
 //Values to plot in Python, valid options are "euler","accelerometer","gyroscope","magnetometer"
 char debug_type[] = "euler";   
 
-//Pin assignments
-const int anchorMotorPin = 7;
-
 const int rightMotorPin = 8;
 const int leftMotorPin = 9;
 
@@ -21,7 +18,7 @@ const int rightBackwardLED = 12;
 const int leftBackwardLED = 13;
 
 //Serial port assignments
-IBusBM ibusRC;
+IBusBM ibusRC; // object set up for the rc channel, requires IBusBM.h library
 HardwareSerial& ibusRCSerial = Serial2;  //RC receiver
 HardwareSerial& debug = Serial;   //comms with navigation RPi/MOOS-IvP
 
@@ -40,7 +37,6 @@ int curRight = 188.0;
 float leftSend = 0.0;
 float rightSend = 0.0;
 boolean newData = false;
-int manualControl = 1;   //0 = manual control off, 1 = manual control on
 
 const float THROTTLE_ZERO_THRESHOLD = 5;
 int LIMIT = 32; //this is the PWM step limit, must be <= 65
@@ -79,6 +75,16 @@ int turnLeft;
 int turnRight;
 int throttleMap;
 
+/*
+ * setup
+ * Description: Setup function that runs on the boot of the arduino board
+ * Function initializes serial communication, motor pins, and serial reciever for rc controller
+ * Pin Setup:
+ *  Right Motor: 8
+ *  Left Motor: 9
+ * Input: Void
+ * Output: Void
+ */
 void setup(void)
 {
   /*------Setup for RC control--------*/
@@ -112,9 +118,18 @@ void setup(void)
 
 }
 
+// NMEA strings for formatting messages to send over serial
 const String PREFIX    = "PL";   // Device prefix: PL = PEARL
 const String ID_MOTOR  = "MOT";  // Sentence ID for notifying MOOS-IvP of current motor commands
 
+/*
+ * loop:
+ * Description: Active loop function for arduino, continuously runs after setup function. 
+ * Loop function ingests RC inputs, then sets the pin values to set values to the motors
+ * Lastly, the loop prints every N updates to the serial output which can be used for debugging.
+ * Inputs: void
+ * Outputs: void
+ */
 void loop(void)
 {
   static uint8_t counter = 0;
@@ -142,22 +157,37 @@ void loop(void)
   debug.println(NMEA_MOTOR);
 }
 
+/*
+ * generateNMEAString:
+ * Description: Simple function to generate string with prefix, id, and payload in accordance to NMEA standards
+ * Inputs:
+ *  @tparam payload : the relevant data
+ *  @tparam prefix : the relevant nmea String prefix, can be set in gloabal
+ *  @tparam id  : the Nmea string id for the given data
+ * Output:
+ *  @tparam nmeastr: nmea string following standards
+ */
 String generateNMEAString(String payload, String prefix, String id) {
   String nmea = "";
   nmea = prefix + id + "," + payload;
   return "$" + nmea + "*";    // Prefixed with $
 }
 
-
+// simple function map floats
 float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
   // Re-maps a float number from one range to another.
   // That is, a value of fromLow would get mapped to toLow, a value of fromHigh to toHigh, values in-between to values in-between, etc.
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
-void handleRC() {
-  MANUAL = readSwitch(manualCH, false);
-
+/*
+ * handleRC:
+ * Description: Function designed to read data from rc controller, then calculates the correct thrust values according to the given sticks
+ * NOTE: Unlike other iterations of this funciton, handle RC always is in manual mode.
+ * Input: void
+ * Output: void
+ */
+void handleRC(void) {
   BACKWARD = readSwitch(drivemodeCH, false);
 
   rotateVal = readChannel(rotateCH, -100, 100, 0);
@@ -177,48 +207,51 @@ void handleRC() {
     turnRight = 0;
     turnLeft = 0;
   }
-  /*------------------------------------*/
-
-  if (manualControl == 1) {
-    if (rotateVal > 0) {
-      curLeft = map(rotateVal, 1, 100, LEFT_FORWARD_MIN, LEFT_FORWARD_MAX);
-      curRight = map(rotateVal, 1, 100, RIGHT_BACKWARD_MIN, RIGHT_BACKWARD_MAX);
-    }
-    else if (rotateVal < 0) {
-      curLeft = map(rotateVal, -1, -100, LEFT_BACKWARD_MIN, LEFT_BACKWARD_MAX);
-      curRight = map(rotateVal, -1, -100, RIGHT_FORWARD_MIN, RIGHT_FORWARD_MAX);
-    }
-    else {
-      if (!BACKWARD) {
-        throttleMap = map(throttleVal, -95, 100, LEFT_FORWARD_MIN, LEFT_FORWARD_MAX);
-        if (throttleMap >= LEFT_FORWARD_MIN) {
-          curLeft = throttleMap - turnLeft;
-          curRight = throttleMap - turnRight;
-        }
-        else {
-          curLeft = STILL;
-          curRight = STILL;
-        }
+  /*-------- Calculate correct thrust values with turn and forward ---------*/
+  if (rotateVal > 0) {
+    // Rotate one dir (Map will put the values in range of the max and min values for thrust)
+    curLeft = map(rotateVal, 1, 100, LEFT_FORWARD_MIN, LEFT_FORWARD_MAX);
+    curRight = map(rotateVal, 1, 100, RIGHT_BACKWARD_MIN, RIGHT_BACKWARD_MAX);
+  }
+  else if (rotateVal < 0) {
+    // Rotate other dir
+    curLeft = map(rotateVal, -1, -100, LEFT_BACKWARD_MIN, LEFT_BACKWARD_MAX);
+    curRight = map(rotateVal, -1, -100, RIGHT_FORWARD_MIN, RIGHT_FORWARD_MAX);
+  }
+  else {
+    // Adjust for both turn and thrust 
+    if (!BACKWARD) {
+      throttleMap = map(throttleVal, -95, 100, LEFT_FORWARD_MIN, LEFT_FORWARD_MAX);
+      if (throttleMap >= LEFT_FORWARD_MIN) {
+        curLeft = throttleMap - turnLeft;
+        curRight = throttleMap - turnRight;
       }
-      else if (BACKWARD) {
-        throttleMap = map(throttleVal, -95, 100, LEFT_BACKWARD_MIN, LEFT_BACKWARD_MAX);
-        if (throttleMap <= LEFT_BACKWARD_MIN) {
-          curLeft = throttleMap + turnLeft;
-          curRight = throttleMap + turnRight;
-        }
-        else {
-          curLeft = STILL;
-          curRight = STILL;
-        }
+      else {
+        curLeft = STILL;
+        curRight = STILL;
       }
     }
-    if (!TEST_MODE) {
-      analogWrite(leftMotorPin, curLeft);
-      analogWrite(rightMotorPin, curRight);
+    // Reverse case for backwards
+    else if (BACKWARD) {
+      throttleMap = map(throttleVal, -95, 100, LEFT_BACKWARD_MIN, LEFT_BACKWARD_MAX);
+      if (throttleMap <= LEFT_BACKWARD_MIN) {
+        curLeft = throttleMap + turnLeft;
+        curRight = throttleMap + turnRight;
+      }
+      else {
+        curLeft = STILL;
+        curRight = STILL;
+      }
     }
+  }
+  //Only write actual values to motors in pwm mode if we are not testing (Else these values will just be pinout to leds)
+  if (!TEST_MODE) {
+    analogWrite(leftMotorPin, curLeft);
+    analogWrite(rightMotorPin, curRight);
   }
 }
 
+// Basic function to read channel from the RC
 int readChannel(byte channelInput, int minLimit, int maxLimit, int defaultValue) {
   // Read the number of a given channel and convert to the range provided.
   // If the channel is off, return the default value
@@ -227,6 +260,7 @@ int readChannel(byte channelInput, int minLimit, int maxLimit, int defaultValue)
   return map(ch, 1000, 2000, minLimit, maxLimit);
 }
 
+// Basic function to read switch from RC
 bool readSwitch(byte channelInput, bool defaultValue) {
   // Read the channel and return a boolean value
   int intDefaultValue = (defaultValue) ? 100 : 0;
@@ -234,6 +268,13 @@ bool readSwitch(byte channelInput, bool defaultValue) {
   return (ch > 50);
 }
 
+/*
+ * sendToPython:
+ * Description: function to output data to debug serial (the debug serial will be the one which you can view directly from the connected computer)
+ * Inputs:
+ *  @param x, y, z : first, second, and third byte respectively
+ * Outputs: void
+ */
 void sendToPython(float* x, float* y, float* z) {
   byte* byteX  = (byte*)(x);
   byte* byteY  = (byte*)(y);
@@ -243,7 +284,16 @@ void sendToPython(float* x, float* y, float* z) {
   debug.write(byteZ, 4);
 }
 
-void reportThrust() {
+/*
+ * reportThrust:
+ * Description: Given calculated thrust values curleft and curright, in debug mode, these values will be used to calculate the
+ *  display values for test mode. The left send and right send values calculated in this function will be used in the debug string
+ *  sent over serial. It remaps the float curleft and currights to 0-100 values or -100-0 values if going backwards
+ *  NOTE: This function is specifically designed for debugging, not for acually sending data to pearl
+ *  Inputs: void
+ *  Outputs: void
+ */
+void reportThrust(void) {
   if (curLeft > 190) {
     leftSend = mapFloat(float(curLeft), LEFT_FORWARD_MIN, LEFT_FORWARD_MAX, 0.0, 100.0);
     if (TEST_MODE) {
