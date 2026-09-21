@@ -73,6 +73,7 @@ class RouteBuffer : public AppCastingMOOSApp
    unsigned int m_max_points;
    double       m_contact_max_age;
    double       m_deploy_delay;
+   double       m_route_replay_delay;
    bool         m_live_append;
 
  private: // State variables
@@ -93,6 +94,9 @@ class RouteBuffer : public AppCastingMOOSApp
    bool                 m_route_deployed;
    bool                 m_vehicle_deploy_pending;
    double               m_vehicle_deploy_pending_since;
+   bool                 m_vehicle_route_replay_pending;
+   double               m_vehicle_route_replay_pending_since;
+   std::string          m_vehicle_pending_route_update;
 };
 
 #endif

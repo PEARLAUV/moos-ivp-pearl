@@ -38,6 +38,7 @@ RouteBuffer::RouteBuffer()
   m_max_points         = 50;
   m_contact_max_age    = 3;
   m_deploy_delay       = 0;
+  m_route_replay_delay = 0;
   m_live_append        = false;
 
   m_state                 = "EMPTY";
@@ -51,6 +52,8 @@ RouteBuffer::RouteBuffer()
   m_route_deployed         = false;
   m_vehicle_deploy_pending = false;
   m_vehicle_deploy_pending_since = 0;
+  m_vehicle_route_replay_pending = false;
+  m_vehicle_route_replay_pending_since = 0;
 }
 
 //---------------------------------------------------------
@@ -133,25 +136,50 @@ bool RouteBuffer::Iterate()
 
     if((m_role == "vehicle") && m_vehicle_deploy_pending) {
       double staged_time = m_curr_time - m_vehicle_deploy_pending_since;
+      bool release_route = false;
       if((m_deploy_delay > 0) && (staged_time >= m_deploy_delay)) {
         Notify(m_route_deploy_var, "true");
         if(m_manual_override_var != "")
           Notify(m_manual_override_var, "false");
-        m_route_deployed = true;
-        m_vehicle_deploy_pending = false;
-        postState("DEPLOY_ACCEPTED");
+        release_route = true;
       }
       else if((m_deploy_delay == 0) && m_route_ready) {
         Notify(m_route_deploy_var, "true");
-        m_route_deployed = true;
-        m_vehicle_deploy_pending = false;
-        postState("DEPLOY_ACCEPTED");
+        release_route = true;
       }
       else if((m_deploy_delay == 0) && (staged_time > 3)) {
         m_vehicle_deploy_pending = false;
+        m_vehicle_pending_route_update.clear();
         m_commands_rejected++;
         postState("DEPLOY_REJECTED_NOT_READY");
         reportRunWarning("DEPLOY rejected: route did not become ready");
+      }
+
+      if(release_route) {
+        m_route_deployed = true;
+        m_vehicle_deploy_pending = false;
+        if((m_route_replay_delay > 0) &&
+           (m_vehicle_pending_route_update != "")) {
+          m_vehicle_route_replay_pending = true;
+          m_vehicle_route_replay_pending_since = m_curr_time;
+          postState("DEPLOY_RELEASED");
+        }
+        else {
+          m_vehicle_pending_route_update.clear();
+          postState("DEPLOY_ACCEPTED");
+        }
+      }
+    }
+
+    if((m_role == "vehicle") && m_vehicle_route_replay_pending) {
+      double replay_time =
+        m_curr_time - m_vehicle_route_replay_pending_since;
+      if(replay_time >= m_route_replay_delay) {
+        Notify(m_route_update_var, m_vehicle_pending_route_update);
+        m_vehicle_route_replay_pending = false;
+        m_vehicle_pending_route_update.clear();
+        postState("DEPLOY_ACCEPTED");
+        reportEvent("Replayed route after helm release");
       }
     }
   }
@@ -217,6 +245,8 @@ bool RouteBuffer::OnStartUp()
       handled = setPosDoubleOnString(m_contact_max_age, value);
     else if(param == "deploy_delay")
       handled = setNonNegDoubleOnString(m_deploy_delay, value);
+    else if(param == "route_replay_delay")
+      handled = setNonNegDoubleOnString(m_route_replay_delay, value);
     else if(param == "live_append")
       handled = setBooleanOnString(m_live_append, value);
 
@@ -480,6 +510,8 @@ bool RouteBuffer::processVehicleCommand(const string& command)
 
   if(action == "clear") {
     m_vehicle_deploy_pending = false;
+    m_vehicle_route_replay_pending = false;
+    m_vehicle_pending_route_update.clear();
     Notify(m_route_clear_var, "true");
     postState("CLEAR_ACCEPTED");
     reportEvent("Accepted mediated CLEAR");
@@ -561,6 +593,8 @@ bool RouteBuffer::postRouteSnapshot(const string& points)
   }
   Notify(m_route_clear_var, "false");
   Notify(m_route_update_var, update);
+  m_vehicle_route_replay_pending = false;
+  m_vehicle_pending_route_update = update;
   m_vehicle_deploy_pending = true;
   m_vehicle_deploy_pending_since = m_curr_time;
   postState("STAGED");
@@ -674,9 +708,12 @@ bool RouteBuffer::buildReport()
   m_msgs << "Contacts cached:  " << m_contact_points.size() << endl;
   m_msgs << "Contact max age:  " << m_contact_max_age << endl;
   m_msgs << "Deploy delay:     " << m_deploy_delay << endl;
+  m_msgs << "Route replay delay:" << m_route_replay_delay << endl;
   m_msgs << "Manual override:  " << m_manual_override_var << endl;
   m_msgs << "Live append:      " << boolToString(m_live_append) << endl;
   m_msgs << "Route deployed:   " << boolToString(m_route_deployed) << endl;
+  m_msgs << "Replay pending:   "
+         << boolToString(m_vehicle_route_replay_pending) << endl;
   m_msgs << "Commands sent:    " << m_commands_sent << endl;
   m_msgs << "Commands received:" << m_commands_received << endl;
   m_msgs << "Commands rejected:" << m_commands_rejected << endl;

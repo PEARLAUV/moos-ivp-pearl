@@ -207,8 +207,10 @@ ProcessConfig = pPearlRouteBuffer
   route_ready_var     = DEPLOY
   route_name          = pearl_waypoints
   manual_override_var = PEARL_MANUAL_OVERRIDE
-  // Keep the helm in manual override while staging, then activate the route.
+  // Keep the helm in manual override while staging. Replay the complete
+  // route after releasing the helm because PARK clears behavior updates.
   deploy_delay        = 0.75
+  route_replay_delay  = 0.5
 }
 
 //----------------------------------------------------
@@ -358,6 +360,9 @@ ProcessConfig = pHelmIvP
 
   ok_skew   = any
   behaviors = targ_$(VNAME).bhv
+  // Hold DRIVE with zero-output all-stop until the staged route replay arrives.
+  // The PEARL pHelm build otherwise defaults this setting to true and re-parks.
+  park_on_allstop = false
   Domain    = course:0:359:360
   Domain    = speed:0:0.5:11
 }
