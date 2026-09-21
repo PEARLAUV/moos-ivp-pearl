@@ -81,6 +81,8 @@ void showExampleConfigAndExit()
   blk("  goto_request_var   = ROUTE_BUFFER_GOTO                        ");
   blk("  node_report_var    = NODE_REPORT                              ");
   blk("  contact_max_age    = 3                                        ");
+  blk("  deploy_delay       = 0     // Seconds; 0 uses route_ready_var   ");
+  blk("  manual_override_var =        // Optional staged-deploy guard    ");
   blk("  command_var        = ROUTE_BUFFER_COMMAND                     ");
   blk("  max_points         = 50                                       ");
   blk("}                                                               ");

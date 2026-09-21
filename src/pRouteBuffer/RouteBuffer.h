@@ -69,8 +69,11 @@ class RouteBuffer : public AppCastingMOOSApp
    std::string  m_route_clear_var;
    std::string  m_route_ready_var;
    std::string  m_route_name;
+   std::string  m_manual_override_var;
    unsigned int m_max_points;
    double       m_contact_max_age;
+   double       m_deploy_delay;
+   bool         m_live_append;
 
  private: // State variables
    std::vector<XYPoint> m_points;
@@ -87,6 +90,7 @@ class RouteBuffer : public AppCastingMOOSApp
    bool                 m_config_valid;
    bool                 m_sync_sent;
    bool                 m_route_ready;
+   bool                 m_route_deployed;
    bool                 m_vehicle_deploy_pending;
    double               m_vehicle_deploy_pending_since;
 };

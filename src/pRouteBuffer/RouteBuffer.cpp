@@ -5,7 +5,6 @@
 /*    DATE: July 25th, 2026                                  */
 /************************************************************/
 
-#include <iterator>
 #include "ACTable.h"
 #include "MBUtils.h"
 #include "NodeMessage.h"
@@ -35,8 +34,11 @@ RouteBuffer::RouteBuffer()
   m_route_clear_var    = "ROUTE_CLEAR";
   m_route_ready_var    = "ROUTE_READY";
   m_route_name         = "active";
+  m_manual_override_var = "";
   m_max_points         = 50;
   m_contact_max_age    = 3;
+  m_deploy_delay       = 0;
+  m_live_append        = false;
 
   m_state                 = "EMPTY";
   m_max_visualized_points = 0;
@@ -46,6 +48,7 @@ RouteBuffer::RouteBuffer()
   m_config_valid          = true;
   m_sync_sent             = false;
   m_route_ready            = false;
+  m_route_deployed         = false;
   m_vehicle_deploy_pending = false;
   m_vehicle_deploy_pending_since = 0;
 }
@@ -129,12 +132,22 @@ bool RouteBuffer::Iterate()
     }
 
     if((m_role == "vehicle") && m_vehicle_deploy_pending) {
-      if(m_route_ready) {
+      double staged_time = m_curr_time - m_vehicle_deploy_pending_since;
+      if((m_deploy_delay > 0) && (staged_time >= m_deploy_delay)) {
         Notify(m_route_deploy_var, "true");
+        if(m_manual_override_var != "")
+          Notify(m_manual_override_var, "false");
+        m_route_deployed = true;
         m_vehicle_deploy_pending = false;
         postState("DEPLOY_ACCEPTED");
       }
-      else if((m_curr_time - m_vehicle_deploy_pending_since) > 3) {
+      else if((m_deploy_delay == 0) && m_route_ready) {
+        Notify(m_route_deploy_var, "true");
+        m_route_deployed = true;
+        m_vehicle_deploy_pending = false;
+        postState("DEPLOY_ACCEPTED");
+      }
+      else if((m_deploy_delay == 0) && (staged_time > 3)) {
         m_vehicle_deploy_pending = false;
         m_commands_rejected++;
         postState("DEPLOY_REJECTED_NOT_READY");
@@ -196,10 +209,16 @@ bool RouteBuffer::OnStartUp()
       handled = setNonWhiteVarOnString(m_route_ready_var, value);
     else if(param == "route_name")
       handled = setNonWhiteVarOnString(m_route_name, value);
+    else if(param == "manual_override_var")
+      handled = setNonWhiteVarOnString(m_manual_override_var, value);
     else if(param == "max_points")
       handled = setUIntOnString(m_max_points, value) && (m_max_points > 0);
     else if(param == "contact_max_age")
       handled = setPosDoubleOnString(m_contact_max_age, value);
+    else if(param == "deploy_delay")
+      handled = setNonNegDoubleOnString(m_deploy_delay, value);
+    else if(param == "live_append")
+      handled = setBooleanOnString(m_live_append, value);
 
     if(!handled)
       reportUnhandledConfigWarning(orig);
@@ -265,7 +284,17 @@ bool RouteBuffer::handleMailPoint(const CMOOSMsg& msg)
   m_last_submitted_points = "";
   postPoint(point, m_points.size(), true);
   postSegList(true);
-  postState("EDITING");
+
+  if(m_live_append && m_route_deployed) {
+    string point_spec = doubleToStringX(point.x(), 6) + ",";
+    point_spec += doubleToStringX(point.y(), 6);
+    if(!sendMediatedCommand("action=append # point=" + point_spec))
+      return(false);
+    postState("APPEND_SUBMITTED");
+  }
+  else
+    postState("EDITING");
+
   return(true);
 }
 
@@ -356,6 +385,7 @@ bool RouteBuffer::processPendingAction()
     clearVisualization();
     m_points.clear();
     m_last_submitted_points = "";
+    m_route_deployed = false;
     postState("EMPTY");
     return(sendMediatedCommand("action=clear"));
   }
@@ -387,6 +417,7 @@ bool RouteBuffer::processPendingAction()
       return(false);
 
     m_last_submitted_points = points;
+    m_route_deployed = true;
     postState("GOTO_SUBMITTED");
     reportEvent("Submitted GOTO route for " + target);
     return(true);
@@ -413,6 +444,7 @@ bool RouteBuffer::processPendingAction()
     return(false);
 
   m_last_submitted_points = points;
+  m_route_deployed = true;
   postState("SUBMITTED");
   return(true);
 }
@@ -427,6 +459,7 @@ bool RouteBuffer::processVehicleCommand(const string& command)
   vector<string> fields = parseStringQ(command, '#');
   string action;
   string points;
+  string point;
   for(unsigned int i=0; i<fields.size(); i++) {
     string field = stripBlankEnds(fields[i]);
     string param = tolower(biteStringX(field, '='));
@@ -436,6 +469,8 @@ bool RouteBuffer::processVehicleCommand(const string& command)
       action = tolower(value);
     else if(param == "points")
       points = value;
+    else if(param == "point")
+      point = value;
   }
 
   if(action == "sync") {
@@ -453,6 +488,24 @@ bool RouteBuffer::processVehicleCommand(const string& command)
 
   if(action == "deploy")
     return(postRouteSnapshot(points));
+
+  if(action == "append") {
+    XYPoint new_point = string2Point(point);
+    if(!new_point.valid()) {
+      m_commands_rejected++;
+      postState("APPEND_REJECTED_POINT");
+      reportRunWarning("APPEND rejected: invalid route point");
+      return(false);
+    }
+
+    string point_spec = doubleToStringX(new_point.x(), 6) + ",";
+    point_spec += doubleToStringX(new_point.y(), 6);
+    string update = "name=" + m_route_name + " # newpt=" + point_spec;
+    Notify(m_route_update_var, update);
+    postState("APPEND_ACCEPTED");
+    reportEvent("Accepted live route append");
+    return(true);
+  }
 
   m_commands_rejected++;
   postState("COMMAND_REJECTED");
@@ -501,6 +554,11 @@ bool RouteBuffer::postRouteSnapshot(const string& points)
   update += " # points=" + seglist.get_spec_pts();
   update += " # duration=-1";
 
+  if(m_deploy_delay > 0) {
+    if(m_manual_override_var != "")
+      Notify(m_manual_override_var, "true");
+    Notify(m_route_deploy_var, "false");
+  }
   Notify(m_route_clear_var, "false");
   Notify(m_route_update_var, update);
   m_vehicle_deploy_pending = true;
@@ -615,6 +673,10 @@ bool RouteBuffer::buildReport()
          << "/" << m_max_points << endl;
   m_msgs << "Contacts cached:  " << m_contact_points.size() << endl;
   m_msgs << "Contact max age:  " << m_contact_max_age << endl;
+  m_msgs << "Deploy delay:     " << m_deploy_delay << endl;
+  m_msgs << "Manual override:  " << m_manual_override_var << endl;
+  m_msgs << "Live append:      " << boolToString(m_live_append) << endl;
+  m_msgs << "Route deployed:   " << boolToString(m_route_deployed) << endl;
   m_msgs << "Commands sent:    " << m_commands_sent << endl;
   m_msgs << "Commands received:" << m_commands_received << endl;
   m_msgs << "Commands rejected:" << m_commands_rejected << endl;
