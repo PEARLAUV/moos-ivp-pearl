@@ -26,7 +26,8 @@ ProcessConfig = ANTLER
   Run = uFldShoreBroker @ NewConsole = false
   Run = uFldNodeComms   @ NewConsole = false
 #ifdef LAUNCH_GUI yes
-  Run = pMarineViewer   @ NewConsole = false
+  Run = moos-vnc-session @ NewConsole=false ~ pMarineViewer
+  // Run = pMarineViewer   @ NewConsole = false
 #endif
 }
 

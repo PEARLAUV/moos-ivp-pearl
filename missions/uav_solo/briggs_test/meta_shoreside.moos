@@ -28,7 +28,7 @@ ProcessConfig = ANTLER
   Run = pMediator       @ NewConsole = false
   Run = pRouteBuffer    @ NewConsole = false
 #ifdef LAUNCH_GUI yes
-  Run = pMarineViewer   @ NewConsole = false
+  Run = moos-vnc-session   @ NewConsole = false ~pMarineViewer
 #endif
 }
 
