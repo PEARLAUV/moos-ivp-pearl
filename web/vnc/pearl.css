@@ -1,0 +1,59 @@
+/* PEARL branding overrides for the vendored noVNC UI. */
+:root {
+    --pearl-primary: #164e73;
+    --pearl-primary-dark: #082f49;
+    --pearl-accent: #38bdf8;
+    --pearl-highlight: #bae6fd;
+
+    --novnc-blue: var(--pearl-primary);
+    --novnc-lightblue: var(--pearl-accent);
+    --novnc-darkblue: var(--pearl-primary-dark);
+    --novnc-green: var(--pearl-accent);
+    --novnc-yellow: var(--pearl-highlight);
+}
+
+.noVNC_logo,
+.noVNC_logo span {
+    color: var(--pearl-highlight);
+    font-family: system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1;
+    text-shadow: none;
+}
+
+.pearl_hidden_setting,
+#noVNC_disconnect_button {
+    display: none;
+}
+
+/* Connection-state messages are redundant with the waiting screen. Suppress
+ * routine connected/disconnected notices and expected retry failures while
+ * leaving unrelated warning and error banners available. */
+#noVNC_status.noVNC_status_normal,
+:root.noVNC_reconnecting #noVNC_status.noVNC_status_error {
+    display: none;
+}
+
+/* Treat every non-connected state as one continuous, opaque waiting screen.
+ * The opaque background prevents the VNC canvas being created and destroyed
+ * underneath it from flashing through between retries. */
+:root:not(.noVNC_connected) #noVNC_transition {
+    visibility: visible;
+    opacity: 1;
+    transition: none;
+    background: var(--pearl-primary-dark);
+}
+
+:root:not(.noVNC_connected) #noVNC_transition_text {
+    font-size: 0;
+}
+
+:root:not(.noVNC_connected) #noVNC_transition_text::after {
+    content: "Waiting for mission control...";
+    font-size: 1.5rem;
+}
+
+:root:not(.noVNC_connected) #noVNC_cancel_reconnect_button {
+    display: none;
+}

@@ -1,0 +1,7 @@
+{
+  "autoconnect": true,
+  "resize": "scale",
+  "reconnect": true,
+  "reconnect_delay": 1000,
+  "path": "websockify"
+}

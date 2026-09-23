@@ -1,0 +1,321 @@
+#!/usr/bin/env bash
+# Launch a MOOS GUI program in an isolated TigerVNC/Openbox/noVNC session.
+set -Eeuo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: moos-vnc-session [--prog PROGRAM] [--] ARG...
+
+Launch PROGRAM in an isolated browser-accessible desktop. PROGRAM defaults to
+pMarineViewer, preserving the traditional invocation:
+
+  moos-vnc-session MISSION_FILE [MOOS_APP_NAME]
+
+Examples:
+  moos-vnc-session targ_shoreside.moos pMarineViewer
+  moos-vnc-session --prog alogview mission.alog --quick
+  moos-vnc-session --prog alogview -- one.alog two.alog
+EOF
+}
+
+program=pMarineViewer
+while (( $# > 0 )); do
+  case $1 in
+    --prog)
+      if (( $# < 2 )); then
+        echo "--prog requires an executable name" >&2
+        usage >&2
+        exit 2
+      fi
+      program=$2
+      shift 2
+      ;;
+    --prog=*)
+      program=${1#*=}
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if (( $# == 0 )); then
+  echo "At least one program argument is required" >&2
+  usage >&2
+  exit 2
+fi
+
+program_args=("$@")
+program_name=${program##*/}
+
+geometry=${MOOS_VNC_GEOMETRY:-1920x1080}
+depth=${MOOS_VNC_DEPTH:-24}
+display_min=${MOOS_VNC_DISPLAY_MIN:-10}
+display_max=${MOOS_VNC_DISPLAY_MAX:-99}
+web_bind=${MOOS_VNC_WEB_BIND:-127.0.0.1}
+use_tailscale_serve=${MOOS_VNC_USE_TAILSCALE_SERVE:-true}
+tailscale_https_port=${MOOS_VNC_TAILSCALE_HTTPS_PORT:-443}
+web_port=${MOOS_VNC_WEB_PORT:-6080}
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+novnc_dir=${MOOS_NOVNC_DIR:-$script_dir/../web/vnc}
+runtime_root=${XDG_RUNTIME_DIR:-/tmp/${USER}-runtime}/moos-vnc
+
+if [[ ! -f $novnc_dir/index.html ]]; then
+  echo "noVNC web client not found: $novnc_dir/index.html" >&2
+  exit 1
+fi
+
+# TigerVNC uses Xtigervnc/tigervncserver on some distributions (including
+# Debian-based hosts) and Xvnc/vncserver on others (including Gentoo).
+vnc_server_command=
+for command in Xtigervnc Xvnc; do
+  if command -v "$command" >/dev/null 2>&1; then
+    vnc_server_command=$command
+    break
+  fi
+done
+if [[ -z $vnc_server_command ]]; then
+  echo "Required executable not found: Xtigervnc or Xvnc" >&2
+  exit 1
+fi
+
+vnc_control_command=
+for command in tigervncserver vncserver; do
+  if command -v "$command" >/dev/null 2>&1; then
+    vnc_control_command=$command
+    break
+  fi
+done
+if [[ -z $vnc_control_command ]]; then
+  echo "Required executable not found: tigervncserver or vncserver" >&2
+  exit 1
+fi
+
+for command in openbox websockify "$program" xdpyinfo flock; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    echo "Required executable not found: $command" >&2
+    exit 1
+  fi
+done
+
+if [[ $use_tailscale_serve == true ]]; then
+  for command in tailscale python3; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+      echo "Required executable not found: $command" >&2
+      exit 1
+    fi
+  done
+  # Tailscale Serve is the only externally reachable listener in this mode.
+  web_bind=127.0.0.1
+fi
+
+# Preserve the early, specific error for the traditional pMarineViewer mode.
+if [[ $program_name == pMarineViewer && ! -f ${program_args[0]} ]]; then
+  echo "Mission file not found: ${program_args[0]}" >&2
+  exit 1
+fi
+
+mkdir -p "$runtime_root"
+chmod 700 "$runtime_root"
+
+# The open file descriptor holds the allocation lock for this process's life.
+display=
+for ((candidate = display_min; candidate <= display_max; candidate++)); do
+  exec 9>"$runtime_root/display-${candidate}.lock"
+  if ! flock -n 9; then
+    continue
+  fi
+
+  if [[ -e /tmp/.X11-unix/X$candidate || -e /tmp/.X${candidate}-lock ]]; then
+    flock -u 9
+    continue
+  fi
+
+  display=$candidate
+  break
+done
+
+if [[ -z $display ]]; then
+  echo "No free VNC display in range $display_min-$display_max" >&2
+  exit 1
+fi
+
+vnc_display=":$display"
+vnc_port=$((5900 + display))
+session_dir="$runtime_root/session-${display}"
+mkdir -p "$session_dir"
+
+vnc_pid=
+openbox_pid=
+websockify_pid=
+viewer_pid=
+tailscale_serve_active=false
+
+cleanup() {
+  trap - EXIT INT TERM HUP
+
+  if [[ $tailscale_serve_active == true ]]; then
+    tailscale serve --https="$tailscale_https_port" off >/dev/null 2>&1 || true
+  fi
+
+  for pid in "$viewer_pid" "$websockify_pid" "$openbox_pid"; do
+    if [[ -n $pid ]]; then
+      kill "$pid" 2>/dev/null || true
+    fi
+  done
+
+  if [[ -n $vnc_pid ]]; then
+    kill "$vnc_pid" 2>/dev/null || true
+  fi
+  "$vnc_control_command" -kill "$vnc_display" >/dev/null 2>&1 || true
+  rm -rf "$session_dir"
+}
+trap cleanup EXIT INT TERM HUP
+
+# Start Xtigervnc directly. The tigervncserver wrapper tears down the display
+# whenever its xstartup process exits, but this script owns the lifecycle.
+"$vnc_server_command" "$vnc_display" \
+  -localhost yes \
+  -SecurityTypes None \
+  -rfbport "$vnc_port" \
+  -geometry "$geometry" \
+  -depth "$depth" \
+  >"$session_dir/tigervnc.log" 2>&1 &
+vnc_pid=$!
+
+for _ in {1..100}; do
+  if DISPLAY=$vnc_display xdpyinfo >/dev/null 2>&1; then
+    break
+  fi
+  if ! kill -0 "$vnc_pid" 2>/dev/null; then
+    echo "TigerVNC failed to start:" >&2
+    cat "$session_dir/tigervnc.log" >&2
+    exit 1
+  fi
+  sleep 0.1
+done
+
+if ! DISPLAY=$vnc_display xdpyinfo >/dev/null 2>&1; then
+  echo "Timed out waiting for X display $vnc_display" >&2
+  exit 1
+fi
+
+# Use a session-local configuration so the viewer layout does not depend on
+# the host user's Openbox configuration or autostart files.
+openbox_config="$session_dir/openbox-rc.xml"
+cat >"$openbox_config" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <applications>
+EOF
+
+# Match only each program's main window. Dialogs and popups retain their
+# decorations. Unknown programs receive the normal Openbox behavior.
+case $program_name in
+  pMarineViewer)
+    window_title='pMarineViewer*'
+    # Keep the main viewer behind its dialogs and auxiliary windows.
+    window_layer=below
+    ;;
+  alogview)
+    window_title='alogview*'
+    # Keep the main replay window behind its auxiliary viewers and dialogs.
+    window_layer=below
+    ;;
+  *)
+    window_title=
+    window_layer=normal
+    ;;
+esac
+
+if [[ -n $window_title ]]; then
+  cat >>"$openbox_config" <<EOF
+    <application class="FLTK" title="$window_title" type="normal">
+      <decor>no</decor>
+      <maximized>true</maximized>
+      <layer>$window_layer</layer>
+    </application>
+EOF
+fi
+
+cat >>"$openbox_config" <<'EOF'
+  </applications>
+</openbox_config>
+EOF
+
+DISPLAY=$vnc_display openbox --config-file "$openbox_config" \
+  >"$session_dir/openbox.log" 2>&1 &
+openbox_pid=$!
+
+websockify \
+  --web "$novnc_dir" \
+  "$web_bind:$web_port" \
+  "127.0.0.1:$vnc_port" \
+  >"$session_dir/websockify.log" 2>&1 &
+websockify_pid=$!
+sleep 0.2
+if ! kill -0 "$websockify_pid" 2>/dev/null; then
+  echo "websockify failed to start:" >&2
+  cat "$session_dir/websockify.log" >&2
+  exit 1
+fi
+
+url_host=$web_bind
+url_scheme=http
+url_port=":$web_port"
+websocket_path=websockify
+
+if [[ $use_tailscale_serve == true ]]; then
+  if ! tailscale serve --bg --yes --https="$tailscale_https_port" \
+    "http://127.0.0.1:$web_port"; then
+    echo "Unable to configure Tailscale Serve. Configure this user as the Tailscale operator." >&2
+    exit 1
+  fi
+  tailscale_serve_active=true
+
+  url_host=$(tailscale status --json | python3 -c \
+    'import json, sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')
+  url_scheme=https
+  if [[ $tailscale_https_port == 443 ]]; then
+    url_port=
+  else
+    url_port=":$tailscale_https_port"
+  fi
+elif [[ $web_bind == "0.0.0.0" || $web_bind == "127.0.0.1" ]]; then
+  url_host=${MOOS_VNC_URL_HOST:-$web_bind}
+fi
+
+{
+  printf 'DISPLAY=%q\n' "$vnc_display"
+  printf 'VNC_PORT=%q\n' "$vnc_port"
+  printf 'WEB_BIND=%q\n' "$web_bind"
+  printf 'WEB_PORT=%q\n' "$web_port"
+  printf 'PROGRAM=%q\n' "$program"
+  printf 'PROGRAM_ARGC=%q\n' "${#program_args[@]}"
+  printf 'PROGRAM_ARGS=('
+  printf ' %q' "${program_args[@]}"
+  printf ' )\n'
+  if [[ $program_name == pMarineViewer ]]; then
+    printf 'MISSION_FILE=%q\n' "${program_args[0]}"
+    printf 'MOOS_APP_NAME=%q\n' "${program_args[1]:-pMarineViewer}"
+  fi
+  printf 'TAILSCALE_SERVE=%q\n' "$tailscale_serve_active"
+} >"$session_dir/session.env"
+
+printf 'MOOS GUI session: program=%s display=%s noVNC=%s://%s%s/?autoconnect=true&resize=scale&reconnect=true&reconnect_delay=1000&path=%s\n' \
+  "$program_name" "$vnc_display" "$url_scheme" "$url_host" "$url_port" "$websocket_path"
+
+DISPLAY=$vnc_display \
+LIBGL_ALWAYS_SOFTWARE=${LIBGL_ALWAYS_SOFTWARE:-1} \
+  "$program" "${program_args[@]}" &
+viewer_pid=$!
+wait "$viewer_pid"
