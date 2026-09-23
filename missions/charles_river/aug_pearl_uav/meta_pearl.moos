@@ -41,6 +41,7 @@ ProcessConfig = ANTLER
   Run = uTimerScript     @ NewConsole = false ~ uSimTakeoffInputs
   Run = uSimMarineV22      @ NewConsole = false
   Run = pMarinePIDV22      @ NewConsole = false
+  Run = pThrustMixer       @ NewConsole = false
 #endif
 }
 
@@ -124,6 +125,7 @@ ProcessConfig = uLoadWatch
   thresh = app=uSimTakeoffInputs, gapthresh=3
   thresh = app=uSimMarineV22,  gapthresh=3
   thresh = app=pMarinePIDV22,  gapthresh=3
+  thresh = app=pThrustMixer,   gapthresh=3
 #endif
   thresh = app=pHelmIvP,       gapthresh=3
   thresh = app=pNodeReporter,  gapthresh=4
@@ -440,6 +442,10 @@ ProcessConfig = uSimMarineV22
   turn_rate        = 100
   turn_spd_loss    = 0.6
 
+  // PEARL is a differential-drive vehicle. Opposed motor commands allow
+  // rotation in place instead of the normal rudder model's wide turns.
+  thrust_mode_diff = true
+
   post_des_thrust = DESIRED_THRUSTX
   post_des_rudder = DESIRED_RUDDERX
 }
@@ -468,5 +474,24 @@ ProcessConfig = pMarinePIDV22
   maxrudder   = 100
   maxthrust   = 100
   speed_factor = 20
+}
+
+//----------------------------------------------------
+ProcessConfig = pThrustMixer
+{
+  AppTick   = 10
+  CommsTick = 10
+  term_report_interval = 2
+
+  input_thrust_var = DESIRED_THRUST
+  input_rudder_var = DESIRED_RUDDER
+  output_left_var  = DESIRED_THRUST_L
+  output_right_var = DESIRED_THRUST_R
+  state_var        = THRUST_MIXER_STATE
+
+  // Match the limits used by iPEARL's real thrust/rudder mixer.
+  max_thrust    = 100
+  max_rudder    = 50
+  stale_timeout = 1
 }
 #endif

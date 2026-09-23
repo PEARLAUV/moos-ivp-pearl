@@ -462,7 +462,12 @@ REAL mode retains the `may_test_run` setup:
 - `iSherlockTelemetry`
 - `pEchoVar` sensor-to-NAV translations
 
-SIM mode uses `pHelmIvP`, `pMarinePIDV22`, and `uSimMarineV22`.
+SIM mode uses `pHelmIvP`, `pMarinePIDV22`, `pThrustMixer`, and
+`uSimMarineV22`. The simulator runs in differential-thrust mode. The mixer
+converts the PID's conventional thrust/rudder output into left/right motor
+commands using the same 100% thrust and 50% rudder limits as `iPEARL`. Opposed
+motor commands therefore rotate PEARL in place instead of forcing it through a
+rudder-model turn.
 
 ## Cleanup
 
