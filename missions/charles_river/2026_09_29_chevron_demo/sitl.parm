@@ -1,0 +1,19 @@
+# ArduCopter SITL parameters for the default Charles River rendezvous.
+PLND_ENABLED      1
+PLND_TYPE         4
+SIM_PLD_ENABLE    1
+SIM_PLD_LAT       42.3582663
+SIM_PLD_LON      -71.0874897
+SIM_PLD_HEIGHT    0
+SIM_PLD_ALT_LMT  15
+SIM_PLD_DIST_LMT 12
+
+# Center yaw without overriding the default low throttle.
+FS_THR_ENABLE     0
+FLTMODE_CH        0
+GUID_OPTIONS      4
+
+# Direct TCP is serial link 0; request navigation/state streams explicitly.
+SR0_EXT_STAT       2
+SR0_EXTRA1         5
+SR0_POSITION       5

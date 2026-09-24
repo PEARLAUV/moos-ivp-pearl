@@ -1,0 +1,8 @@
+//-------------------------------------------------
+// FILE: meta_uav.bhv
+// NAME: Charles Benjamin
+//-------------------------------------------------
+// Charles River-specific UAV behaviors may be appended here without changing
+// the standalone source mission.
+
+#include ../../uav_solo/briggs_test/meta_vehicle.bhv

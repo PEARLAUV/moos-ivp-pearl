@@ -1,0 +1,112 @@
+//-------------------------------------------------
+// FILE: meta_pearl.bhv
+// NAME: Charles Benjamin
+//-------------------------------------------------
+
+initialize DEPLOY               = false
+initialize RETURN               = false
+initialize STATION_KEEP         = false
+initialize MOOS_MANUAL_OVERRIDE = true
+initialize PEARL_RENDEZVOUS_ACTIVE  = false
+initialize PEARL_RENDEZVOUS_ARRIVED = false
+
+//----------------------------------------------------
+Behavior = BHV_StationKeep
+{
+  name      = pearl_station_keep
+  pwt       = 100
+  condition = DEPLOY=true
+  condition = RETURN=false
+  condition = STATION_KEEP=true
+  condition = MOOS_MANUAL_OVERRIDE=false
+  condition = PEARL_RENDEZVOUS_ACTIVE=false
+
+  center_activate    = true
+  inner_radius       = 5
+  outer_radius       = 10
+  hibernation_radius = 10
+  outer_speed        = $(SPEED)
+  transit_speed      = $(SPEED)
+  swing_time         = 3
+
+  visual_hints = vertex_size=0, edge_color=blue
+}
+
+//----------------------------------------------------
+Behavior = BHV_Waypoint
+{
+  name      = pearl_waypoints
+  pwt       = 100
+  condition = DEPLOY=true
+  condition = RETURN=false
+  condition = STATION_KEEP=false
+  condition = MOOS_MANUAL_OVERRIDE=false
+  condition = PEARL_RENDEZVOUS_ACTIVE=false
+  endflag   = RETURN=true
+  updates   = PEARL_WPT_UPDATE
+
+  lead           = 2
+  lead_damper    = 1
+  speed          = $(SPEED)
+  capture_line   = true
+  capture_radius = 3
+  slip_radius    = 10
+  points         = 22,-9:32,-35:14,-44
+  repeat         = 2
+  order          = normal
+
+  visual_hints = nextpt_color=yellow
+  visual_hints = nextpt_vertex_size=8
+  visual_hints = nextpt_lcolor=gray70
+  visual_hints = vertex_color=dodger_blue, edge_color=white
+  visual_hints = vertex_size=5, edge_size=1
+}
+
+//----------------------------------------------------
+Behavior = BHV_Waypoint
+{
+  name      = pearl_return
+  pwt       = 100
+  condition = DEPLOY=true
+  condition = RETURN=true
+  condition = STATION_KEEP=false
+  condition = MOOS_MANUAL_OVERRIDE=false
+  condition = PEARL_RENDEZVOUS_ACTIVE=false
+  perpetual = true
+  endflag   = RETURN=false
+  endflag   = STATION_KEEP=true
+
+  speed          = $(SPEED)
+  capture_radius = 2
+  slip_radius    = 8
+  points         = 10,9
+}
+
+//----------------------------------------------------
+// A dedicated waypoint instance prevents a rendezvous update from changing
+// PEARL's fixed route. Completion hands PEARL to its existing StationKeep.
+Behavior = BHV_Waypoint
+{
+  name      = pearl_rendezvous
+  pwt       = 110
+  condition = DEPLOY=true
+  condition = MOOS_MANUAL_OVERRIDE=false
+  condition = PEARL_RENDEZVOUS_ACTIVE=true
+  updates   = PEARL_RENDEZVOUS_UPDATE
+
+  endflag = PEARL_RENDEZVOUS_ACTIVE=false
+  endflag = PEARL_RENDEZVOUS_ARRIVED=true
+  endflag = RETURN=false
+  endflag = STATION_KEEP=true
+
+  speed          = $(SPEED)
+  capture_radius = 3
+  slip_radius    = 10
+  points         = empty
+  repeat         = 0
+  order          = normal
+
+  visual_hints = nextpt_color=magenta
+  visual_hints = nextpt_vertex_size=8
+  visual_hints = vertex_color=magenta, edge_color=white
+}

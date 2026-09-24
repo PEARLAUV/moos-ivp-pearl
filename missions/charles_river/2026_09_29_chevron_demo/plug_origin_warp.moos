@@ -1,0 +1,8 @@
+//-------------------------------------------------
+// FILE: plug_origin_warp.moos
+// NAME: Charles Benjamin
+//-------------------------------------------------
+
+MOOSTimeWarp = $(WARP)
+LatOrigin    = 42.358436
+LongOrigin   = -71.087448

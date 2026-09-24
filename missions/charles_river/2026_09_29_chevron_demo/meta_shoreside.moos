@@ -1,0 +1,329 @@
+//-------------------------------------------------
+// FILE: meta_shoreside.moos
+// NAME: Charles Benjamin
+//-------------------------------------------------
+
+ServerHost = localhost
+ServerPort = $(MOOS_PORT)
+Community  = shoreside
+
+#include plug_origin_warp.moos
+
+//----------------------------------------------------
+ProcessConfig = ANTLER
+{
+  MSBetweenLaunches = 100
+
+  Run = MOOSDB          @ NewConsole = false
+  Run = pRealm          @ NewConsole = false
+  Run = uProcessWatch   @ NewConsole = false
+  Run = uLoadWatch      @ NewConsole = false
+  Run = pShare          @ NewConsole = false
+  Run = pHostInfo       @ NewConsole = false
+  Run = pLogger         @ NewConsole = false
+  Run = uFldShoreBroker @ NewConsole = false
+  Run = uFldNodeComms   @ NewConsole = false
+  Run = pMediator       @ NewConsole = false
+  Run = pRouteBuffer    @ NewConsole = false
+  Run = pEchoVar        @ NewConsole = false ~ uFieldRelay
+#ifdef LAUNCH_GUI yes
+  Run = moos-vnc-session  @ NewConsole=false ~ pMarineViewer
+  Run = moos-ttyd-session @ NewConsole=false ~ mission-terminal
+#endif
+  Run = pWebSocketServer @ NewConsole = false
+}
+
+Run = pWebSocketServer @ NewConsole = false
+
+ProcessConfig = pWebSocketServer
+{
+  AppTick          = 4
+  CommsTick        = 4
+  WSPort           = 9090
+  AllowSubmissions = false
+}
+
+//----------------------------------------------------
+ProcessConfig = pShare
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  input = route = localhost:$(PSHARE_PORT)
+#ifdef UAV_DIRECT_ENABLE yes
+  // Keep a deterministic shoreside-to-UAV path on the UAV's Tailnet address.
+  // This is ordinary pShare unicast, not a PEARL relay.
+  output = src_name=MEDIATED_MESSAGE_LOCAL, dest_name=MEDIATED_MESSAGE, route=$(UAV_IP):$(UAV_PSHARE)
+  output = src_name=ACK_MESSAGE_LOCAL, dest_name=ACK_MESSAGE, route=$(UAV_IP):$(UAV_PSHARE)
+#endif
+}
+
+//----------------------------------------------------
+ProcessConfig = pHostInfo
+{
+  AppTick   = 1
+  CommsTick = 1
+
+  default_hostip_force = $(IP_ADDR=localhost)
+}
+
+//----------------------------------------------------
+ProcessConfig = pRealm
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  relcast_interval = 0.8
+  summary_interval = 2.0
+}
+
+//----------------------------------------------------
+ProcessConfig = uProcessWatch
+{
+  AppTick   = 1
+  CommsTick = 1
+
+  allow_retractions = true
+  watch_all         = true
+  nowatch           = uMAC*
+  nowatch           = uXMS*
+  nowatch           = uPokeDB*
+  nowatch           = uQueryDB*
+  summary_wait      = 20
+}
+
+//----------------------------------------------------
+ProcessConfig = uLoadWatch
+{
+  AppTick   = 1
+  CommsTick = 1
+
+#ifdef LAUNCH_GUI yes
+  thresh = app=pMarineViewer, gapthresh=5
+#endif
+  thresh = app=uFldNodeComms, gapthresh=4
+  thresh = app=pHostInfo,     gapthresh=5
+  thresh = app=any,           gapthresh=2.0
+
+  breach_trigger = 5
+}
+
+//----------------------------------------------------
+ProcessConfig = pLogger
+{
+  AppTick       = 5
+  CommsTick     = 5
+  File          = LOG_SHORESIDE
+  PATH          = ./
+  AsyncLog      = true
+  FileTimeStamp = true
+
+  WildCardLogging     = true
+  WildCardOmitPattern = *_STATUS
+  WildCardOmitPattern = DB_VARSUMMARY
+  WildCardOmitPattern = DB_RWSUMMARY
+}
+
+//----------------------------------------------------
+// pMediator carries both the existing UAV operator commands and the new
+// vehicle-to-vehicle rendezvous protocol.
+ProcessConfig = pMediator
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  vname         = shoreside
+  mates         = uav,pearl
+  resend_thresh = 1
+  max_tries     = 10
+}
+
+//----------------------------------------------------
+ProcessConfig = pRouteBuffer
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  role             = shoreside
+  source_node      = shoreside
+  destination_node = uav
+  max_points       = 50
+  contact_max_age  = 3
+}
+
+//----------------------------------------------------
+// Normalize ACK destination names for addressed qbridge routing.
+ProcessConfig = uFieldRelay
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  Echo = ACK_MESSAGE_uav   -> ACK_MESSAGE_UAV
+  Echo = ACK_MESSAGE_pearl -> ACK_MESSAGE_PEARL
+}
+
+//----------------------------------------------------
+ProcessConfig = uFldShoreBroker
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  auto_bridge_appcast  = true
+  auto_bridge_realmcast = false
+
+  bridge = src=MEDIATED_MESSAGE_LOCAL, alias=MEDIATED_MESSAGE
+  bridge = src=ACK_MESSAGE_LOCAL, alias=ACK_MESSAGE
+
+  // uFldNodeComms produces addressed *_UAV and *_PEARL variables for
+  // vehicle-to-vehicle mediated traffic and acknowledgements.
+  qbridge = MEDIATED_MESSAGE
+  qbridge = ACK_MESSAGE
+
+#ifdef XMODE SIM
+#else
+  qbridge = HEARTBEAT
+#endif
+  qbridge = NODE_REPORT
+
+  // Namespaced PEARL controls cannot affect the UAV even though they are
+  // distributed through the ordinary field broker.
+  qbridge = PEARL_DEPLOY
+  qbridge = PEARL_RETURN
+  qbridge = PEARL_STATION_KEEP
+  qbridge = PEARL_MANUAL_OVERRIDE
+}
+
+//----------------------------------------------------
+ProcessConfig = uFldNodeComms
+{
+  AppTick   = 2
+  CommsTick = 2
+
+  comms_range      = 1000
+  critical_range   = 25
+  min_msg_interval = 1
+  max_msg_length   = 1000
+  // Rendezvous partners are intentionally in different platform groups.
+  groups           = false
+
+  view_node_rpt_pulses = false
+}
+
+//----------------------------------------------------
+ProcessConfig = pMarineViewer
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  beat_flag = HEARTBEAT_ALL=true
+
+  // Same Charles River map and framing used by may_test_run.
+  tiff_file           = MIT_SP.tif
+  set_pan_x           = 0
+  set_pan_y           = -400
+  zoom                = 1
+  vehicle_shape_scale = 1.5
+  vehicles_name_mode  = names+mode
+  trails_length       = 10000
+
+  appcast_viewable     = true
+  appcast_height       = 70
+  appcast_width        = 35
+  appcast_color_scheme = indigo
+  appcast_font_size    = large
+  procs_font_size      = large
+  nodes_font_size      = large
+
+  comms_pulse_viewable_all = false
+  stale_report_thresh      = 10
+  stale_remove_thresh      = 30
+
+  scope = NAV_ALTITUDE
+  scope = UAV_IS_ARMED
+  scope = UAV_LANDED_STATE
+  scope = UAV_COMMAND_RESULT
+  scope = UAV_BATTERY_SOC
+  scope = UAV_BATTERY_VOLTAGE
+  scope = UAV_BATTERY_DATA_VALID
+  scope = UAV_BATTERY_DATA_AGE
+  scope = UAV_TAKEOFF_GATE_READY
+  scope = UAV_TAKEOFF_GATE_REASON
+  scope = UAV_TAKEOFF_RESULT
+#ifdef XMODE SIM
+  scope = UAV_SIM_ATTACHED
+  scope = UAV_SIM_ATTACHMENT_STATE
+#endif
+  scope = AUTOPILOT_MODE
+  scope = CONTROL_AUTHORITY
+  scope = IVPHELM_STATE
+  scope = VEHICLE_PROC_WATCH_ALL_OK
+  scope = PEARL_PROC_WATCH_ALL_OK
+  scope = ROUTE_BUFFER_STATE
+  scope = ROUTE_BUFFER_COUNT
+  scope = ROUTE_BUFFER_VEHICLE_STATE
+  scope = PEARL_DEPLOY
+  scope = PEARL_RETURN
+  scope = PEARL_STATION_KEEP
+  scope = PEARL_MANUAL_OVERRIDE
+  scope = UAV_RENDEZVOUS_STATE
+  scope = PEARL_RENDEZVOUS_STATE
+  scope = UAV_RENDEZVOUS_PHASE
+  scope = PEARL_RENDEZVOUS_PHASE
+  scope = UAV_RENDEZVOUS_SESSION
+  scope = PEARL_RENDEZVOUS_SESSION
+  scope = UAV_LANDING_GATE_READY
+  scope = UAV_LANDING_GATE_REASON
+  scope = UAV_LANDING_TARGET_LOCK_AGE
+  scope = UAV_LANDING_APPROACH_POINT
+  scope = UAV_PEER_DISTANCE
+  scope = UAV_PREC_LAND_RESULT
+  scope = PEARL_LANDING_GATE_READY
+  scope = PEARL_LANDING_GATE_REASON
+  scope = PEARL_UAV_SEPARATION
+  scope = UAV_LANDING_TARGET_AVAILABLE
+  scope = UAV_LANDING_TARGET_AGE
+  scope = UAV_LANDING_TARGET_TARGET_NUM
+  scope = UAV_LANDING_TARGET_POSITION_VALID
+  scope = UAV_LANDING_TARGET_ANGLE_X
+  scope = UAV_LANDING_TARGET_ANGLE_Y
+  scope = UAV_LANDING_TARGET_X
+  scope = UAV_LANDING_TARGET_Y
+  scope = RENDEZVOUS_POINT
+  scope = PEARL_BATTERY_SOC
+  scope = PEARL_BATTERY_CHARGING
+  scope = PEARL_BATTERY_DATA_VALID
+  scope = PEARL_BATTERY_DATA_AGE
+  scope = PEARL_WIND_SPEED
+  scope = PEARL_WIND_DATA_VALID
+  scope = PEARL_AIRMAR_DATA_AGE
+  scope = ALFA_LINK_UP
+  scope = ALFA_STATION_COUNT
+  scope = ALFA_SIGNAL_DBM
+  scope = ALFA_SIGNAL_AVG_DBM
+  scope = ALFA_TX_BITRATE_MBPS
+  scope = ALFA_RX_BITRATE_MBPS
+  scope = ALFA_TX_RETRIES_TOTAL
+  scope = ALFA_TX_FAILED_TOTAL
+  scope = ALFA_INACTIVE_MS
+  scope = ALFA_DATA_VALID
+  scope = ALFA_DATA_AGE
+  scope = ALFA_SIGNAL_DATA_VALID
+
+  // Precision landing is committed only by pRendezvous after clearance and
+  // target-lock gates pass; there is intentionally no direct landing button.
+  left_context[route] = ROUTE_POINT = "x=$[XPOS],y=$[YPOS]"
+
+  button_1 = UAV ARM # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_ARM_REQUEST,string_val=true"
+  button_2 = UAV DISARM # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_DISARM_REQUEST,string_val=true" # color=red
+  button_3 = UAV TAKEOFF # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_TAKEOFF_REQUEST,string_val=true"
+  button_4 = UAV DEPLOY # ROUTE_BUFFER_DEPLOY=true
+  button_5 = UAV CLEAR # ROUTE_BUFFER_CLEAR=true
+  // PEARL keeps the May test-run waypoint/station/return behavior.
+  // PEARL RETURN is distinct from coordinated target acquisition.
+  button_7 = PEARL DEPLOY # PEARL_DEPLOY_PEARL=true # PEARL_RETURN_PEARL=false # PEARL_STATION_KEEP_PEARL=false # PEARL_MANUAL_OVERRIDE_PEARL=false
+  button_8 = PEARL RETURN # PEARL_DEPLOY_PEARL=true # PEARL_RETURN_PEARL=true # PEARL_STATION_KEEP_PEARL=false # PEARL_MANUAL_OVERRIDE_PEARL=false
+  button_9 = PEARL STATION # PEARL_DEPLOY_PEARL=true # PEARL_RETURN_PEARL=false # PEARL_STATION_KEEP_PEARL=true # PEARL_MANUAL_OVERRIDE_PEARL=false
+  button_10 = PEARL ALLSTOP # PEARL_DEPLOY_PEARL=false # PEARL_RETURN_PEARL=false # PEARL_STATION_KEEP_PEARL=false # PEARL_MANUAL_OVERRIDE_PEARL=true # color=red
+  button_11 = RENDEZVOUS # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=RENDEZVOUS_START,string_val=true"
+  button_12 = RNDV ABORT # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=RENDEZVOUS_ABORT,string_val=true" # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=pearl,var_name=RENDEZVOUS_ABORT,string_val=true" # color=red
+}
