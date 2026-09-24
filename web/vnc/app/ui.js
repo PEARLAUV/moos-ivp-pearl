@@ -67,7 +67,7 @@ const UI = {
 
         // Wait for the page to load
         if (document.readyState !== "interactive" && document.readyState !== "complete") {
-            await new Promise((resolve, reject) => {
+            await new Promise((resolve) => {
                 document.addEventListener('DOMContentLoaded', resolve);
             });
         }
@@ -106,10 +106,10 @@ const UI = {
             setTimeout(() => window.scrollTo(0, 1), 100);
         }
 
-        // PEARL keeps the control bar on the right by default.
+        // PEARL keeps the control bar on the left by default.
         document.getElementById('noVNC_control_bar_anchor')
-            .classList.add('noVNC_right');
-        WebUtil.writeSetting('controlbar_pos', 'right');
+            .classList.remove('noVNC_right');
+        WebUtil.writeSetting('controlbar_pos', 'left');
 
         UI.initFullscreen();
 
@@ -320,8 +320,6 @@ const UI = {
     },
 
     addConnectionControlHandlers() {
-        document.getElementById("noVNC_disconnect_button")
-            .addEventListener('click', UI.disconnect);
         document.getElementById("noVNC_connect_button")
             .addEventListener('click', UI.connect);
         document.getElementById("noVNC_cancel_reconnect_button")
@@ -525,7 +523,7 @@ const UI = {
         document.getElementById('noVNC_status').classList.remove("noVNC_open");
     },
 
-    activateControlbar(event) {
+    activateControlbar(_event) {
         clearTimeout(UI.idleControlbarTimeout);
         // We manipulate the anchor instead of the actual control
         // bar in order to avoid creating new a stacking group
@@ -734,7 +732,7 @@ const UI = {
         UI.activateControlbar();
     },
 
-    toggleExpander(e) {
+    toggleExpander(_e) {
         if (this.classList.contains("noVNC_open")) {
             this.classList.remove("noVNC_open");
         } else {
@@ -1023,7 +1021,7 @@ const UI = {
             .classList.remove("noVNC_open");
     },
 
-    connect(event, password) {
+    connect(_event, password) {
 
         // Ignore when rfb already exists
         if (typeof UI.rfb !== 'undefined') {
@@ -1141,7 +1139,7 @@ const UI = {
         UI.openConnectPanel();
     },
 
-    connectFinished(e) {
+    connectFinished(_e) {
         UI.connected = true;
         UI.inhibitReconnect = false;
 
@@ -1214,23 +1212,9 @@ const UI = {
         UI.showStatus(msg, 'error');
     },
 
-    handleBeforeUnload(e) {
-        // Trigger a "Leave site?" warning prompt before closing the
-        // page. Modern browsers (Oct 2025) accept either (or both)
-        // preventDefault() or a nonempty returnValue, though the latter is
-        // considered legacy. The custom string is ignored by modern browsers,
-        // which display a native message, but older browsers will show it.
-        e.preventDefault();
-        e.returnValue = _("Are you sure you want to disconnect the session?");
-    },
-
-    updateBeforeUnload() {
-        // Remove first to avoid adding duplicates
-        window.removeEventListener("beforeunload", UI.handleBeforeUnload);
-        if (!UI.rfb?.viewOnly && UI.connected) {
-            window.addEventListener("beforeunload", UI.handleBeforeUnload);
-        }
-    },
+    // PEARL sessions are disposable and reconnect automatically, so page
+    // reloads and closes should not trigger a browser confirmation dialog.
+    updateBeforeUnload() {},
 
 /* ------^-------
  *  /CONNECTION
@@ -1503,7 +1487,7 @@ const UI = {
             const l = input.value.length;
             // Move the caret to the end
             input.setSelectionRange(l, l);
-        } catch (err) {
+        } catch {
             // setSelectionRange is undefined in Google Chrome
         }
     },
@@ -1527,7 +1511,7 @@ const UI = {
         }
     },
 
-    onfocusVirtualKeyboard(event) {
+    onfocusVirtualKeyboard() {
         document.getElementById('noVNC_keyboard_button')
             .classList.add("noVNC_selected");
         if (UI.rfb) {
@@ -1535,7 +1519,7 @@ const UI = {
         }
     },
 
-    onblurVirtualKeyboard(event) {
+    onblurVirtualKeyboard() {
         document.getElementById('noVNC_keyboard_button')
             .classList.remove("noVNC_selected");
         if (UI.rfb) {
@@ -1603,7 +1587,7 @@ const UI = {
             // Try to check caret position since whitespace at the end
             // will not be considered by value.length in some browsers
             newLen = Math.max(event.target.selectionStart, newValue.length);
-        } catch (err) {
+        } catch {
             // selectionStart is undefined in Google Chrome
             newLen = newValue.length;
         }
@@ -1792,7 +1776,7 @@ const UI = {
         document.title = PAGE_TITLE;
     },
 
-    bell(e) {
+    bell() {
         if (UI.getSetting('bell') === 'on') {
             const promise = document.getElementById('noVNC_bell').play();
             // The standards disagree on the return value here

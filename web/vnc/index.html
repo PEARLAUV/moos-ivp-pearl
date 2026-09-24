@@ -17,6 +17,9 @@
 
     <link rel="icon" type="image/x-icon" href="app/images/icons/novnc.ico">
     <meta name="theme-color" content="#313131">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
 
     <!-- Apple iOS Safari settings -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -40,7 +43,7 @@
     <link rel="stylesheet" href="app/styles/constants.css">
     <link rel="stylesheet" href="app/styles/base.css">
     <link rel="stylesheet" href="app/styles/input.css">
-    <link rel="stylesheet" href="pearl.css">
+    <link rel="stylesheet" href="pearl.css?v=pearl-2">
 
     <!-- Images that will later appear via CSS -->
     <link rel="preload" as="image" href="app/images/info.svg">
@@ -50,7 +53,7 @@
     <script type="module" crossorigin="anonymous" src="app/error-handler.js"></script>
 
     <script type="module">
-        import UI from "./app/ui.js";
+        import UI from "./app/ui.js?v=pearl-2";
         import * as Log from './core/util/logging.js';
 
         let response;
@@ -314,11 +317,6 @@
                 </ul>
             </div>
             </div>
-
-            <!-- Connection controls -->
-            <input type="image" alt="Disconnect" src="app/images/disconnect.svg"
-                id="noVNC_disconnect_button" class="noVNC_button pearl_hidden_setting"
-                title="Disconnect" hidden>
 
             </div>
         </div>

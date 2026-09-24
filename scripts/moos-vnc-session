@@ -15,6 +15,9 @@ Examples:
   moos-vnc-session targ_shoreside.moos pMarineViewer
   moos-vnc-session --prog alogview mission.alog --quick
   moos-vnc-session --prog alogview -- one.alog two.alog
+
+Set MOOS_VNC_DISABLE=true to bypass all VNC setup and directly exec PROGRAM
+with the supplied arguments.
 EOF
 }
 
@@ -48,14 +51,24 @@ while (( $# > 0 )); do
   esac
 done
 
-if (( $# == 0 )); then
+program_args=("$@")
+program_name=${program##*/}
+
+# Allow mission files to keep using this wrapper on hosts where the GUI should
+# retain its original local-display behavior. Do this before validating VNC
+# arguments or dependencies so bypass mode has no TigerVNC/noVNC requirements.
+disable_vnc=${MOOS_VNC_DISABLE:-false}
+case ${disable_vnc,,} in
+  1|true|yes|on)
+    exec "$program" "${program_args[@]}"
+    ;;
+esac
+
+if (( ${#program_args[@]} == 0 )); then
   echo "At least one program argument is required" >&2
   usage >&2
   exit 2
 fi
-
-program_args=("$@")
-program_name=${program##*/}
 
 geometry=${MOOS_VNC_GEOMETRY:-1920x1080}
 depth=${MOOS_VNC_DEPTH:-24}
@@ -215,6 +228,10 @@ openbox_config="$session_dir/openbox-rc.xml"
 cat >"$openbox_config" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
+  <theme>
+    <!-- Keep close/maximize controls, but do not offer minimization. -->
+    <titleLayout>NLMC</titleLayout>
+  </theme>
   <applications>
 EOF
 
@@ -311,7 +328,7 @@ fi
   printf 'TAILSCALE_SERVE=%q\n' "$tailscale_serve_active"
 } >"$session_dir/session.env"
 
-printf 'MOOS GUI session: program=%s display=%s noVNC=%s://%s%s/?autoconnect=true&resize=scale&reconnect=true&reconnect_delay=1000&path=%s\n' \
+printf 'MOOS GUI session: program=%s display=%s noVNC=%s://%s%s/?pearl_ui=2&autoconnect=true&resize=scale&reconnect=true&reconnect_delay=1000&path=%s\n' \
   "$program_name" "$vnc_display" "$url_scheme" "$url_host" "$url_port" "$websocket_path"
 
 DISPLAY=$vnc_display \

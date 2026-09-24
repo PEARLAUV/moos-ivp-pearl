@@ -22,6 +22,16 @@
     text-shadow: none;
 }
 
+/* Place the control bar's vertical center at roughly 65% of the viewport. */
+#noVNC_control_bar_anchor {
+    top: 30vh;
+    height: 70vh;
+}
+
+#noVNC_control_bar > .noVNC_scroll {
+    max-height: 70vh;
+}
+
 .pearl_hidden_setting,
 #noVNC_disconnect_button {
     display: none;

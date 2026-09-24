@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Expose an interactive shell in the current mission environment through ttyd.
+set -Eeuo pipefail
+
+if [[ ${1:-} == -h || ${1:-} == --help ]]; then
+  cat <<'EOF'
+Usage: moos-ttyd-session [MISSION_FILE [APP_NAME]]
+
+Start a writable ttyd terminal in the current working directory. All clients
+share one tmux session that lives for exactly as long as ttyd. Arguments added
+by pAntler are accepted and ignored; the terminal inherits the mission's
+working directory and environment.
+
+Environment:
+  MOOS_TTYD_BIND       Address/interface to bind (default: MOOS_VNC_WEB_BIND,
+                       then 127.0.0.1)
+  MOOS_TTYD_PORT       TCP port (default: 7681)
+  MOOS_TTYD_BASE_PATH  Reverse-proxy base path (default: /ttyd)
+  MOOS_TTYD_SHELL      Bash-compatible shell executable (default: bash)
+  MOOS_TTYD_CREDENTIAL Optional HTTP Basic Auth username:password
+  MOOS_TTYD_AUTH_HEADER Optional header delegated to an authenticating proxy
+EOF
+  exit 0
+fi
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+bind=${MOOS_TTYD_BIND:-${MOOS_VNC_WEB_BIND:-127.0.0.1}}
+port=${MOOS_TTYD_PORT:-7681}
+base_path=${MOOS_TTYD_BASE_PATH:-/ttyd}
+shell=${MOOS_TTYD_SHELL:-bash}
+ttyd_executable=$(command -v ttyd || true)
+
+if [[ -z $ttyd_executable && -x $script_dir/../../ttyd/local/bin/ttyd ]]; then
+  ttyd_executable=$script_dir/../../ttyd/local/bin/ttyd
+fi
+if [[ -z $ttyd_executable ]]; then
+  echo "Required executable not found: ttyd" >&2
+  exit 1
+fi
+if ! command -v tmux >/dev/null 2>&1; then
+  echo "Required executable not found: tmux" >&2
+  exit 1
+fi
+if ! command -v "$shell" >/dev/null 2>&1; then
+  echo "Terminal shell not found: $shell" >&2
+  exit 1
+fi
+if [[ ! $port =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
+  echo "Invalid MOOS_TTYD_PORT: $port" >&2
+  exit 2
+fi
+if [[ $base_path != /* ]]; then
+  echo "MOOS_TTYD_BASE_PATH must begin with '/': $base_path" >&2
+  exit 2
+fi
+
+ttyd_args=(
+  --writable
+  --check-origin
+  --interface "$bind"
+  --port "$port"
+  --cwd "$PWD"
+  --base-path "${base_path%/}"
+  --client-option titleFixed="PEARL Mission Terminal"
+  --client-option disableLeaveAlert=true
+)
+
+if [[ -n ${MOOS_TTYD_CREDENTIAL:-} ]]; then
+  ttyd_args+=(--credential "$MOOS_TTYD_CREDENTIAL")
+elif [[ -n ${MOOS_TTYD_AUTH_HEADER:-} ]]; then
+  ttyd_args+=(--auth-header "$MOOS_TTYD_AUTH_HEADER")
+elif [[ $bind != 127.0.0.1 && $bind != localhost && $bind != ::1 ]]; then
+  echo "WARNING: exposing an unauthenticated writable shell on $bind:$port" >&2
+fi
+
+# Always create an isolated server, even when the mission was launched from tmux.
+unset TMUX TMUX_PANE
+tmux_socket="pearl-ttyd-$$"
+tmux_session=mission
+ttyd_pid=
+
+cleanup() {
+  local status=$?
+  trap - EXIT INT TERM HUP
+
+  if [[ -n $ttyd_pid ]] && kill -0 "$ttyd_pid" 2>/dev/null; then
+    kill "$ttyd_pid" 2>/dev/null || true
+    wait "$ttyd_pid" 2>/dev/null || true
+  fi
+  tmux -L "$tmux_socket" kill-server 2>/dev/null || true
+  exit "$status"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+# Start wider than the default 80 columns so the long colored mission prompt
+# does not wrap before ttyd attaches. Expanding an already wrapped tmux prompt
+# can leave tmux's initial cursor several cells behind the reflowed text.
+tmux -L "$tmux_socket" start-server \
+  \; set-option -g history-limit 50000 \
+  \; new-session -d -x 240 -y 60 -s "$tmux_session" -c "$PWD" \
+  "$shell" -i
+tmux -L "$tmux_socket" set-option -t "$tmux_session" status off
+tmux -L "$tmux_socket" set-option -t "$tmux_session" mouse on
+tmux -L "$tmux_socket" set-option -s set-clipboard external
+tmux -L "$tmux_socket" set-window-option -t "$tmux_session:" remain-on-exit on
+tmux -L "$tmux_socket" set-hook -t "$tmux_session" pane-died 'respawn-pane -k'
+
+printf 'MOOS terminal: http://%s:%s%s/ (cwd=%s, tmux=%s)\n' \
+  "$bind" "$port" "${base_path%/}" "$PWD" "$tmux_socket"
+
+"$ttyd_executable" "${ttyd_args[@]}" \
+  tmux -L "$tmux_socket" attach-session -t "$tmux_session" &
+ttyd_pid=$!
+wait "$ttyd_pid"
