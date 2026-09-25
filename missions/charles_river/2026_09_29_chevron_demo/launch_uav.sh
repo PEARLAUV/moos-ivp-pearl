@@ -42,6 +42,8 @@ START_POS="-4,-22,0"
 AP_URL=""
 AP_PROTOCOL=""
 TAKEOFF_ALTITUDE="8"
+SECONDARY_LANDING="10,15"
+MIN_STATE_TIME="0"
 
 #------------------------------------------------------------
 #  Part 3: Parse command-line arguments.
@@ -66,6 +68,8 @@ for ARGI; do
     echo "  --ap_url=<endpoint>     ArduPilot endpoint"
     echo "  --ap_protocol=<proto>   udp, tcp, or serial"
     echo "  --takeoff_altitude=<8>  Copter altitude, m AGL"
+    echo "  --secondary_landing=<X,Y>  Fixed contingency landing point"
+    echo "  --min_state_time=<0>       Minimum FSM state dwell, seconds"
     exit 0
   elif [[ "${ARGI}" =~ ^[0-9]+$ && "$TIME_WARP" = 1 ]]; then
     if [ "$ARGI" -lt 1 ]; then
@@ -104,11 +108,26 @@ for ARGI; do
     AP_PROTOCOL="${ARGI#*=}"
   elif [[ "${ARGI}" == --takeoff_altitude=* ]]; then
     TAKEOFF_ALTITUDE="${ARGI#*=}"
+  elif [[ "${ARGI}" == --secondary_landing=* ]]; then
+    SECONDARY_LANDING="${ARGI#*=}"
+  elif [[ "${ARGI}" == --min_state_time=* ]]; then
+    MIN_STATE_TIME="${ARGI#*=}"
   else
     echo "$ME: Bad Arg:[$ARGI]. Exit Code 1."
     exit 1
   fi
 done
+
+if [[ "$SECONDARY_LANDING" != *,* ]]; then
+  echo "$ME: --secondary_landing must be X,Y. Exit Code 1."
+  exit 1
+fi
+if [[ ! "$MIN_STATE_TIME" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  echo "$ME: --min_state_time must be a non-negative number. Exit Code 1."
+  exit 1
+fi
+SECONDARY_LANDING_X="${SECONDARY_LANDING%%,*}"
+SECONDARY_LANDING_Y="${SECONDARY_LANDING#*,}"
 
 MODE=$(echo "$MODE" | tr '[:lower:]' '[:upper:]')
 if [ "$MODE" = "SIM" ]; then
@@ -163,6 +182,8 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "AP_URL =            [${AP_URL}]"
   echo "AP_PROTOCOL =       [${AP_PROTOCOL}]"
   echo "TAKEOFF_ALTITUDE =  [${TAKEOFF_ALTITUDE}]"
+  echo "SECONDARY_LANDING = [${SECONDARY_LANDING}]"
+  echo "MIN_STATE_TIME =    [${MIN_STATE_TIME}]"
 fi
 
 #------------------------------------------------------------
@@ -178,7 +199,11 @@ nsplug meta_uav.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
   VNAME="$VNAME" COLOR="$COLOR" \
   PLATFORM_LENGTH="1.5" \
   START_POS="$START_POS" AP_URL="$AP_URL" AP_PROTOCOL="$AP_PROTOCOL" \
-  TAKEOFF_ALTITUDE="$TAKEOFF_ALTITUDE" IS_SIM="$IS_SIM" XMODE="$MODE"
+  TAKEOFF_ALTITUDE="$TAKEOFF_ALTITUDE" \
+  SECONDARY_LANDING_X="$SECONDARY_LANDING_X" \
+  MIN_STATE_TIME="$MIN_STATE_TIME" \
+  SECONDARY_LANDING_Y="$SECONDARY_LANDING_Y" \
+  IS_SIM="$IS_SIM" XMODE="$MODE" PEARL_LIB_DIR="$PEARL_ROOT/lib"
 
 nsplug meta_uav.bhv "targ_${VNAME}.bhv" "${NSFLAGS[@]}" \
   VNAME="$VNAME" TAKEOFF_ALTITUDE="$TAKEOFF_ALTITUDE" XMODE="$MODE"

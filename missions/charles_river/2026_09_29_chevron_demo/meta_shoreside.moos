@@ -89,6 +89,8 @@ ProcessConfig = uProcessWatch
   nowatch           = uXMS*
   nowatch           = uPokeDB*
   nowatch           = uQueryDB*
+  // ttyd is supervised by pAntler but is not a MOOSDB client.
+  nowatch           = mission-terminal
   summary_wait      = 20
 }
 
@@ -187,6 +189,7 @@ ProcessConfig = uFldShoreBroker
 
   // Namespaced PEARL controls cannot affect the UAV even though they are
   // distributed through the ordinary field broker.
+  qbridge = PEARL_TASK_EXECUTE
   qbridge = PEARL_DEPLOY
   qbridge = PEARL_RETURN
   qbridge = PEARL_STATION_KEEP
@@ -249,28 +252,77 @@ ProcessConfig = pMarineViewer
   scope = UAV_TAKEOFF_GATE_READY
   scope = UAV_TAKEOFF_GATE_REASON
   scope = UAV_TAKEOFF_RESULT
+  scope = UAV_TASK_ACTIVE
+  scope = UAV_TASK_TAKEOFF_REQUESTED
+  scope = UAV_TASK_ROUTE_STARTED
+  scope = UAV_TASK_REJECTION
 #ifdef XMODE SIM
+  scope = UAV_THRUST_MIXER_STATE
+  scope = DESIRED_THRUST_L
+  scope = DESIRED_THRUST_R
   scope = UAV_SIM_ATTACHED
   scope = UAV_SIM_ATTACHMENT_STATE
 #endif
   scope = AUTOPILOT_MODE
   scope = CONTROL_AUTHORITY
   scope = IVPHELM_STATE
+  scope = IVPHELM_MODESET
+  scope = IVPHELM_STATEVARS
   scope = VEHICLE_PROC_WATCH_ALL_OK
   scope = PEARL_PROC_WATCH_ALL_OK
   scope = ROUTE_BUFFER_STATE
   scope = ROUTE_BUFFER_COUNT
   scope = ROUTE_BUFFER_VEHICLE_STATE
+  scope = PEARL_TASK_EXECUTE
   scope = PEARL_DEPLOY
   scope = PEARL_RETURN
   scope = PEARL_STATION_KEEP
   scope = PEARL_MANUAL_OVERRIDE
+#include plug_pearl_fsm_scopes.moos
+#include plug_uav_fsm_scopes.moos
+  scope = TAKEOFF_REQUEST_ID
+  scope = TAKEOFF_REQUEST_STATE
+  scope = TAKEOFF_PRECHECKS_STATE
+  scope = TAKEOFF_SUPPORT_ACTIVE
+  scope = TAKEOFF_SUPPORT_READY
+  scope = TAKEOFF_POSTCHECKS_STATE
+  scope = TAKEOFF_CLEARANCE_STATE
+  scope = TAKEOFF_CANCEL_STATE
+  scope = TAKEOFF_SUPPORT_OUTCOME
+  scope = PEARL_TAKEOFF_GATE_READY
+  scope = PEARL_TAKEOFF_GATE_REASON
+  scope = PEARL_TAKEOFF_CONTROL_HISTORY
+  scope = PEARL_TAKEOFF_CONTROL_RESTORED
+  scope = RECOVERY_REQUEST_ID
+  scope = RECOVERY_REQUEST_STATE
+  scope = RECOVERY_PRECHECKS_STATE
+  scope = RENDEZVOUS_STATE
+  scope = RECOVERY_SUPPORT_ACTIVE
+  scope = RECOVERY_SUPPORT_READY
+  scope = RECOVERY_POSTCHECKS_STATE
+  scope = LANDING_CLEARANCE_STATE
+  scope = RECOVERY_CANCEL_STATE
+  scope = RECOVERY_SUPPORT_OUTCOME
+  scope = BASE_RESTORE_STATE
+  scope = PEARL_HELM_DEPLOY
+  scope = PEARL_HELM_RETURN
+  scope = PEARL_HELM_STATION_KEEP
+  scope = PEARL_HELM_MANUAL_OVERRIDE
+  scope = PEARL_RENDEZVOUS_ACTIVE
+  scope = PEARL_RENDEZVOUS_ARRIVED
+  scope = PEARL_CONTROL_HISTORY
+  scope = PEARL_CONTROL_RESTORED
   scope = UAV_RENDEZVOUS_STATE
   scope = PEARL_RENDEZVOUS_STATE
   scope = UAV_RENDEZVOUS_PHASE
   scope = PEARL_RENDEZVOUS_PHASE
   scope = UAV_RENDEZVOUS_SESSION
   scope = PEARL_RENDEZVOUS_SESSION
+  scope = UAV_RENDEZVOUS_ARRIVED
+  scope = UAV_LANDING_TARGET_STATE
+  scope = UAV_SECONDARY_RECOVERY_STATE
+  scope = UAV_SECONDARY_RECOVERY_POINT
+  scope = UAV_SECONDARY_RECOVERY_DISTANCE
   scope = UAV_LANDING_GATE_READY
   scope = UAV_LANDING_GATE_REASON
   scope = UAV_LANDING_TARGET_LOCK_AGE
@@ -314,13 +366,15 @@ ProcessConfig = pMarineViewer
   left_context[route] = ROUTE_POINT = "x=$[XPOS],y=$[YPOS]"
 
   button_1 = UAV ARM # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_ARM_REQUEST,string_val=true"
-  button_2 = UAV DISARM # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_DISARM_REQUEST,string_val=true" # color=red
+  button_2 = UAV DISARM # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_DISARM_REQUEST,string_val=true" # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_TASK_CANCEL,string_val=true" # color=red
   button_3 = UAV TAKEOFF # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_TAKEOFF_REQUEST,string_val=true"
   button_4 = UAV DEPLOY # ROUTE_BUFFER_DEPLOY=true
-  button_5 = UAV CLEAR # ROUTE_BUFFER_CLEAR=true
-  // PEARL keeps the May test-run waypoint/station/return behavior.
+  button_5 = UAV CLEAR # ROUTE_BUFFER_CLEAR=true # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_TASK_CANCEL,string_val=true"
+  button_6 = UAV TASK # ROUTE_BUFFER_DEPLOY=true # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_TASK_REQUEST,string_val=true"
+  // Mission tasking is prepared independently. This button sends only the
+  // execution trigger to PEARL through the addressed shore broker.
   // PEARL RETURN is distinct from coordinated target acquisition.
-  button_7 = PEARL DEPLOY # PEARL_DEPLOY_PEARL=true # PEARL_RETURN_PEARL=false # PEARL_STATION_KEEP_PEARL=false # PEARL_MANUAL_OVERRIDE_PEARL=false
+  button_7 = PEARL TASK # PEARL_TASK_EXECUTE_PEARL=true
   button_8 = PEARL RETURN # PEARL_DEPLOY_PEARL=true # PEARL_RETURN_PEARL=true # PEARL_STATION_KEEP_PEARL=false # PEARL_MANUAL_OVERRIDE_PEARL=false
   button_9 = PEARL STATION # PEARL_DEPLOY_PEARL=true # PEARL_RETURN_PEARL=false # PEARL_STATION_KEEP_PEARL=true # PEARL_MANUAL_OVERRIDE_PEARL=false
   button_10 = PEARL ALLSTOP # PEARL_DEPLOY_PEARL=false # PEARL_RETURN_PEARL=false # PEARL_STATION_KEEP_PEARL=false # PEARL_MANUAL_OVERRIDE_PEARL=true # color=red

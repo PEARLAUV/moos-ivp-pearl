@@ -1,0 +1,365 @@
+version = 2
+
+[outputs]
+runtime = "plug_pearl_fsm_runtime.moos"
+bhv = "plug_pearl_states.bhv"
+d2 = "pearl_fsm/overview.d2"
+svg = "pearl_fsm/svg"
+bindings = "pearl_fsm/bindings.json"
+pshare = "plug_pearl_fsm_pshare.moos"
+scopes = "plug_pearl_fsm_scopes.moos"
+
+# Output target configuration.
+[targets.bhv]
+prefix = "PEARL"
+behavior = "BHV_FSM"
+state_name_case = "upper_snake"
+section_name_case = "upper_snake"
+
+[targets.d2.layout]
+direction = "down"
+
+# Implementation-neutral domain model. Output targets refer to these facts,
+# states, inferred child machines, and transitions by ID.
+[facts]
+takeoff_request_id = "none"
+takeoff_request_state = "inactive"
+takeoff_prechecks_state = "idle"
+takeoff_support_active = false
+takeoff_support_ready = false
+takeoff_postchecks_state = "idle"
+takeoff_clearance_state = "none"
+# Published authoritatively by the UAV FSM; never initialized by PEARL.
+uav_fsm_operation_state = { initial = "IDLE", initialize = false }
+takeoff_cancel_state = "none"
+takeoff_support_outcome = "none"
+# Published authoritatively by pRendezvous in the PEARL community.
+pearl_rendezvous_phase = { initial = "IDLE", initialize = false }
+pearl_rendezvous_arrived = { initial = false, initialize = false }
+pearl_landing_gate_ready = { initial = 0, initialize = false }
+# Published authoritatively by the UAV FSM; never initialized by PEARL.
+uav_fsm_landing_operations_state = { initial = "none", initialize = false }
+base_restore_state = "idle"
+# Published by the mission-tasking component after task setup is complete.
+task_execute = { initial = false, initialize = false }
+deploy = false
+return = false
+station_keep = false
+
+[machine]
+label = "PEARL operation"
+initial = "normal_operation"
+initial_layout = { top = 0, left = 358 }
+
+[states.normal_operation]
+label = "Normal operation"
+layout = { grid-rows = 2, grid-gap = 12, top = 100, left = 0 }
+
+[states.normal_operation.regions.main_activity]
+label = "Main activity"
+layout = { direction = "right" }
+initial = "idle"
+initial_layout = { left = 0, top = 149 }
+history_layout = { top = 140, left = 500 }
+
+[states.normal_operation.regions.main_activity.states.idle]
+label = "Idle"
+layout = { top = 125, left = 100 }
+
+[states.normal_operation.regions.main_activity.states.idle.transitions.start_mission]
+to = "executing_mission"
+when = "task_execute==true"
+label = "Task execution requested"
+
+[states.normal_operation.regions.main_activity.states.executing_mission]
+label = "Executing mission"
+layout = { top = 0, left = 300 }
+
+[states.normal_operation.regions.main_activity.states.executing_mission.transitions.begin_return]
+to = "returning_to_base"
+when = "(deploy==true) && (return==true)"
+label = "Mission\ncomplete"
+
+[states.normal_operation.regions.main_activity.states.returning_to_base]
+label = "Returning to base"
+layout = { top = 250, left = 300 }
+
+[states.normal_operation.regions.main_activity.states.returning_to_base.transitions.return_complete]
+to = "idle"
+when = "(return==false) && (station_keep==true)"
+label = "Return complete"
+
+[states.normal_operation.regions.support_activity]
+label = "Support activity"
+layout = { direction = "right" }
+initial = "no_active_request"
+initial_layout = { left = 0, top = 242 }
+
+[states.normal_operation.regions.support_activity.states.no_active_request]
+label = "No active request"
+layout = { left = 100, top = 200, height = 120 }
+
+[states.normal_operation.regions.support_activity.states.no_active_request.transitions.start_takeoff_request]
+to = "takeoff_pre_interruption_checks"
+when = "(takeoff_request_id!=none) && (takeoff_request_state==open) && (takeoff_prechecks_state==pending)"
+label = "Takeoff request\nreceived"
+
+[states.normal_operation.regions.support_activity.states.no_active_request.transitions.start_recovery_request]
+to = "recovery_pre_interruption_checks"
+when = "(pearl_rendezvous_phase==REQUESTING) || (pearl_rendezvous_phase==RENDEZVOUS) || (pearl_rendezvous_phase==ACQUIRING_TARGET) || (pearl_rendezvous_phase==LANDING)"
+label = "Recovery request\nreceived"
+
+[states.normal_operation.regions.support_activity.states.takeoff_pre_interruption_checks]
+label = "Takeoff pre-interruption checks"
+layout = { left = 300, top = 0 }
+
+[states.normal_operation.regions.support_activity.states.takeoff_pre_interruption_checks.transitions.normal_to_takeoff]
+to = "takeoff_support"
+when = "(takeoff_request_id!=none) && (takeoff_request_state==open) && (takeoff_prechecks_state==passed) && (takeoff_support_ready==true)"
+label = "Checks passed"
+
+[states.normal_operation.regions.support_activity.states.takeoff_pre_interruption_checks.transitions.takeoff_withdrawn]
+to = "no_active_request"
+when = "(takeoff_request_id==none)"
+label = "Cancelled"
+
+[states.normal_operation.regions.support_activity.states.takeoff_pre_interruption_checks.transitions.takeoff_rejected]
+to = "no_active_request"
+when = "(takeoff_request_id!=none) && (takeoff_request_state==rejected)"
+label = "Rejected"
+
+[states.normal_operation.regions.support_activity.states.recovery_pre_interruption_checks]
+label = "Recovery pre-interruption checks"
+layout = { left = 300, top = 430 }
+
+[states.normal_operation.regions.support_activity.states.recovery_pre_interruption_checks.transitions.recovery_checks_pass]
+to = "agreeing_rendezvous"
+when = "(pearl_rendezvous_phase==REQUESTING) || (pearl_rendezvous_phase==RENDEZVOUS) || (pearl_rendezvous_phase==ACQUIRING_TARGET) || (pearl_rendezvous_phase==LANDING)"
+label = "Checks passed"
+
+[states.normal_operation.regions.support_activity.states.recovery_pre_interruption_checks.transitions.recovery_withdrawn]
+to = "no_active_request"
+when = "pearl_rendezvous_phase==IDLE"
+label = "Cancelled"
+
+[states.normal_operation.regions.support_activity.states.recovery_pre_interruption_checks.transitions.recovery_rejected]
+to = "no_active_request"
+when = "pearl_rendezvous_phase==ABORT"
+label = "Rejected"
+
+[states.normal_operation.regions.support_activity.states.agreeing_rendezvous]
+label = "Agreeing rendezvous"
+
+[states.normal_operation.regions.support_activity.states.agreeing_rendezvous.transitions.normal_to_recovery]
+to = "recovery_support"
+when = "(pearl_rendezvous_phase==RENDEZVOUS) || (pearl_rendezvous_phase==ACQUIRING_TARGET) || (pearl_rendezvous_phase==LANDING) || (pearl_rendezvous_phase==COMPLETE)"
+label = "Rendezvous\nagreed"
+
+[states.normal_operation.regions.support_activity.states.agreeing_rendezvous.transitions.rendezvous_withdrawn]
+to = "no_active_request"
+when = "pearl_rendezvous_phase==ABORT"
+label = "Cancelled"
+
+
+
+[states.takeoff_support]
+label = "Takeoff support"
+layout = { top = 480, left = 760 }
+initial = "establishing_takeoff_conditions"
+diagram = true
+initial_layout = { top = 0, left = 133 }
+sink_layout = { left = 800, top = 850 }
+
+[states.takeoff_support.transitions.takeoff_to_normal]
+to = "normal_operation"
+history = { machine = "main_activity", state = "history" }
+when = "(((takeoff_support.state==takeoff_in_progress) && (uav_fsm_operation_state==MISSION_EXECUTION) && (takeoff_support_active==false) && (takeoff_support_outcome==completed)) || (((takeoff_support.state==cancelling_before_clearance) || (takeoff_support.state==disengaging_takeoff_support)) && (takeoff_support_active==false) && (takeoff_support_outcome==cancelled))) && (base_restore_state==restoring)"
+label = "Resume\nnominal\noperation"
+
+[states.takeoff_support.states.establishing_takeoff_conditions]
+label = "Establishing takeoff conditions"
+layout = { left = 0, top = 100, width = 300 }
+
+[states.takeoff_support.states.establishing_takeoff_conditions.transitions.establishing_takeoff_conditions_to_post_interruption_checks]
+to = "post_interruption_checks"
+when = "(takeoff_support_ready==true) && (takeoff_support_active==true) && ((takeoff_postchecks_state==pending) || (takeoff_postchecks_state==passed)) && (takeoff_cancel_state==none)"
+label = "Takeoff conditions established"
+
+[states.takeoff_support.states.establishing_takeoff_conditions.transitions.establishing_takeoff_conditions_to_cancelling_before_clearance]
+to = "cancelling_before_clearance"
+when = "(takeoff_cancel_state==before_clearance)"
+label = "Takeoff cancelled before clearance"
+
+[states.takeoff_support.states.post_interruption_checks]
+label = "Post-interruption checks"
+layout = { left = 0, top = 300, width = 300 }
+
+[states.takeoff_support.states.post_interruption_checks.transitions.post_interruption_checks_to_awaiting_drone_departure]
+to = "awaiting_drone_departure"
+when = "(takeoff_request_id!=none) && (takeoff_postchecks_state==passed) && (takeoff_clearance_state==granted) && ((uav_fsm_operation_state==TAKEOFF_OPERATIONS) || (uav_fsm_operation_state==MISSION_EXECUTION)) && (takeoff_cancel_state==none)"
+label = "Takeoff clearance granted"
+
+[states.takeoff_support.states.post_interruption_checks.transitions.post_interruption_checks_to_cancelling_before_clearance]
+to = "cancelling_before_clearance"
+when = "(takeoff_request_id!=none) && (takeoff_cancel_state==before_clearance)"
+label = "Takeoff cancelled before clearance"
+
+[states.takeoff_support.states.post_interruption_checks.transitions.post_interruption_checks_failed]
+to = "cancelling_before_clearance"
+when = "(takeoff_request_id!=none) && (takeoff_postchecks_state==failed) && (takeoff_cancel_state==none)"
+label = "Post-interruption checks failed"
+
+[states.takeoff_support.states.awaiting_drone_departure]
+label = "Awaiting drone departure"
+layout = { left = 0, top = 500, width = 300 }
+
+[states.takeoff_support.states.awaiting_drone_departure.transitions.awaiting_drone_departure_to_takeoff_in_progress]
+to = "takeoff_in_progress"
+when = "(uav_fsm_operation_state==MISSION_EXECUTION) && (takeoff_cancel_state==none)"
+label = "Drone departure underway"
+
+[states.takeoff_support.states.awaiting_drone_departure.transitions.awaiting_drone_departure_to_disengaging_takeoff_support]
+to = "disengaging_takeoff_support"
+when = "(takeoff_cancel_state==disengaging)"
+label = "Takeoff support cancellation requested"
+
+[states.takeoff_support.states.takeoff_in_progress]
+label = "Takeoff in progress"
+layout = { left = 0, top = 700, width = 300 }
+
+[states.takeoff_support.states.takeoff_in_progress.transitions.takeoff_in_progress_to_disengaging_takeoff_support]
+to = "disengaging_takeoff_support"
+when = "(takeoff_cancel_state==disengaging) && (uav_fsm_operation_state!=MISSION_EXECUTION)"
+label = "Takeoff cancelled during departure"
+
+[states.takeoff_support.states.takeoff_in_progress.transitions.takeoff_in_progress_to_sink]
+to = "sink"
+label = "Drone departe"
+
+[states.takeoff_support.states.cancelling_before_clearance]
+label = "Cancelling before clearance"
+layout = { left = 380, top = 200, width = 280}
+
+[states.takeoff_support.states.cancelling_before_clearance.transitions.cancelling_before_clearance_to_sink]
+to = "sink"
+label = "Takeoff\ncancellation\ncomplete"
+
+[states.takeoff_support.states.disengaging_takeoff_support]
+label = "Disengaging takeoff support"
+layout = { left = 380, top = 600, width = 280}
+
+[states.takeoff_support.states.disengaging_takeoff_support.transitions.disengaging_takeoff_support_to_sink]
+to = "sink"
+label = "Takeoff\nsupport\ndisengaged"
+
+[states.recovery_support]
+label = "Recovery support"
+layout = { top = 480, left = 950 }
+initial = "moving_to_rendezvous"
+diagram = true
+sink_layout = { left = 600, top = 950 }
+
+[states.recovery_support.transitions.recovery_to_normal]
+to = "normal_operation"
+history = { machine = "main_activity", state = "history" }
+when = "((recovery_support.state==confirming_recovery) && (pearl_rendezvous_phase==COMPLETE) && (uav_fsm_operation_state==IDLE)) || (((recovery_support.state==cancelling_before_clearance) || (recovery_support.state==disengaging_recovery_support)) && (pearl_rendezvous_phase==ABORT))"
+label = "Resume nominal operation"
+
+[states.recovery_support.states.moving_to_rendezvous]
+label = "Moving to rendezvous point"
+layout = { left = 0, top = 100, width = 300}
+
+[states.recovery_support.states.moving_to_rendezvous.transitions.moving_to_rendezvous_to_establishing_recovery_conditions]
+to = "establishing_recovery_conditions"
+when = "((pearl_rendezvous_arrived==true) && (pearl_rendezvous_phase==RENDEZVOUS)) || (pearl_rendezvous_phase==ACQUIRING_TARGET) || (pearl_rendezvous_phase==LANDING) || (pearl_rendezvous_phase==COMPLETE)"
+label = "Rendezvous point reached"
+
+[states.recovery_support.states.moving_to_rendezvous.transitions.moving_to_rendezvous_to_cancelling_before_clearance]
+to = "cancelling_before_clearance"
+when = "pearl_rendezvous_phase==ABORT"
+label = "Recovery support\ncancellation requested"
+
+[states.recovery_support.states.establishing_recovery_conditions]
+label = "Establishing recovery conditions"
+layout = { left = 0, top = 250, width = 300}
+
+[states.recovery_support.states.establishing_recovery_conditions.transitions.establishing_recovery_conditions_to_post_interruption_checks]
+to = "post_interruption_checks"
+when = "(pearl_landing_gate_ready==1) || (pearl_rendezvous_phase==ACQUIRING_TARGET) || (pearl_rendezvous_phase==LANDING) || (pearl_rendezvous_phase==COMPLETE)"
+label = "Recovery conditions established"
+
+[states.recovery_support.states.establishing_recovery_conditions.transitions.establishing_recovery_conditions_to_cancelling_before_clearance]
+to = "cancelling_before_clearance"
+when = "pearl_rendezvous_phase==ABORT"
+label = "Recovery support\ncancellation requested"
+
+[states.recovery_support.states.post_interruption_checks]
+label = "Post-interruption checks"
+layout = { left = 0, top = 400, width = 300}
+
+[states.recovery_support.states.post_interruption_checks.transitions.post_interruption_checks_to_supporting_approach]
+to = "supporting_approach"
+when = "(pearl_rendezvous_phase==ACQUIRING_TARGET) || (pearl_rendezvous_phase==LANDING) || (pearl_rendezvous_phase==COMPLETE)"
+label = "Landing clearance granted"
+
+[states.recovery_support.states.post_interruption_checks.transitions.post_interruption_checks_to_cancelling_before_clearance_2]
+to = "cancelling_before_clearance"
+when = "(pearl_rendezvous_phase==ABORT) && (pearl_landing_gate_ready==1)"
+label = "Recovery support\ncancellation requested"
+
+[states.recovery_support.states.post_interruption_checks.transitions.post_interruption_checks_failed]
+to = "cancelling_before_clearance"
+when = "(pearl_rendezvous_phase==ABORT) && (pearl_landing_gate_ready==0)"
+label = "Post-interruption checks failed"
+
+[states.recovery_support.states.supporting_approach]
+label = "Supporting approach"
+layout = { left = 0, top = 550, width = 300}
+
+[states.recovery_support.states.supporting_approach.transitions.supporting_approach_to_supporting_landing]
+to = "supporting_landing"
+when = "(pearl_rendezvous_phase==LANDING) || (pearl_rendezvous_phase==COMPLETE)"
+label = "Drone landing"
+
+[states.recovery_support.states.supporting_approach.transitions.supporting_approach_to_disengaging_recovery_support]
+to = "disengaging_recovery_support"
+when = "pearl_rendezvous_phase==ABORT"
+label = "Recovery support\ncancellation requested"
+
+[states.recovery_support.states.supporting_landing]
+label = "Supporting landing"
+layout = { left = 0, top = 700, width = 300}
+
+[states.recovery_support.states.supporting_landing.transitions.supporting_landing_to_confirming_recovery]
+to = "confirming_recovery"
+when = "pearl_rendezvous_phase==COMPLETE"
+label = "Drone touchdown"
+
+[states.recovery_support.states.supporting_landing.transitions.supporting_landing_to_disengaging_recovery_support]
+to = "disengaging_recovery_support"
+when = "pearl_rendezvous_phase==ABORT"
+label = "Recovery support\ncancellation requested"
+
+[states.recovery_support.states.confirming_recovery]
+label = "Confirming recovery"
+layout = { left = 0, top = 850, width = 300}
+
+[states.recovery_support.states.confirming_recovery.transitions.confirming_recovery_to_sink]
+to = "sink"
+label = "Recovery confirmed"
+
+[states.recovery_support.states.cancelling_before_clearance]
+label = "Cancelling before clearance"
+layout = { left = 550, top = 250, width = 280}
+
+[states.recovery_support.states.cancelling_before_clearance.transitions.cancelling_before_clearance_to_sink]
+to = "sink"
+label = "Recovery\ncancellation\ncomplete"
+
+[states.recovery_support.states.disengaging_recovery_support]
+label = "Disengaging recovery support"
+layout = { left = 550, top = 700, width = 280}
+
+[states.recovery_support.states.disengaging_recovery_support.transitions.disengaging_recovery_support_to_sink]
+to = "sink"
+label = "Recovery\nsupport\ndisengaged"

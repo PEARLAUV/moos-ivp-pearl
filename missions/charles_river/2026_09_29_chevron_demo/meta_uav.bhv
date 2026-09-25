@@ -6,3 +6,5 @@
 // the standalone source mission.
 
 #include ../../uav_solo/briggs_test/meta_vehicle.bhv
+// BHV_FSM fallback (generate with --backend bhv):
+//#include plug_uav_states.bhv

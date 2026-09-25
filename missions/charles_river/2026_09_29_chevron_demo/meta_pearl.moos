@@ -28,7 +28,10 @@ ProcessConfig = ANTLER
   Run = uFldNodeBroker     @ NewConsole = false
   Run = uFldMessageHandler @ NewConsole = false
   Run = pMediator          @ NewConsole = false
+  Run = uTimerScript       @ NewConsole = false ~ uMediatorPrime
+  Run = pTakeoffGate       @ NewConsole = false
   Run = pRendezvous        @ NewConsole = false
+  Run = pFSMRuntime        @ NewConsole = false
   Run = pHelmIvP           @ NewConsole = false
 
 #ifdef XMODE REAL
@@ -38,11 +41,23 @@ ProcessConfig = ANTLER
   Run = iBlueRoboticsPing  @ NewConsole = false
   Run = iSherlockTelemetry @ NewConsole = false
 #else
-  Run = uTimerScript     @ NewConsole = false ~ uSimTakeoffInputs
+  Run = uTimerScript       @ NewConsole = false ~ uSimTakeoffInputs
   Run = uSimMarineV22      @ NewConsole = false
   Run = pMarinePIDV22      @ NewConsole = false
   Run = pThrustMixer       @ NewConsole = false
 #endif
+}
+
+//----------------------------------------------------
+ProcessConfig = pFSMRuntime
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  // Debug/visualization aid. Set by --min_state_time in launch.sh.
+  min_state_time = $(MIN_STATE_TIME)
+
+#include plug_pearl_fsm_runtime.moos
 }
 
 //----------------------------------------------------
@@ -52,6 +67,50 @@ ProcessConfig = pShare
   CommsTick = 4
 
   input = route = localhost:$(PSHARE_PORT)
+
+  // State observability uses explicit pShare routes so FSM outputs and inputs
+  // do not depend on uFldNodeBroker registration timing.
+#include plug_pearl_fsm_pshare.moos
+
+  output = src_name=TAKEOFF_REQUEST_ID,       route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=TAKEOFF_REQUEST_STATE,    route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=TAKEOFF_PRECHECKS_STATE,  route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=TAKEOFF_SUPPORT_ACTIVE,   route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=TAKEOFF_SUPPORT_READY,    route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=TAKEOFF_POSTCHECKS_STATE, route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=TAKEOFF_CLEARANCE_STATE,  route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=TAKEOFF_CANCEL_STATE,      route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=TAKEOFF_SUPPORT_OUTCOME,   route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=PEARL_TAKEOFF_GATE_READY,       route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=PEARL_TAKEOFF_GATE_REASON,      route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=PEARL_TAKEOFF_CONTROL_HISTORY,  route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=PEARL_TAKEOFF_CONTROL_RESTORED, route=$(SHORE_IP):$(SHORE_PSHARE)
+
+  output = src_name=RECOVERY_REQUEST_ID,       route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=RECOVERY_REQUEST_STATE,    route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=RECOVERY_PRECHECKS_STATE,  route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=RENDEZVOUS_STATE,           route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=RECOVERY_SUPPORT_ACTIVE,   route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=RECOVERY_SUPPORT_READY,    route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=RECOVERY_POSTCHECKS_STATE, route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=LANDING_CLEARANCE_STATE,    route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=RECOVERY_CANCEL_STATE,      route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=RECOVERY_SUPPORT_OUTCOME,   route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=BASE_RESTORE_STATE,          route=$(SHORE_IP):$(SHORE_PSHARE)
+
+  output = src_name=IVPHELM_MODESET,          route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=IVPHELM_STATEVARS,        route=$(SHORE_IP):$(SHORE_PSHARE)
+
+  // Concrete behavior conditions are namespaced on shore so they cannot be
+  // confused with the operator command variables distributed by the broker.
+  output = src_name=DEPLOY,               dest_name=PEARL_HELM_DEPLOY,          route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=RETURN,               dest_name=PEARL_HELM_RETURN,          route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=STATION_KEEP,         dest_name=PEARL_HELM_STATION_KEEP,    route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=MOOS_MANUAL_OVERRIDE, dest_name=PEARL_HELM_MANUAL_OVERRIDE, route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=PEARL_RENDEZVOUS_ACTIVE,  route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=PEARL_RENDEZVOUS_ARRIVED, route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=PEARL_CONTROL_HISTORY,     route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=PEARL_CONTROL_RESTORED,    route=$(SHORE_IP):$(SHORE_PSHARE)
 #ifdef DIRECT_PEER true
   output = src_name=MEDIATED_MESSAGE_LOCAL, dest_name=MEDIATED_MESSAGE, route=$(UAV_IP):$(UAV_PSHARE)
   output = src_name=ACK_MESSAGE_LOCAL, dest_name=ACK_MESSAGE, route=$(UAV_IP):$(UAV_PSHARE)
@@ -61,6 +120,13 @@ ProcessConfig = pShare
   output = src_name=PEARL_WIND_DATA_VALID, route=$(UAV_IP):$(UAV_PSHARE)
   output = src_name=PROC_WATCH_ALL_OK, dest_name=PEARL_PROC_WATCH_ALL_OK, route=$(UAV_IP):$(UAV_PSHARE)
   output = src_name=NODE_REPORT_LOCAL, dest_name=NODE_REPORT, route=$(UAV_IP):$(UAV_PSHARE)
+
+  // PEARL owns request/clearance decisions. The UAV companion FSM subscribes
+  // to these facts but never initializes or publishes them.
+  output = src_name=TAKEOFF_REQUEST_STATE,   route=$(UAV_IP):$(UAV_PSHARE)
+  output = src_name=TAKEOFF_CLEARANCE_STATE, route=$(UAV_IP):$(UAV_PSHARE)
+  output = src_name=RECOVERY_REQUEST_STATE,  route=$(UAV_IP):$(UAV_PSHARE)
+  output = src_name=LANDING_CLEARANCE_STATE, route=$(UAV_IP):$(UAV_PSHARE)
 #ifdef XMODE SIM
 #ifdef SIM_ATTACHMENT true
   output = src_name=NAV_X,       dest_name=ATTACHMENT_NAV_X,       route=$(UAV_IP):$(UAV_PSHARE)
@@ -128,6 +194,7 @@ ProcessConfig = uLoadWatch
   thresh = app=pThrustMixer,   gapthresh=3
 #endif
   thresh = app=pHelmIvP,       gapthresh=3
+  thresh = app=pTakeoffGate,   gapthresh=3
   thresh = app=pNodeReporter,  gapthresh=4
   thresh = app=pHostInfo,      gapthresh=5
   thresh = app=any,            gapthresh=2.0
@@ -191,6 +258,43 @@ ProcessConfig = pMediator
 }
 
 //----------------------------------------------------
+// pMediator sequence zero is acknowledged but intentionally not delivered.
+// Consume it before the first operational PEARL-to-UAV message.
+ProcessConfig = uMediatorPrime
+{
+  AppTick   = 10
+  CommsTick = 10
+  term_report_interval = 2
+
+  paused       = false
+  reset_max    = 0
+  script_name  = PEARL_MEDIATOR_PRIME
+
+  event = var=NODE_MESSAGE_LOCAL, val="src_node=$(VNAME),dest_node=uav,var_name=PEARL_MEDIATOR_SYNC,string_val=true", time=0
+}
+
+//----------------------------------------------------
+// PEARL authoritatively stages takeoff support and returns clearance to the
+// UAV only after its support-state facts have been made observable.
+ProcessConfig = pTakeoffGate
+{
+  AppTick   = 4
+  CommsTick = 4
+  term_report_interval = 2
+
+  role                    = pearl
+  ownship                 = $(VNAME)
+  peer_node               = uav
+  request_timeout         = 100
+  coordination_step_delay = 1
+  fsm_state_max_age       = 2.5
+
+  min_pearl_soc  = 15
+  max_wind_speed = 4
+  input_max_age  = 3
+}
+
+//----------------------------------------------------
 // PEARL is the rendezvous coordinator: it selects the point, waits for an
 // explicit UAV acceptance, moves both vehicles, and grants landing clearance.
 ProcessConfig = pRendezvous
@@ -213,9 +317,9 @@ ProcessConfig = pRendezvous
   require_flight_state = false
 
   nav_stale_thresh = 10
-  request_timeout  = 20
+  request_timeout  = 100
   transit_timeout  = 180
-  arrival_radius   = 5
+  arrival_radius   = 1.5
   arrival_dwell    = 2
   max_peer_separation = 3
 #ifdef XMODE REAL
@@ -248,6 +352,7 @@ ProcessConfig = pEchoVar
   Echo = IMU_ROLL         -> NAV_ROLL
   Echo = GPS_SPEED        -> NAV_SPEED
 
+  Echo = PEARL_TASK_EXECUTE    -> TASK_EXECUTE
   Echo = PEARL_DEPLOY          -> DEPLOY
   Echo = PEARL_RETURN          -> RETURN
   Echo = PEARL_STATION_KEEP    -> STATION_KEEP
@@ -337,6 +442,15 @@ ProcessConfig = pHelmIvP
 
   ok_skew   = any
   behaviors = targ_$(VNAME).bhv
+
+  // Load project-local supervisory behaviors even when IVP_BEHAVIOR_DIRS is
+  // not present in the launch environment.
+  ivp_behavior_dir = $(PEARL_LIB_DIR)
+
+  // Keep evaluating the supervisory FSMs when an autonomous phase has no
+  // objective function. Manual override still parks the Helm.
+  park_on_allstop = false
+
   Domain    = course:0:359:360
   Domain    = speed:0:0.5:11
 }

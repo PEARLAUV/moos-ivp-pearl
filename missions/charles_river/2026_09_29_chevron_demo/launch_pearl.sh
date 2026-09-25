@@ -39,6 +39,7 @@ VNAME="pearl"
 COLOR="dodger_blue"
 START_POS="-4,-22,0"
 CRUISE_SPEED="0.5"
+MIN_STATE_TIME="0"
 SHERLOCK_METRICS_HOST="192.168.88.252"
 SHERLOCK_METRICS_PORT="9273"
 
@@ -64,6 +65,7 @@ for ARGI; do
     echo "  --sim_attachment=<true|false>  Send SIM attachment pose"
     echo "  --start_pos=<X,Y,H>    PEARL SIM start position"
     echo "  --speed=<0.5>          PEARL Helm speed, m/s"
+    echo "  --min_state_time=<0>   Minimum FSM state dwell, seconds"
     echo "  --sherlock_metrics_host=<host>  Sherlock Telegraf host"
     echo "  --sherlock_metrics_port=<9273>  Sherlock Telegraf port"
     exit 0
@@ -102,6 +104,8 @@ for ARGI; do
     START_POS="${ARGI#*=}"
   elif [[ "${ARGI}" == --speed=* ]]; then
     CRUISE_SPEED="${ARGI#*=}"
+  elif [[ "${ARGI}" == --min_state_time=* ]]; then
+    MIN_STATE_TIME="${ARGI#*=}"
   elif [[ "${ARGI}" == --sherlock_metrics_host=* ]]; then
     SHERLOCK_METRICS_HOST="${ARGI#*=}"
   elif [[ "${ARGI}" == --sherlock_metrics_port=* ]]; then
@@ -115,6 +119,10 @@ done
 MODE=$(echo "$MODE" | tr '[:lower:]' '[:upper:]')
 if [[ "$MODE" != "SIM" && "$MODE" != "REAL" ]]; then
   echo "$ME: --mode must be SIM or REAL. Exit Code 1."
+  exit 1
+fi
+if [[ ! "$MIN_STATE_TIME" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  echo "$ME: --min_state_time must be a non-negative number. Exit Code 1."
   exit 1
 fi
 
@@ -152,6 +160,7 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "SIM_ATTACHMENT = [${SIM_ATTACHMENT}]"
   echo "START_POS =      [${START_POS}]"
   echo "CRUISE_SPEED =   [${CRUISE_SPEED}]"
+  echo "MIN_STATE_TIME = [${MIN_STATE_TIME}]"
   echo "SHERLOCK_METRICS_HOST = [${SHERLOCK_METRICS_HOST}]"
   echo "SHERLOCK_METRICS_PORT = [${SHERLOCK_METRICS_PORT}]"
 fi
@@ -169,6 +178,7 @@ nsplug meta_pearl.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
   UAV_IP="$UAV_IP" UAV_PSHARE="$UAV_PSHARE" \
   VNAME="$VNAME" COLOR="$COLOR" \
   START_POS="$START_POS" SPEED="$CRUISE_SPEED" XMODE="$MODE" \
+  MIN_STATE_TIME="$MIN_STATE_TIME" PEARL_LIB_DIR="$PEARL_ROOT/lib" \
   SHERLOCK_METRICS_HOST="$SHERLOCK_METRICS_HOST" \
   SHERLOCK_METRICS_PORT="$SHERLOCK_METRICS_PORT"
 

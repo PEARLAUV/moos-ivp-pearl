@@ -1,0 +1,748 @@
+# GENERATED FILE - source: pearl_fsm.toml
+# Regenerate with scripts/generate_fsm.py.
+
+vars: {
+  d2-config: {
+    layout-engine: tala
+  }
+}
+
+direction: down
+
+# Inferred class attributes are unstyled SVG/CSS hooks.
+# Runtime states: moos_var_<VAR> + moos_value_<VALUE>.
+# Runtime transitions: moos_var_<VAR> + moos_id_<REPORT_ID>.
+
+start: "" {
+  class: initial
+  shape: circle
+  width: 34
+  height: 34
+  style: {
+    fill: "#12344D"
+    stroke: "#12344D"
+    stroke-width: 1
+  }
+  top: 0
+  left: 358
+}
+
+normal_operation: "Normal operation" {
+  class: [composite; moos_state; moos_var_PEARL_FSM_OPERATION_STATE; moos_value_NORMAL_OPERATION]
+  shape: rectangle
+  style: {
+    stroke: "#12344D"
+    stroke-width: 2
+    border-radius: 8
+  }
+  grid-rows: 2
+  grid-gap: 12
+  top: 100
+  left: 0
+
+  main_activity: "Main activity" {
+    class: region
+    shape: rectangle
+    style: {
+      stroke: "#12344D"
+      stroke-width: 2
+      border-radius: 6
+      stroke-dash: 5
+    }
+    direction: right
+
+    start: "" {
+      class: initial
+      shape: circle
+      width: 34
+      height: 34
+      style: {
+        fill: "#12344D"
+        stroke: "#12344D"
+        stroke-width: 1
+      }
+      left: 0
+      top: 149
+    }
+
+    idle: "Idle" {
+      class: [state; moos_state; moos_var_PEARL_FSM_MAIN_ACTIVITY_STATE; moos_value_IDLE]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      top: 125
+      left: 100
+    }
+
+    executing_mission: "Executing mission" {
+      class: [state; moos_state; moos_var_PEARL_FSM_MAIN_ACTIVITY_STATE; moos_value_EXECUTING_MISSION]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      top: 0
+      left: 300
+    }
+
+    returning_to_base: "Returning to base" {
+      class: [state; moos_state; moos_var_PEARL_FSM_MAIN_ACTIVITY_STATE; moos_value_RETURNING_TO_BASE]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      top: 250
+      left: 300
+    }
+
+    history: "H" {
+      class: history
+      shape: circle
+      width: 34
+      height: 34
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+      }
+      top: 140
+      left: 500
+    }
+  }
+
+  support_activity: "Support activity" {
+    class: region
+    shape: rectangle
+    style: {
+      stroke: "#12344D"
+      stroke-width: 2
+      border-radius: 6
+      stroke-dash: 5
+    }
+    direction: right
+
+    start: "" {
+      class: initial
+      shape: circle
+      width: 34
+      height: 34
+      style: {
+        fill: "#12344D"
+        stroke: "#12344D"
+        stroke-width: 1
+      }
+      left: 0
+      top: 242
+    }
+
+    no_active_request: "No active request" {
+      class: [state; moos_state; moos_var_PEARL_FSM_SUPPORT_ACTIVITY_STATE; moos_value_NO_ACTIVE_REQUEST]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      height: 120
+      left: 100
+      top: 200
+    }
+
+    takeoff_pre_interruption_checks: "Takeoff pre-interruption checks" {
+      class: [state; moos_state; moos_var_PEARL_FSM_SUPPORT_ACTIVITY_STATE; moos_value_TAKEOFF_PRE_INTERRUPTION_CHECKS]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      left: 300
+      top: 0
+    }
+
+    recovery_pre_interruption_checks: "Recovery pre-interruption checks" {
+      class: [state; moos_state; moos_var_PEARL_FSM_SUPPORT_ACTIVITY_STATE; moos_value_RECOVERY_PRE_INTERRUPTION_CHECKS]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      left: 300
+      top: 430
+    }
+
+    agreeing_rendezvous: "Agreeing rendezvous" {
+      class: [state; moos_state; moos_var_PEARL_FSM_SUPPORT_ACTIVITY_STATE; moos_value_AGREEING_RENDEZVOUS]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+    }
+  }
+}
+
+takeoff_support: "Takeoff support" {
+  class: [composite; moos_state; moos_var_PEARL_FSM_OPERATION_STATE; moos_value_TAKEOFF_SUPPORT]
+  link: layers.takeoff_support
+  shape: rectangle
+  style: {
+    stroke: "#12344D"
+    stroke-width: 2
+    border-radius: 8
+  }
+  top: 480
+  left: 760
+}
+
+recovery_support: "Recovery support" {
+  class: [composite; moos_state; moos_var_PEARL_FSM_OPERATION_STATE; moos_value_RECOVERY_SUPPORT]
+  link: layers.recovery_support
+  shape: rectangle
+  style: {
+    stroke: "#12344D"
+    stroke-width: 2
+    border-radius: 8
+  }
+  top: 480
+  left: 950
+}
+
+start -> normal_operation {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_OPERATION_TRANSITION; moos_id_INITIAL]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.main_activity.start -> normal_operation.main_activity.idle {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_MAIN_ACTIVITY_TRANSITION; moos_id_INITIAL]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.support_activity.start -> normal_operation.support_activity.no_active_request {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_SUPPORT_ACTIVITY_TRANSITION; moos_id_INITIAL]
+  style: {
+    stroke: "#12344D"
+  }
+}
+takeoff_support -> normal_operation.main_activity.history: "Resume\nnominal\noperation" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_OPERATION_TRANSITION; moos_id_TAKEOFF_TO_NORMAL]
+  style: {
+    stroke: "#12344D"
+  }
+}
+recovery_support -> normal_operation.main_activity.history: "Resume nominal operation" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_OPERATION_TRANSITION; moos_id_RECOVERY_TO_NORMAL]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.support_activity.takeoff_pre_interruption_checks -> takeoff_support: "Checks passed" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_OPERATION_TRANSITION; moos_id_NORMAL_TO_TAKEOFF]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.support_activity.agreeing_rendezvous -> recovery_support: "Rendezvous\nagreed" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_OPERATION_TRANSITION; moos_id_NORMAL_TO_RECOVERY]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.main_activity.idle -> normal_operation.main_activity.executing_mission: "Task execution requested" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_MAIN_ACTIVITY_TRANSITION; moos_id_START_MISSION]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.main_activity.executing_mission -> normal_operation.main_activity.returning_to_base: "Mission\ncomplete" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_MAIN_ACTIVITY_TRANSITION; moos_id_BEGIN_RETURN]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.main_activity.returning_to_base -> normal_operation.main_activity.idle: "Return complete" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_MAIN_ACTIVITY_TRANSITION; moos_id_RETURN_COMPLETE]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.support_activity.no_active_request -> normal_operation.support_activity.takeoff_pre_interruption_checks: "Takeoff request\nreceived" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_SUPPORT_ACTIVITY_TRANSITION; moos_id_START_TAKEOFF_REQUEST]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.support_activity.no_active_request -> normal_operation.support_activity.recovery_pre_interruption_checks: "Recovery request\nreceived" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_SUPPORT_ACTIVITY_TRANSITION; moos_id_START_RECOVERY_REQUEST]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.support_activity.takeoff_pre_interruption_checks -> normal_operation.support_activity.no_active_request: "Cancelled" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_SUPPORT_ACTIVITY_TRANSITION; moos_id_TAKEOFF_WITHDRAWN]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.support_activity.takeoff_pre_interruption_checks -> normal_operation.support_activity.no_active_request: "Rejected" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_SUPPORT_ACTIVITY_TRANSITION; moos_id_TAKEOFF_REJECTED]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.support_activity.recovery_pre_interruption_checks -> normal_operation.support_activity.agreeing_rendezvous: "Checks passed" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_SUPPORT_ACTIVITY_TRANSITION; moos_id_RECOVERY_CHECKS_PASS]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.support_activity.recovery_pre_interruption_checks -> normal_operation.support_activity.no_active_request: "Cancelled" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_SUPPORT_ACTIVITY_TRANSITION; moos_id_RECOVERY_WITHDRAWN]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.support_activity.recovery_pre_interruption_checks -> normal_operation.support_activity.no_active_request: "Rejected" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_SUPPORT_ACTIVITY_TRANSITION; moos_id_RECOVERY_REJECTED]
+  style: {
+    stroke: "#12344D"
+  }
+}
+normal_operation.support_activity.agreeing_rendezvous -> normal_operation.support_activity.no_active_request: "Cancelled" {
+  class: [transition; moos_transition; moos_var_PEARL_FSM_SUPPORT_ACTIVITY_TRANSITION; moos_id_RENDEZVOUS_WITHDRAWN]
+  style: {
+    stroke: "#12344D"
+  }
+}
+
+layers: {
+  takeoff_support: {
+    direction: down
+
+    # Inferred class attributes are unstyled SVG/CSS hooks.
+    # Runtime states: moos_var_<VAR> + moos_value_<VALUE>.
+    # Runtime transitions: moos_var_<VAR> + moos_id_<REPORT_ID>.
+
+    start: "" {
+      class: initial
+      link: _
+      shape: circle
+      width: 34
+      height: 34
+      style: {
+        fill: "#12344D"
+        stroke: "#12344D"
+        stroke-width: 1
+      }
+      top: 0
+      left: 133
+    }
+
+    establishing_takeoff_conditions: "Establishing takeoff conditions" {
+      class: [state; moos_state; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_STATE; moos_value_ESTABLISHING_TAKEOFF_CONDITIONS]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 300
+      left: 0
+      top: 100
+    }
+
+    post_interruption_checks: "Post-interruption checks" {
+      class: [state; moos_state; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_STATE; moos_value_POST_INTERRUPTION_CHECKS]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 300
+      left: 0
+      top: 300
+    }
+
+    awaiting_drone_departure: "Awaiting drone departure" {
+      class: [state; moos_state; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_STATE; moos_value_AWAITING_DRONE_DEPARTURE]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 300
+      left: 0
+      top: 500
+    }
+
+    takeoff_in_progress: "Takeoff in progress" {
+      class: [state; moos_state; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_STATE; moos_value_TAKEOFF_IN_PROGRESS]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 300
+      left: 0
+      top: 700
+    }
+
+    cancelling_before_clearance: "Cancelling before clearance" {
+      class: [state; moos_state; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_STATE; moos_value_CANCELLING_BEFORE_CLEARANCE]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 280
+      left: 380
+      top: 200
+    }
+
+    disengaging_takeoff_support: "Disengaging takeoff support" {
+      class: [state; moos_state; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_STATE; moos_value_DISENGAGING_TAKEOFF_SUPPORT]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 280
+      left: 380
+      top: 600
+    }
+
+    sink: "" {
+      class: sink
+      link: _
+      shape: oval
+      width: 34
+      height: 34
+      icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%2312344D'/%3E%3C/svg%3E"
+      style: {
+        fill: "transparent"
+        stroke: "#12344D"
+        stroke-width: 2
+      }
+      left: 800
+      top: 850
+    }
+
+    start -> establishing_takeoff_conditions {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_TRANSITION; moos_id_INITIAL]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    establishing_takeoff_conditions -> post_interruption_checks: "Takeoff conditions established" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_TRANSITION; moos_id_ESTABLISHING_TAKEOFF_CONDITIONS_TO_POST_INTERRUPTION_CHECKS]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    establishing_takeoff_conditions -> cancelling_before_clearance: "Takeoff cancelled before clearance" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_TRANSITION; moos_id_ESTABLISHING_TAKEOFF_CONDITIONS_TO_CANCELLING_BEFORE_CLEARANCE]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    post_interruption_checks -> awaiting_drone_departure: "Takeoff clearance granted" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_TRANSITION; moos_id_POST_INTERRUPTION_CHECKS_TO_AWAITING_DRONE_DEPARTURE]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    post_interruption_checks -> cancelling_before_clearance: "Takeoff cancelled before clearance" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_TRANSITION; moos_id_POST_INTERRUPTION_CHECKS_TO_CANCELLING_BEFORE_CLEARANCE]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    post_interruption_checks -> cancelling_before_clearance: "Post-interruption checks failed" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_TRANSITION; moos_id_POST_INTERRUPTION_CHECKS_FAILED]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    awaiting_drone_departure -> takeoff_in_progress: "Drone departure underway" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_TRANSITION; moos_id_AWAITING_DRONE_DEPARTURE_TO_TAKEOFF_IN_PROGRESS]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    awaiting_drone_departure -> disengaging_takeoff_support: "Takeoff support cancellation requested" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_TRANSITION; moos_id_AWAITING_DRONE_DEPARTURE_TO_DISENGAGING_TAKEOFF_SUPPORT]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    takeoff_in_progress -> disengaging_takeoff_support: "Takeoff cancelled during departure" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_TRANSITION; moos_id_TAKEOFF_IN_PROGRESS_TO_DISENGAGING_TAKEOFF_SUPPORT]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    takeoff_in_progress -> sink: "Drone departe" {
+      class: [transition; sink_transition]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    cancelling_before_clearance -> sink: "Takeoff\ncancellation\ncomplete" {
+      class: [transition; sink_transition]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    disengaging_takeoff_support -> sink: "Takeoff\nsupport\ndisengaged" {
+      class: [transition; sink_transition]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+  }
+  recovery_support: {
+    direction: down
+
+    # Inferred class attributes are unstyled SVG/CSS hooks.
+    # Runtime states: moos_var_<VAR> + moos_value_<VALUE>.
+    # Runtime transitions: moos_var_<VAR> + moos_id_<REPORT_ID>.
+
+    start: "" {
+      class: initial
+      link: _
+      shape: circle
+      width: 34
+      height: 34
+      style: {
+        fill: "#12344D"
+        stroke: "#12344D"
+        stroke-width: 1
+      }
+    }
+
+    moving_to_rendezvous: "Moving to rendezvous point" {
+      class: [state; moos_state; moos_var_PEARL_FSM_RECOVERY_SUPPORT_STATE; moos_value_MOVING_TO_RENDEZVOUS]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 300
+      left: 0
+      top: 100
+    }
+
+    establishing_recovery_conditions: "Establishing recovery conditions" {
+      class: [state; moos_state; moos_var_PEARL_FSM_RECOVERY_SUPPORT_STATE; moos_value_ESTABLISHING_RECOVERY_CONDITIONS]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 300
+      left: 0
+      top: 250
+    }
+
+    post_interruption_checks: "Post-interruption checks" {
+      class: [state; moos_state; moos_var_PEARL_FSM_RECOVERY_SUPPORT_STATE; moos_value_POST_INTERRUPTION_CHECKS]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 300
+      left: 0
+      top: 400
+    }
+
+    supporting_approach: "Supporting approach" {
+      class: [state; moos_state; moos_var_PEARL_FSM_RECOVERY_SUPPORT_STATE; moos_value_SUPPORTING_APPROACH]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 300
+      left: 0
+      top: 550
+    }
+
+    supporting_landing: "Supporting landing" {
+      class: [state; moos_state; moos_var_PEARL_FSM_RECOVERY_SUPPORT_STATE; moos_value_SUPPORTING_LANDING]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 300
+      left: 0
+      top: 700
+    }
+
+    confirming_recovery: "Confirming recovery" {
+      class: [state; moos_state; moos_var_PEARL_FSM_RECOVERY_SUPPORT_STATE; moos_value_CONFIRMING_RECOVERY]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 300
+      left: 0
+      top: 850
+    }
+
+    cancelling_before_clearance: "Cancelling before clearance" {
+      class: [state; moos_state; moos_var_PEARL_FSM_RECOVERY_SUPPORT_STATE; moos_value_CANCELLING_BEFORE_CLEARANCE]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 280
+      left: 550
+      top: 250
+    }
+
+    disengaging_recovery_support: "Disengaging recovery support" {
+      class: [state; moos_state; moos_var_PEARL_FSM_RECOVERY_SUPPORT_STATE; moos_value_DISENGAGING_RECOVERY_SUPPORT]
+      shape: rectangle
+      style: {
+        stroke: "#12344D"
+        stroke-width: 2
+        border-radius: 8
+      }
+      width: 280
+      left: 550
+      top: 700
+    }
+
+    sink: "" {
+      class: sink
+      link: _
+      shape: oval
+      width: 34
+      height: 34
+      icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%2312344D'/%3E%3C/svg%3E"
+      style: {
+        fill: "transparent"
+        stroke: "#12344D"
+        stroke-width: 2
+      }
+      left: 600
+      top: 950
+    }
+
+    start -> moving_to_rendezvous {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_RECOVERY_SUPPORT_TRANSITION; moos_id_INITIAL]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    moving_to_rendezvous -> establishing_recovery_conditions: "Rendezvous point reached" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_RECOVERY_SUPPORT_TRANSITION; moos_id_MOVING_TO_RENDEZVOUS_TO_ESTABLISHING_RECOVERY_CONDITIONS]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    moving_to_rendezvous -> cancelling_before_clearance: "Recovery support\ncancellation requested" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_RECOVERY_SUPPORT_TRANSITION; moos_id_MOVING_TO_RENDEZVOUS_TO_CANCELLING_BEFORE_CLEARANCE]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    establishing_recovery_conditions -> post_interruption_checks: "Recovery conditions established" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_RECOVERY_SUPPORT_TRANSITION; moos_id_ESTABLISHING_RECOVERY_CONDITIONS_TO_POST_INTERRUPTION_CHECKS]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    establishing_recovery_conditions -> cancelling_before_clearance: "Recovery support\ncancellation requested" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_RECOVERY_SUPPORT_TRANSITION; moos_id_ESTABLISHING_RECOVERY_CONDITIONS_TO_CANCELLING_BEFORE_CLEARANCE]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    post_interruption_checks -> supporting_approach: "Landing clearance granted" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_RECOVERY_SUPPORT_TRANSITION; moos_id_POST_INTERRUPTION_CHECKS_TO_SUPPORTING_APPROACH]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    post_interruption_checks -> cancelling_before_clearance: "Recovery support\ncancellation requested" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_RECOVERY_SUPPORT_TRANSITION; moos_id_POST_INTERRUPTION_CHECKS_TO_CANCELLING_BEFORE_CLEARANCE_2]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    post_interruption_checks -> cancelling_before_clearance: "Post-interruption checks failed" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_RECOVERY_SUPPORT_TRANSITION; moos_id_POST_INTERRUPTION_CHECKS_FAILED]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    supporting_approach -> supporting_landing: "Drone landing" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_RECOVERY_SUPPORT_TRANSITION; moos_id_SUPPORTING_APPROACH_TO_SUPPORTING_LANDING]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    supporting_approach -> disengaging_recovery_support: "Recovery support\ncancellation requested" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_RECOVERY_SUPPORT_TRANSITION; moos_id_SUPPORTING_APPROACH_TO_DISENGAGING_RECOVERY_SUPPORT]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    supporting_landing -> confirming_recovery: "Drone touchdown" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_RECOVERY_SUPPORT_TRANSITION; moos_id_SUPPORTING_LANDING_TO_CONFIRMING_RECOVERY]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    supporting_landing -> disengaging_recovery_support: "Recovery support\ncancellation requested" {
+      class: [transition; moos_transition; moos_var_PEARL_FSM_RECOVERY_SUPPORT_TRANSITION; moos_id_SUPPORTING_LANDING_TO_DISENGAGING_RECOVERY_SUPPORT]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    confirming_recovery -> sink: "Recovery confirmed" {
+      class: [transition; sink_transition]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    cancelling_before_clearance -> sink: "Recovery\ncancellation\ncomplete" {
+      class: [transition; sink_transition]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+    disengaging_recovery_support -> sink: "Recovery\nsupport\ndisengaged" {
+      class: [transition; sink_transition]
+      style: {
+        stroke: "#12344D"
+      }
+    }
+  }
+}

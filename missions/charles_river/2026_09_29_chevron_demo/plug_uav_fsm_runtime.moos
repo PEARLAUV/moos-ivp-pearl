@@ -1,0 +1,66 @@
+  //-------------------------------------------------
+  // GENERATED FILE - DO NOT EDIT.
+  // Source: uav_fsm.toml
+  // Include inside ProcessConfig = pFSMRuntime.
+  //-------------------------------------------------
+  runtime = state_var=UAV_FSM_RUNTIME_STATE, heartbeat_var=UAV_FSM_RUNTIME_HEARTBEAT, epoch_var=UAV_FSM_RUNTIME_EPOCH, heartbeat_interval=1
+  initialize = var=DEPLOY, type=string, value=false
+  initialize = var=RETURN, type=string, value=false
+
+  machine = id=operation, state_var=UAV_FSM_OPERATION_STATE, initial_state=IDLE, initial_node=start, initial_transition_id=INITIAL, initially_active=true, status_var=UAV_FSM_OPERATION_STATUS, transition_var=UAV_FSM_OPERATION_TRANSITION, active_state_var=UAV_FSM_STATE
+  state = machine=operation, value=IDLE
+  state = machine=operation, value=TAKEOFF_OPERATIONS
+  state = machine=operation, value=MISSION_EXECUTION
+  state = machine=operation, value=LANDING_OPERATIONS
+  state = machine=operation, value=OFFNOMINAL
+  state = machine=operation, value=LOITERING
+  substate = machine=operation, parent=TAKEOFF_OPERATIONS, var=UAV_FSM_TAKEOFF_OPERATIONS_STATE
+  substate = machine=operation, parent=LANDING_OPERATIONS, var=UAV_FSM_LANDING_OPERATIONS_STATE
+  transition = machine=operation, id=BEGIN_TAKEOFF_OPERATIONS, from=IDLE, to=TAKEOFF_OPERATIONS, guard="(((UAV_TAKEOFF_APPROVED=1) and (UAV_LANDED_STATE=ON_GROUND)) or (UAV_LANDED_STATE=TAKING_OFF)) or (UAV_LANDED_STATE=IN_AIR)"
+  transition = machine=operation, id=MISSION_COMPLETED, from=MISSION_EXECUTION, to=LANDING_OPERATIONS, guard="(RETURN=true) or (UAV_RENDEZVOUS_PHASE=REQUESTING)"
+  transition = machine=operation, id=NOT_READY, from=TAKEOFF_OPERATIONS, to=IDLE, guard="((((UAV_FSM_TAKEOFF_OPERATIONS_STATE=ESTABLISHING_TAKEOFF_READINESS) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_TAKEOFF_GATE_READY=0)) and (UAV_TAKEOFF_APPROVED=0)) and (UAV_TAKEOFF_RESULT!=UNKNOWN)"
+  transition = machine=operation, id=CLEARANCE_REJECTED, from=TAKEOFF_OPERATIONS, to=IDLE, guard="((((UAV_FSM_TAKEOFF_OPERATIONS_STATE=REQUESTING_TAKEOFF_CLEARANCE) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_TAKEOFF_GATE_READY=0)) and (UAV_TAKEOFF_APPROVED=0)) and (UAV_TAKEOFF_RESULT!=UNKNOWN)"
+  transition = machine=operation, id=TAKEOFF_COMPLETED, from=TAKEOFF_OPERATIONS, to=MISSION_EXECUTION, guard="(UAV_FSM_TAKEOFF_OPERATIONS_STATE=TAKEOFF) and (UAV_LANDED_STATE=IN_AIR)"
+  transition = machine=operation, id=TAKEOFF_FAILED, from=TAKEOFF_OPERATIONS, to=IDLE, guard="((((UAV_FSM_TAKEOFF_OPERATIONS_STATE=TAKEOFF) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_TAKEOFF_GATE_READY=0)) and (UAV_TAKEOFF_APPROVED=0)) and (UAV_TAKEOFF_RESULT!=UNKNOWN)"
+  transition = machine=operation, id=LANDING_COMPLETED, from=LANDING_OPERATIONS, to=IDLE, guard="(((UAV_FSM_LANDING_OPERATIONS_STATE=LANDING) and (UAV_RENDEZVOUS_PHASE=COMPLETE)) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_IS_ARMED=false)"
+  transition = machine=operation, id=SECONDARY_LANDING_COMPLETED, from=LANDING_OPERATIONS, to=OFFNOMINAL, guard="(((UAV_FSM_LANDING_OPERATIONS_STATE=SECONDARY_LANDING) and (UAV_SECONDARY_RECOVERY_STATE=LANDED)) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_IS_ARMED=false)"
+  transition = machine=operation, id=SECONDARY_LOITER_ESTABLISHED, from=LANDING_OPERATIONS, to=LOITERING, guard="(UAV_FSM_LANDING_OPERATIONS_STATE=LOITERING_AT_SECONDARY_ALTITUDE) and (UAV_SECONDARY_RECOVERY_STATE=LOITERING)"
+
+  machine = id=takeoff_operations, state_var=UAV_FSM_TAKEOFF_OPERATIONS_STATE, initial_state=ESTABLISHING_TAKEOFF_READINESS, initial_node=start, initial_transition_id=INITIAL, initially_active=false, status_var=UAV_FSM_TAKEOFF_OPERATIONS_STATUS, transition_var=UAV_FSM_TAKEOFF_OPERATIONS_TRANSITION, parent_state_var=UAV_FSM_OPERATION_STATE, parent_state=TAKEOFF_OPERATIONS, reset_on_inactive=true
+  state = machine=takeoff_operations, value=ESTABLISHING_TAKEOFF_READINESS
+  state = machine=takeoff_operations, value=REQUESTING_TAKEOFF_CLEARANCE
+  state = machine=takeoff_operations, value=TAKEOFF
+  transition = machine=takeoff_operations, id=ESTABLISHED, from=ESTABLISHING_TAKEOFF_READINESS, to=REQUESTING_TAKEOFF_CLEARANCE, guard="((((UAV_TAKEOFF_GATE_READY=1) and (UAV_TAKEOFF_APPROVED=1)) and (UAV_LANDED_STATE=ON_GROUND)) or (UAV_LANDED_STATE=TAKING_OFF)) or (UAV_LANDED_STATE=IN_AIR)"
+  transition = machine=takeoff_operations, id=CLEARANCE_GRANTED, from=REQUESTING_TAKEOFF_CLEARANCE, to=TAKEOFF, guard="((UAV_TAKEOFF_APPROVED=1) or (UAV_LANDED_STATE=TAKING_OFF)) or (UAV_LANDED_STATE=IN_AIR)"
+
+  machine = id=landing_operations, state_var=UAV_FSM_LANDING_OPERATIONS_STATE, initial_state=ESTABLISHING_LANDING_READINESS, initial_node=start, initial_transition_id=INITIAL, initially_active=false, status_var=UAV_FSM_LANDING_OPERATIONS_STATUS, transition_var=UAV_FSM_LANDING_OPERATIONS_TRANSITION, parent_state_var=UAV_FSM_OPERATION_STATE, parent_state=LANDING_OPERATIONS, reset_on_inactive=true
+  state = machine=landing_operations, value=ESTABLISHING_LANDING_READINESS
+  state = machine=landing_operations, value=REQUESTING_RECOVERY
+  state = machine=landing_operations, value=NEGOTIATING_RENDEZVOUS_POINT
+  state = machine=landing_operations, value=MOVING_TO_RENDEZVOUS_POINT
+  state = machine=landing_operations, value=WAITING_FOR_LANDING_CLEARANCE
+  state = machine=landing_operations, value=APPROACHING
+  state = machine=landing_operations, value=LANDING
+  state = machine=landing_operations, value=RETRYING_LANDING_TARGET
+  state = machine=landing_operations, value=DEVIATING_TO_SECONDARY_LANDING_POSITION
+  state = machine=landing_operations, value=SECONDARY_LANDING
+  state = machine=landing_operations, value=TRANSITING_TO_SECONDARY_LOITER_LOCATION
+  state = machine=landing_operations, value=LOITERING_AT_SECONDARY_ALTITUDE
+  transition = machine=landing_operations, id=READINESS_ESTABLISHED, from=ESTABLISHING_LANDING_READINESS, to=REQUESTING_RECOVERY, guard="((((((((UAV_HEALTH_ALL_OK=true) and (UAV_GPS_AVAILABLE=true)) and (UAV_IS_ARMED=true)) and (UAV_LANDED_STATE=IN_AIR)) or (UAV_RENDEZVOUS_PHASE=REQUESTING)) or (UAV_RENDEZVOUS_PHASE=RENDEZVOUS)) or (UAV_RENDEZVOUS_PHASE=ACQUIRING_TARGET)) or (UAV_RENDEZVOUS_PHASE=LANDING)) or (UAV_RENDEZVOUS_PHASE=COMPLETE)"
+  transition = machine=landing_operations, id=READINESS_FAILED, from=ESTABLISHING_LANDING_READINESS, to=TRANSITING_TO_SECONDARY_LOITER_LOCATION, guard="(UAV_HEALTH_ALL_OK=false) or (UAV_GPS_AVAILABLE=false)"
+  transition = machine=landing_operations, id=RECOVERY_REQUESTED, from=REQUESTING_RECOVERY, to=NEGOTIATING_RENDEZVOUS_POINT, guard="((((UAV_RENDEZVOUS_PHASE=REQUESTING) or (UAV_RENDEZVOUS_PHASE=RENDEZVOUS)) or (UAV_RENDEZVOUS_PHASE=ACQUIRING_TARGET)) or (UAV_RENDEZVOUS_PHASE=LANDING)) or (UAV_RENDEZVOUS_PHASE=COMPLETE)"
+  transition = machine=landing_operations, id=RECOVERY_REQUEST_FAILED, from=REQUESTING_RECOVERY, to=DEVIATING_TO_SECONDARY_LANDING_POSITION, guard="UAV_RENDEZVOUS_PHASE=ABORT"
+  transition = machine=landing_operations, id=RENDEZVOUS_AGREED, from=NEGOTIATING_RENDEZVOUS_POINT, to=MOVING_TO_RENDEZVOUS_POINT, guard="((((UAV_RENDEZVOUS_PHASE=RENDEZVOUS) and (ROUTE_BUFFER_VEHICLE_STATE=DEPLOY_ACCEPTED)) or (UAV_RENDEZVOUS_PHASE=ACQUIRING_TARGET)) or (UAV_RENDEZVOUS_PHASE=LANDING)) or (UAV_RENDEZVOUS_PHASE=COMPLETE)"
+  transition = machine=landing_operations, id=RENDEZVOUS_NEGOTIATION_FAILED, from=NEGOTIATING_RENDEZVOUS_POINT, to=DEVIATING_TO_SECONDARY_LANDING_POSITION, guard="UAV_RENDEZVOUS_PHASE=ABORT"
+  transition = machine=landing_operations, id=RENDEZVOUS_REACHED, from=MOVING_TO_RENDEZVOUS_POINT, to=WAITING_FOR_LANDING_CLEARANCE, guard="(((UAV_RENDEZVOUS_ARRIVED=1) or (UAV_RENDEZVOUS_PHASE=ACQUIRING_TARGET)) or (UAV_RENDEZVOUS_PHASE=LANDING)) or (UAV_RENDEZVOUS_PHASE=COMPLETE)"
+  transition = machine=landing_operations, id=RENDEZVOUS_TRANSIT_FAILED, from=MOVING_TO_RENDEZVOUS_POINT, to=DEVIATING_TO_SECONDARY_LANDING_POSITION, guard="UAV_RENDEZVOUS_PHASE=ABORT"
+  transition = machine=landing_operations, id=LANDING_CLEARANCE_GRANTED, from=WAITING_FOR_LANDING_CLEARANCE, to=APPROACHING, guard="((UAV_RENDEZVOUS_PHASE=ACQUIRING_TARGET) or (UAV_RENDEZVOUS_PHASE=LANDING)) or (UAV_RENDEZVOUS_PHASE=COMPLETE)"
+  transition = machine=landing_operations, id=LANDING_CLEARANCE_FAILED, from=WAITING_FOR_LANDING_CLEARANCE, to=DEVIATING_TO_SECONDARY_LANDING_POSITION, guard="UAV_RENDEZVOUS_PHASE=ABORT"
+  transition = machine=landing_operations, id=LANDING_COMMITTED, from=APPROACHING, to=LANDING, guard="(((UAV_LANDING_GATE_READY=1) and (UAV_PREC_LAND_RESULT!=UNKNOWN)) and (UAV_RENDEZVOUS_PHASE=LANDING)) or (UAV_RENDEZVOUS_PHASE=COMPLETE)"
+  transition = machine=landing_operations, id=APPROACH_FAILED, from=APPROACHING, to=DEVIATING_TO_SECONDARY_LANDING_POSITION, guard="UAV_RENDEZVOUS_PHASE=ABORT"
+  transition = machine=landing_operations, id=LANDING_TARGET_LOST, from=LANDING, to=RETRYING_LANDING_TARGET, guard="UAV_LANDING_TARGET_STATE=LOST"
+  transition = machine=landing_operations, id=LANDING_FAILED, from=LANDING, to=DEVIATING_TO_SECONDARY_LANDING_POSITION, guard="(UAV_RENDEZVOUS_PHASE=ABORT) and (UAV_LANDING_TARGET_STATE!=LOST)"
+  transition = machine=landing_operations, id=TARGET_REACQUIRED, from=RETRYING_LANDING_TARGET, to=LANDING, guard="UAV_LANDING_TARGET_STATE=TRACKED"
+  transition = machine=landing_operations, id=TARGET_RETRIES_EXHAUSTED, from=RETRYING_LANDING_TARGET, to=DEVIATING_TO_SECONDARY_LANDING_POSITION, guard="UAV_LANDING_TARGET_STATE=RETRIES_EXHAUSTED"
+  transition = machine=landing_operations, id=SECONDARY_LANDING_POSITION_REACHED, from=DEVIATING_TO_SECONDARY_LANDING_POSITION, to=SECONDARY_LANDING, guard="((UAV_SECONDARY_RECOVERY_STATE=ARRIVED) or (UAV_SECONDARY_RECOVERY_STATE=LANDING)) or (UAV_SECONDARY_RECOVERY_STATE=LANDED)"
+  transition = machine=landing_operations, id=SECONDARY_LOITER_LOCATION_REACHED, from=TRANSITING_TO_SECONDARY_LOITER_LOCATION, to=LOITERING_AT_SECONDARY_ALTITUDE, guard="(UAV_SECONDARY_RECOVERY_STATE=ARRIVED) or (UAV_SECONDARY_RECOVERY_STATE=LOITERING)"

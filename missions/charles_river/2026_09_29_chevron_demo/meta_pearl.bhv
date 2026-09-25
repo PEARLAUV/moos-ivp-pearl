@@ -3,12 +3,12 @@
 // NAME: Charles Benjamin
 //-------------------------------------------------
 
-initialize DEPLOY               = false
-initialize RETURN               = false
-initialize STATION_KEEP         = false
 initialize MOOS_MANUAL_OVERRIDE = true
 initialize PEARL_RENDEZVOUS_ACTIVE  = false
 initialize PEARL_RENDEZVOUS_ARRIVED = false
+
+// BHV_FSM fallback (generate with --backend bhv):
+//#include plug_pearl_states.bhv
 
 //----------------------------------------------------
 Behavior = BHV_StationKeep
@@ -21,10 +21,11 @@ Behavior = BHV_StationKeep
   condition = MOOS_MANUAL_OVERRIDE=false
   condition = PEARL_RENDEZVOUS_ACTIVE=false
 
+  // Hold tightly enough for the UAV's three-metre landing-separation gate.
   center_activate    = true
-  inner_radius       = 5
-  outer_radius       = 10
-  hibernation_radius = 10
+  inner_radius       = 0.25
+  outer_radius       = 0.5
+  hibernation_radius = 0.75
   outer_speed        = $(SPEED)
   transit_speed      = $(SPEED)
   swing_time         = 3
@@ -87,8 +88,9 @@ Behavior = BHV_Waypoint
 // PEARL's fixed route. Completion hands PEARL to its existing StationKeep.
 Behavior = BHV_Waypoint
 {
-  name      = pearl_rendezvous
-  pwt       = 110
+  name       = pearl_rendezvous_
+  pwt        = 110
+  templating = spawn
   condition = DEPLOY=true
   condition = MOOS_MANUAL_OVERRIDE=false
   condition = PEARL_RENDEZVOUS_ACTIVE=true
@@ -100,8 +102,12 @@ Behavior = BHV_Waypoint
   endflag = STATION_KEEP=true
 
   speed          = $(SPEED)
-  capture_radius = 3
-  slip_radius    = 10
+  capture_radius = 1
+  // Disable non-monotonic/slip completion for this one-point maneuver.
+  // When PEARL starts close but is still moving away, a larger slip radius
+  // can otherwise declare success before she has actually reached the point.
+  slip_radius    = 1
+  capture_line   = false
   points         = empty
   repeat         = 0
   order          = normal

@@ -1,0 +1,320 @@
+version = 2
+
+[outputs]
+runtime = "plug_uav_fsm_runtime.moos"
+bhv = "plug_uav_states.bhv"
+d2 = "uav_fsm/overview.d2"
+svg = "uav_fsm/svg"
+bindings = "uav_fsm/bindings.json"
+pshare = "plug_uav_fsm_pshare.moos"
+scopes = "plug_uav_fsm_scopes.moos"
+
+[targets.bhv]
+prefix = "UAV"
+behavior = "BHV_FSM"
+state_name_case = "upper_snake"
+section_name_case = "upper_snake"
+
+[targets.d2.layout]
+direction = "down"
+
+# Coordination ownership contract:
+# - The takeoff gate, route buffer, rendezvous app, and ArduBridge own their
+#   respective facts. This FSM observes them and initializes none of them.
+# - UAV_FSM_* state, status, transition, aggregate, and count variables are
+#   published authoritatively by this UAV Helm.
+[facts]
+uav_landed_state = { initial = "UNKNOWN", initialize = false }
+uav_health_all_ok = { initial = "UNKNOWN", initialize = false }
+uav_gps_available = { initial = "UNKNOWN", initialize = false }
+uav_is_armed = { initial = false, initialize = false }
+uav_takeoff_gate_ready = { initial = 0, initialize = false }
+uav_takeoff_approved = { initial = 0, initialize = false }
+uav_takeoff_result = { initial = "UNKNOWN", initialize = false }
+route_buffer_vehicle_state = { initial = "UNKNOWN", initialize = false }
+uav_rendezvous_phase = { initial = "IDLE", initialize = false }
+uav_rendezvous_arrived = { initial = 0, initialize = false }
+uav_landing_gate_ready = { initial = 0, initialize = false }
+uav_prec_land_result = { initial = "UNKNOWN", initialize = false }
+# Published by the landing-target retry controller.
+uav_landing_target_state = { initial = "UNKNOWN", initialize = false }
+# Published by pRendezvous's fixed-point secondary-recovery controller.
+uav_secondary_recovery_state = { initial = "UNKNOWN", initialize = false }
+deploy = false
+return = false
+
+[machine]
+label = "UAV operation"
+initial = "idle"
+initial_layout = { left = 0, top = 514 }
+
+[states.idle]
+label = "Idle on deck"
+layout = { left = 120, top = 500, width = 200 }
+
+[states.idle.transitions.begin_takeoff_operations]
+to = "takeoff_operations"
+when = "((uav_takeoff_approved==1) && (uav_landed_state==ON_GROUND)) || (uav_landed_state==TAKING_OFF) || (uav_landed_state==IN_AIR)"
+label = "Tasking received"
+
+[states.takeoff_operations]
+label = "Takeoff operations"
+layout = { left = 400, top = 280, width = 250 }
+initial = "establishing_takeoff_readiness"
+diagram = true
+
+[states.takeoff_operations.sinks.completed_successfully]
+label = "Completed"
+
+[states.takeoff_operations.sinks.aborted]
+label = "Aborted"
+
+[states.takeoff_operations.states.establishing_takeoff_readiness]
+label = "Establishing takeoff readiness"
+layout = { top = 170, left = 0, width = 250}
+
+[states.takeoff_operations.states.establishing_takeoff_readiness.transitions.established]
+to = "requesting_takeoff_clearance"
+when = "((uav_takeoff_gate_ready==1) && (uav_takeoff_approved==1) && (uav_landed_state==ON_GROUND)) || (uav_landed_state==TAKING_OFF) || (uav_landed_state==IN_AIR)"
+label = "Readiness established"
+
+[states.takeoff_operations.states.establishing_takeoff_readiness.transitions.not_ready]
+to = "sink.aborted"
+when = "(uav_landed_state==ON_GROUND) && (uav_takeoff_gate_ready==0) && (uav_takeoff_approved==0) && (uav_takeoff_result!=UNKNOWN)"
+label = "Not ready"
+
+[states.takeoff_operations.states.requesting_takeoff_clearance]
+label = "Requesting takeoff clearance"
+layout = { top = 340, left = 0, width = 250}
+
+[states.takeoff_operations.states.requesting_takeoff_clearance.transitions.clearance_granted]
+to = "takeoff"
+when = "(uav_takeoff_approved==1) || (uav_landed_state==TAKING_OFF) || (uav_landed_state==IN_AIR)"
+label = "Granted"
+
+[states.takeoff_operations.states.requesting_takeoff_clearance.transitions.clearance_rejected]
+to = "sink.aborted"
+when = "(uav_landed_state==ON_GROUND) && (uav_takeoff_gate_ready==0) && (uav_takeoff_approved==0) && (uav_takeoff_result!=UNKNOWN)"
+label = "Denied"
+
+[states.takeoff_operations.states.takeoff]
+label = "Taking off"
+layout = { top = 510, left = 0, width = 250}
+
+[states.takeoff_operations.states.takeoff.transitions.takeoff_completed]
+to = "sink.completed_successfully"
+when = "uav_landed_state==IN_AIR"
+label = "Confirmed"
+
+[states.takeoff_operations.states.takeoff.transitions.takeoff_failed]
+to = "sink.aborted"
+when = "(uav_landed_state==ON_GROUND) && (uav_takeoff_gate_ready==0) && (uav_takeoff_approved==0) && (uav_takeoff_result!=UNKNOWN)"
+label = "Failed"
+
+[states.takeoff_operations.transitions.takeoff_completed]
+exit = "completed_successfully"
+to = "mission_execution"
+
+[states.takeoff_operations.transitions.takeoff_aborted]
+to = "idle"
+exit = "aborted"
+
+[states.mission_execution]
+label = "Executing mission"
+layout = { left = 400, top = 500, width = 250 }
+
+[states.mission_execution.transitions.mission_completed]
+to = "landing_operations"
+when = "(return==true) || (uav_rendezvous_phase==REQUESTING)"
+label = "Mission complete"
+
+[states.landing_operations]
+label = "Landing operations"
+diagram = true
+initial = "establishing_landing_readiness"
+initial_layout = { left = 283, top = 0 }
+layout = { left = 400, top = 720, width = 250 }
+
+[states.landing_operations.sinks.nominal]
+label = "Completed"
+
+[states.landing_operations.sinks.offnominal]
+label = "Off-nominal"
+layout = { left = 1350, top = 694 }
+
+[states.landing_operations.sinks.loitering]
+label = "Loitering"
+layout = { left = 1350, top = 94 }
+
+[states.landing_operations.transitions.nominal_exit]
+exit = "nominal"
+to = "idle"
+
+[states.landing_operations.transitions.offnominal_exit]
+exit = "offnominal"
+to = "offnominal"
+
+[states.landing_operations.transitions.loitering_exit]
+exit = "loitering"
+to = "loitering"
+
+[states.landing_operations.states.establishing_landing_readiness]
+label = "Establishing landing readiness"
+layout = { left = 150, top = 80, width = 300 }
+
+[states.landing_operations.states.establishing_landing_readiness.transitions.readiness_established]
+to = "requesting_recovery"
+when = "((uav_health_all_ok==true) && (uav_gps_available==true) && (uav_is_armed==true) && (uav_landed_state==IN_AIR)) || (uav_rendezvous_phase==REQUESTING) || (uav_rendezvous_phase==RENDEZVOUS) || (uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)"
+label = "Ready"
+
+[states.landing_operations.states.establishing_landing_readiness.transitions.readiness_failed]
+to = "transiting_to_secondary_loiter_location"
+when = "(uav_health_all_ok==false) || (uav_gps_available==false)"
+label = "Readiness failed"
+
+[states.landing_operations.states.requesting_recovery]
+label = "Requesting recovery"
+layout = { left = 150, top = 230, width = 300 }
+
+[states.landing_operations.states.requesting_recovery.transitions.recovery_requested]
+to = "negotiating_rendezvous_point"
+when = "(uav_rendezvous_phase==REQUESTING) || (uav_rendezvous_phase==RENDEZVOUS) || (uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)"
+label = "Request sent"
+
+[states.landing_operations.states.requesting_recovery.transitions.recovery_request_failed]
+to = "deviating_to_secondary_landing_position"
+when = "uav_rendezvous_phase==ABORT"
+label = "Request failed"
+
+[states.landing_operations.states.negotiating_rendezvous_point]
+label = "Negotiating rendezvous point"
+layout = { left = 150, top = 380, width = 300 }
+
+[states.landing_operations.states.negotiating_rendezvous_point.transitions.rendezvous_agreed]
+to = "moving_to_rendezvous_point"
+when = "((uav_rendezvous_phase==RENDEZVOUS) && (route_buffer_vehicle_state==DEPLOY_ACCEPTED)) || (uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)"
+label = "Rendezvous agreed"
+
+[states.landing_operations.states.negotiating_rendezvous_point.transitions.rendezvous_negotiation_failed]
+to = "deviating_to_secondary_landing_position"
+when = "uav_rendezvous_phase==ABORT"
+label = "Negotiation\nfailed"
+
+[states.landing_operations.states.moving_to_rendezvous_point]
+label = "Moving to rendezvous point"
+layout = { left = 150, top = 530, width = 300 }
+
+[states.landing_operations.states.moving_to_rendezvous_point.transitions.rendezvous_reached]
+to = "waiting_for_landing_clearance"
+when = "(uav_rendezvous_arrived==1) || (uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)"
+label = "Rendezvous reached"
+
+[states.landing_operations.states.moving_to_rendezvous_point.transitions.rendezvous_transit_failed]
+to = "deviating_to_secondary_landing_position"
+when = "uav_rendezvous_phase==ABORT"
+label = "Rendezvous transit failed"
+
+[states.landing_operations.states.waiting_for_landing_clearance]
+label = "Waiting for landing clearance"
+layout = { left = 150, top = 680, width = 300 }
+
+[states.landing_operations.states.waiting_for_landing_clearance.transitions.landing_clearance_granted]
+to = "approaching"
+when = "(uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)"
+label = "Clearance granted"
+
+[states.landing_operations.states.waiting_for_landing_clearance.transitions.landing_clearance_failed]
+to = "deviating_to_secondary_landing_position"
+when = "uav_rendezvous_phase==ABORT"
+label = "Clearance failed"
+
+[states.landing_operations.states.approaching]
+label = "Approaching"
+layout = { left = 150, top = 830, width = 300 }
+
+[states.landing_operations.states.approaching.transitions.landing_committed]
+to = "landing"
+when = "((uav_landing_gate_ready==1) && (uav_prec_land_result!=UNKNOWN) && (uav_rendezvous_phase==LANDING)) || (uav_rendezvous_phase==COMPLETE)"
+label = "Landing committed"
+
+[states.landing_operations.states.approaching.transitions.approach_failed]
+to = "deviating_to_secondary_landing_position"
+when = "uav_rendezvous_phase==ABORT"
+label = "Approach failed"
+
+[states.landing_operations.states.landing]
+label = "Landing"
+layout = { left = 150, top = 980, width = 300 }
+
+[states.landing_operations.states.landing.transitions.landing_completed]
+to = "sink.nominal"
+when = "(uav_rendezvous_phase==COMPLETE) && (uav_landed_state==ON_GROUND) && (uav_is_armed==false)"
+label = "Landed and disarmed"
+
+[states.landing_operations.states.landing.transitions.landing_target_lost]
+to = "retrying_landing_target"
+when = "uav_landing_target_state==LOST"
+label = "Target lost"
+
+[states.landing_operations.states.landing.transitions.landing_failed]
+to = "deviating_to_secondary_landing_position"
+when = "(uav_rendezvous_phase==ABORT) && (uav_landing_target_state!=LOST)"
+label = "Primary landing failed"
+
+[states.landing_operations.states.retrying_landing_target]
+label = "Retrying landing target"
+layout = { left = 620, top = 1110, width = 230 }
+
+[states.landing_operations.states.retrying_landing_target.transitions.target_reacquired]
+to = "landing"
+when = "uav_landing_target_state==TRACKED"
+label = "Target reacquired"
+
+[states.landing_operations.states.retrying_landing_target.transitions.target_retries_exhausted]
+to = "deviating_to_secondary_landing_position"
+when = "uav_landing_target_state==RETRIES_EXHAUSTED"
+label = "Retries exhausted"
+
+[states.landing_operations.states.deviating_to_secondary_landing_position]
+label = "Transiting to rally point"
+layout = { left = 600, top = 680, width = 250 }
+
+[states.landing_operations.states.deviating_to_secondary_landing_position.transitions.secondary_landing_position_reached]
+to = "secondary_landing"
+when = "(uav_secondary_recovery_state==ARRIVED) || (uav_secondary_recovery_state==LANDING) || (uav_secondary_recovery_state==LANDED)"
+label = "Rally point\nreached"
+
+[states.landing_operations.states.secondary_landing]
+label = "Secondary landing"
+layout = { left = 980, top = 680, width = 250 }
+
+[states.landing_operations.states.secondary_landing.transitions.secondary_landing_completed]
+to = "sink.offnominal"
+when = "(uav_secondary_recovery_state==LANDED) && (uav_landed_state==ON_GROUND) && (uav_is_armed==false)"
+label = "Secondary\nlanding\ncomplete"
+
+[states.landing_operations.states.transiting_to_secondary_loiter_location]
+label = "Transiting to rally point"
+layout = { left = 600, top = 80, width = 250 }
+
+[states.landing_operations.states.transiting_to_secondary_loiter_location.transitions.secondary_loiter_location_reached]
+to = "loitering_at_secondary_altitude"
+when = "(uav_secondary_recovery_state==ARRIVED) || (uav_secondary_recovery_state==LOITERING)"
+label = "Rally point\nreached"
+
+[states.landing_operations.states.loitering_at_secondary_altitude]
+label = "Loitering at secondary altitude"
+layout = { left = 980, top = 80, width = 250 }
+
+[states.landing_operations.states.loitering_at_secondary_altitude.transitions.secondary_loiter_established]
+to = "sink.loitering"
+when = "uav_secondary_recovery_state==LOITERING"
+label = "Loiter\nestablished"
+
+[states.offnominal]
+label = "Off-nominal landing\nTakeoff inhibited"
+layout = { left = 400, top = 900, width = 250 }
+
+[states.loitering]
+label = "Loitering at secondary altitude\nAwaiting recovery"
+layout = { left = 700, top = 900, width = 300 }

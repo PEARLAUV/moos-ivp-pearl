@@ -30,6 +30,8 @@ MODE="SIM"
 UAV_START="-4,-22,0"
 PEARL_START="-4,-22,0"
 TAKEOFF_ALTITUDE="8"
+SECONDARY_LANDING="10,15"
+MIN_STATE_TIME="0"
 AP_URL=""
 AP_PROTOCOL=""
 
@@ -62,6 +64,8 @@ for ARGI; do
     echo "  --uav_start=<X,Y,H>           UAV SIM start position"
     echo "  --pearl_start=<X,Y,H>         PEARL SIM start position"
     echo "  --takeoff_altitude=<8>        UAV altitude, m AGL"
+    echo "  --secondary_landing=<X,Y>     Fixed contingency landing point"
+    echo "  --min_state_time=<0>          Minimum FSM state dwell, seconds"
     echo "  --ap_url=<endpoint>           UAV ArduPilot endpoint"
     echo "  --ap_protocol=<proto>         UAV udp, tcp, or serial"
     echo
@@ -99,6 +103,10 @@ for ARGI; do
     PEARL_START="${ARGI#*=}"
   elif [[ "${ARGI}" == --takeoff_altitude=* ]]; then
     TAKEOFF_ALTITUDE="${ARGI#*=}"
+  elif [[ "${ARGI}" == --secondary_landing=* ]]; then
+    SECONDARY_LANDING="${ARGI#*=}"
+  elif [[ "${ARGI}" == --min_state_time=* ]]; then
+    MIN_STATE_TIME="${ARGI#*=}"
   elif [[ "${ARGI}" == --ap_url=* ]]; then
     AP_URL="${ARGI#*=}"
   elif [[ "${ARGI}" == --ap_protocol=* ]]; then
@@ -124,6 +132,10 @@ done
 MODE=$(echo "$MODE" | tr '[:lower:]' '[:upper:]')
 if [[ "$MODE" != "SIM" && "$MODE" != "SITL" && "$MODE" != "REAL" ]]; then
   echo "$ME: --mode must be SIM, SITL, or REAL. Exit Code 1."
+  exit 1
+fi
+if [[ ! "$MIN_STATE_TIME" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  echo "$ME: --min_state_time must be a non-negative number. Exit Code 1."
   exit 1
 fi
 
@@ -158,6 +170,8 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "SHORE_PSHARE =      [${SHORE_PSHARE}]"
   echo "UAV_PSHARE =        [${UAV_PSHARE}]"
   echo "PEARL_PSHARE =      [${PEARL_PSHARE}]"
+  echo "SECONDARY_LANDING = [${SECONDARY_LANDING}]"
+  echo "MIN_STATE_TIME =    [${MIN_STATE_TIME}]"
   echo -n "Hit any key to continue launch "
   read -r _
 fi
@@ -177,6 +191,8 @@ UARGS+=(--mport="$UAV_MPORT" --pshare="$UAV_PSHARE")
 UARGS+=(--shore_pshare="$SHORE_PSHARE" --start_pos="$UAV_START")
 UARGS+=(--pearl_ip=localhost --pearl_pshare="$PEARL_PSHARE")
 UARGS+=(--takeoff_altitude="$TAKEOFF_ALTITUDE")
+UARGS+=(--secondary_landing="$SECONDARY_LANDING")
+UARGS+=(--min_state_time="$MIN_STATE_TIME")
 [ -n "$AP_URL" ] && UARGS+=(--ap_url="$AP_URL")
 [ -n "$AP_PROTOCOL" ] && UARGS+=(--ap_protocol="$AP_PROTOCOL")
 [ "$JUST_MAKE" = "yes" ] && UARGS+=(--just_make)
@@ -187,6 +203,7 @@ PARGS+=(--mport="$PEARL_MPORT" --pshare="$PEARL_PSHARE")
 PARGS+=(--shore_pshare="$SHORE_PSHARE" --start_pos="$PEARL_START")
 PARGS+=(--uav_ip=localhost --uav_pshare="$UAV_PSHARE")
 PARGS+=(--sim_attachment="$SIM_ATTACHMENT")
+PARGS+=(--min_state_time="$MIN_STATE_TIME")
 [ "$JUST_MAKE" = "yes" ] && PARGS+=(--just_make)
 [ "$VERBOSE" = "yes" ] && PARGS+=(--verbose)
 
