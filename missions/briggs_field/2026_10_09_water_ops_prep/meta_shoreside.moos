@@ -200,10 +200,7 @@ ProcessConfig = uFldShoreBroker
   qbridge = MEDIATED_MESSAGE
   qbridge = ACK_MESSAGE
 
-#ifdef XMODE SIM
-#else
   qbridge = HEARTBEAT
-#endif
   qbridge = NODE_REPORT
 
   // Destination suffixes address canonical task triggers to either vehicle;
@@ -274,13 +271,6 @@ ProcessConfig = pMarineViewer
   scope = UAV_TASK_TAKEOFF_REQUESTED
   scope = UAV_TASK_ROUTE_STARTED
   scope = UAV_TASK_REJECTION
-#ifdef XMODE SIM
-  scope = UAV_THRUST_MIXER_STATE
-  scope = DESIRED_THRUST_L
-  scope = DESIRED_THRUST_R
-  scope = UAV_SIM_ATTACHED
-  scope = UAV_SIM_ATTACHMENT_STATE
-#endif
   scope = AUTOPILOT_MODE
   scope = CONTROL_AUTHORITY
   scope = IVPHELM_STATE

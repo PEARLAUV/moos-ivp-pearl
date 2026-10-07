@@ -25,7 +25,7 @@ VERBOSE="no"
 JUST_MAKE="no"
 AUTO_LAUNCHED="no"
 LAUNCH_GUI="yes"
-MODE="SIM"
+MODE="SITL"
 
 IP_ADDR="localhost"
 MOOS_PORT="9000"
@@ -46,7 +46,7 @@ for ARGI; do
     echo "  --verbose, -v                 Verbose launch summary"
     echo "  --auto, -a                    Script launch, no uMAC"
     echo "  --nogui, -ng                  No pMarineViewer"
-    echo "  --mode=<SIM|SITL|REAL>        Whole-mission operating mode"
+    echo "  --mode=<SITL|REAL>            Whole-mission operating mode"
     echo "  --ip=<localhost>              Advertised shoreside pShare host"
     echo "  --mport=<9000>                Shoreside MOOSDB port"
     echo "  --pshare=<9200>               Shoreside pShare port"
@@ -87,8 +87,8 @@ for ARGI; do
 done
 
 MODE=$(echo "$MODE" | tr '[:lower:]' '[:upper:]')
-if [[ "$MODE" != "SIM" && "$MODE" != "SITL" && "$MODE" != "REAL" ]]; then
-  echo "$ME: --mode must be SIM, SITL, or REAL. Exit Code 1."
+if [[ "$MODE" != "SITL" && "$MODE" != "REAL" ]]; then
+  echo "$ME: --mode must be SITL or REAL. Exit Code 1."
   exit 1
 fi
 
@@ -121,8 +121,7 @@ nsplug meta_shoreside.moos targ_shoreside.moos "${NSFLAGS[@]}" \
   WARP="$TIME_WARP" IP_ADDR="$IP_ADDR" MOOS_PORT="$MOOS_PORT" \
   PSHARE_PORT="$PSHARE_PORT" LAUNCH_GUI="$LAUNCH_GUI" \
   UAV_DIRECT_ENABLE="$UAV_DIRECT_ENABLE" UAV_IP="$UAV_IP" \
-  UAV_PSHARE="$UAV_PSHARE" \
-  XMODE="$MODE"
+  UAV_PSHARE="$UAV_PSHARE"
 
 if [ "$JUST_MAKE" = "yes" ]; then
   echo "$ME: Targ files made; exiting without launch."

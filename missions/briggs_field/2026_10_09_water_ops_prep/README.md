@@ -284,8 +284,8 @@ remain independently configured.
 | `COMPLETE` | UAV reports landed; both coordinators publish completion. PEARL restores the deploy, return, station-keep, and manual-override values saved before recovery, so the Helm behavior resumes consistently with FSM history. |
 | `ABORT` | Cancel the UAV route, put the UAV in its configured hold, and put PEARL in StationKeep. |
 
-The UAV must have fresh navigation and, outside basic SIM, must be armed,
-airborne, and healthy before it may start. PEARL rejects stale navigation,
+The UAV must have fresh navigation and must be armed, airborne, and healthy
+before it may start. PEARL rejects stale navigation,
 unhealthy requests, malformed proposals, invalid or stale battery data, and
 timeouts. A low valid UAV battery raises recovery priority rather than
 rejecting the aircraft; takeoff has the separate reserve gate described below.
@@ -306,14 +306,14 @@ snapshot. The staged path is solid orange and marked `route (uncommitted)`;
 a successful submission turns it yellow and removes that text. Editing again
 restores the orange preview until resubmission. On the UAV, `pRouteBuffer`
 stages each snapshot on
-`ROUTE_UPDATE` and raises `ROUTE_EXECUTE` in both SIM and REAL. The mode-specific
+`ROUTE_UPDATE` and raises `ROUTE_EXECUTE` in both SITL and REAL. The shared
 `uRouteSequence` waits for `ROUTE_READY`, armed, and `IN_AIR` feedback before
 setting `ROUTE_DEPLOY` for the Helm. Operator snapshots may be staged in IDLE,
 TAKEOFF_OPERATIONS, or MISSION_EXECUTION, but execute only in MISSION_EXECUTION.
 Only `pRendezvous` may submit `purpose=recovery` snapshots, which stage and
 execute in LANDING_OPERATIONS. A rejected operator snapshot cannot overwrite an
-active recovery route. REAL also enables the ArduBridge Helm
-handoff and commands `FLY_WAYPOINT`; SIM uses Helm directly. PEARL-shoreside
+active recovery route. `pArduBridge` performs the Helm handoff and commands
+`FLY_WAYPOINT` in both UAV modes. PEARL-shoreside
 task, manual-control, abort, and telemetry traffic uses the bidirectional field
 broker rather than `pMediator`. Periodic state such
 as node reports, health, rendezvous status, and navigation uses ordinary
@@ -382,10 +382,9 @@ result after deactivation until a required input expires. Flight-plan input
 has no age limit: the Helm's `ROUTE_READY` spawnflag remains valid until changed.
 GPS requires a fresh 3D fix within 60 seconds and a continuous 5-second hold;
 flight-plan receipt has 60 seconds; low or invalid battery fails immediately
-(missing data gets 5 seconds). The armability check requires fresh health telemetry,
+(missing data gets 5 seconds). The armability check requires fresh flight-controller health telemetry,
 `UAV_IS_ARMABLE=1`, disarmed state, `UAV_LANDED_STATE=ON_GROUND`, and landed
-telemetry no older than 3 seconds. SIM supplies matching mock health and
-on-deck feedback while attached. Each named check has typed requirements,
+telemetry no older than 3 seconds. Each named check has typed requirements,
 per-variable immediate-fail or timeout policies, and an optional continuous
 success hold. Readiness succeeds only when all six named checks succeed; one
 failure follows the existing aborted takeoff path. The coordinator publishes
@@ -402,14 +401,8 @@ and pShare bridges it to shoreside. The processor advances its local
 `TAKEOFF_REQUEST_STATE` from `granted` to `complete` on confirmed departure;
 the PEARL FSM accepts either for the earlier clearance transition and requires
 `complete` before leaving takeoff support. `uOperatorPrecLand` still posts
-`ARDU_COMMAND=AUTOLAND` after landing clearance. SIM alone runs
-`uSimArmCommand`, `uSimTakeoffCommand`, `uSimPrecLandCommand`, and
-`uSimAttachmentCommand` in `plug_uav_sim.moos` to turn local commands and the
-nominal Idle-on-deck outcome into simulated armed, altitude, landed, mode, and
-attachment feedback. SIM raises `NAV_ALTITUDE` in 25
-steps scheduled 0.1 seconds apart, scaled to the configured takeoff altitude;
-it reports
-`IN_AIR` and target-altitude completion after the final step.
+`ARDU_COMMAND=AUTOLAND` after landing clearance. ArduPilot supplies armed,
+altitude, landed, and mode feedback in both SITL and REAL.
 The PEARL processor does
 not hard-code battery or wind thresholds: the PEARL
 `uChecks` configuration owns them. Each collection publishes a JSON snapshot
@@ -431,17 +424,18 @@ advance to `AGREEING_RENDEZVOUS` until the aggregate succeeds for the current
 never posts an opening command and does not activate the takeoff cover mock.
 Takeoff-support Helm controls are not
 snapshotted by this exchange; their binding to authoritative PEARL states and
-post-interruption support lifecycle remain separate work. SIM supplies a GPS
-fix, 80-percent battery, and 2 m/s wind for PEARL prechecks, and a timed mock
-that reports the droneport bay cover `opening` on entering takeoff support and
-`open` ten seconds later. With no physical cover installed, this mock runs in
-both SIM and REAL, but only while establishing takeoff conditions; recovery
+post-interruption support lifecycle remain separate work. In SITL, the PEARL
+simulator supplies a GPS fix, 80-percent battery, and 2 m/s wind for PEARL
+prechecks. A timed mock reports the droneport bay cover `opening` on entering
+takeoff support and `open` ten seconds later. With no physical cover installed,
+this mock runs in both SITL and REAL, but only while establishing takeoff
+conditions; recovery
 merely observes the resulting cover state.
 
 Choose the `route` mouse context and click an ordered route. `UAV TASK` sends
 the stored snapshot, waits for independent prechecks and coordinator-driven
-arming/takeoff feedback, then uses short deliberate delays before route release, rendezvous
-request, and simulated touchdown so their FSM states
+arming/takeoff feedback, then uses short deliberate delays before route release
+and rendezvous request so their FSM states
 remain visible in the UI. Every stage still waits for authoritative feedback,
 and route execution remains inhibited until `UAV_LANDED_STATE=IN_AIR`. When the
 route behavior completes, the UAV posts `RENDEZVOUS_START` locally after the
@@ -580,44 +574,22 @@ verify that the vision source labels PEARL as `target_num=0`. See the
 [ArduPilot precision-landing documentation](https://ardupilot.org/copter/docs/precision-landing-and-loiter.html)
 and [MAVLink `LANDING_TARGET`](https://mavlink.io/en/messages/common.html#LANDING_TARGET).
 
-## SIM UAV dynamics and landing attachment
+## SITL deck attachment
 
-The lightweight UAV SIM uses `pMarinePIDV22` only as a heading/speed controller.
-`pThrustMixer` converts its output into opposed virtual left/right motor groups,
-and `uSimMarineV22` runs in differential-thrust mode. The simulated multirotor
-can therefore yaw in place at zero horizontal speed instead of requiring
-forward speed for a rudder-model turn. This is a planar abstraction, not a
-four-rotor or six-degree-of-freedom model; SITL remains the authoritative
-ArduCopter dynamics test.
+SITL and REAL both keep ArduPilot navigation authoritative; the MOOS mission no
+longer substitutes a planar UAV position. ArduPilot's native ship simulator is
+the preferred way to model a landed aircraft moving with PEARL. With
+`SIM_SHIP_ENABLE=1`, SITL applies the simulated deck's translation and yaw to an
+on-ground aircraft inside `SIM_SHIP_DSIZE`.
 
-SIM starts with the UAV visually attached to PEARL. Once fresh PEARL pose data
-arrives, `uSimAttachment` disables the UAV's `uSimMarineV22` navigation output
-and publishes the PEARL position, heading, and speed as the UAV navigation
-solution. The two icons therefore move together without running two competing
-UAV navigation publishers.
-
-An approved SIM takeoff detaches the UAV automatically. The app captures one
-final platform position and heading, resets `uSimMarineV22` to that exact pose,
-and then returns navigation ownership to the simulator. The UAV therefore
-resumes independent flight from the takeoff point without jumping. After a
-normal SIM precision landing, a separate timer waits for both
-`NAV_ALTITUDE=0` and the companion FSM's `IDLE` (Idle on deck) state before
-requesting reattachment. A secondary rally-point landing ends in
-`OFFNOMINAL`, so it remains detached from PEARL. The nominal cycle may repeat.
-
-The app interface is vehicle-name agnostic: it consumes generic attachment
-pose and request variables. This mission maps PEARL navigation into that
-interface and aliases the generic status outputs to `UAV_SIM_ATTACHED` and
-`UAV_SIM_ATTACHMENT_STATE` for operator display.
-
-If the attachment pose becomes stale, the UAV freezes at the last received
-pose and reports `ATTACHED_POSE_STALE`. While detached, the app reasserts local
-simulator ownership so restarting the attachment helper cannot leave the UAV
-simulator disabled.
-
-This visual attachment is SIM-only. SITL and REAL continue to use flight-
-controller navigation, do not launch `uSimAttachment`, and do not forward the
-PEARL attachment-pose stream.
+The remaining integration is to make the simulated PEARL and ArduPilot's ship
+model share one pose source. The recommended design is to consume the ship
+model's MAVLink `GLOBAL_POSITION_INT` report (system ID `SIM_SHIP_SYSID`) as
+PEARL's SITL navigation rather than running an independent PEARL trajectory.
+That preserves one authoritative deck pose and lets ArduPilot own attachment
+physics. Until that adapter exists, keep PEARL stationary whenever the UAV is
+on deck; copying PEARL coordinates into UAV `NAV_*` would only change the MOOS
+icon and would leave ArduPilot at the wrong takeoff location.
 
 ## Layout and launch modes
 
@@ -627,62 +599,43 @@ PEARL attachment-pose stream.
 - UAV: MOOSDB `9001`, pShare `9201`
 - PEARL: MOOSDB `9002`, pShare `9202`
 
-The top-level launcher is for same-host testing. SIM requires the UDP endpoint
-carrying the routed Landmark MAVLink stream:
+The UAV supports two modes:
 
-```bash
-./launch.sh --mode=SIM --landmark_url=0.0.0.0:14560
-```
-
-Only SIM launches `pLandmarkBridge`, an aliased `pArduBridge` in passive mode.
-It receives all telemetry supported by `pArduBridge`, including the full
-`LANDING_TARGET` pose, but does not perform mission setup, poll parameters,
-request message rates, register command inputs, or issue commands. Its regular
-telemetry variables use the `LANDMARK` prefix, including
-`LANDMARK_LANDING_TARGET_*`, so they cannot overwrite SIM-owned `UAV_*`
-telemetry. The UAV node-report bridge aliases the landing-target family back to
-`UAV_LANDING_TARGET_*` only when forwarding it to shoreside. MAVSDK may still emit its ground-station heartbeat.
+- `SITL`: UAV ArduCopter SITL and simulated PEARL
+- `REAL`: UAV and PEARL hardware
 
 The FSM minimum dwell defaults to zero. For slowed state visualization, pass it
 through the top-level launcher to both vehicle runtimes:
 
 ```bash
-./launch.sh --mode=SIM --landmark_url=0.0.0.0:14560 --min_state_time=20
+./launch.sh --mode=SITL --min_state_time=20
 ```
-
-Modes are:
-
-- `SIM`: UAV SIM and PEARL SIM
-- `SITL`: UAV ArduCopter SITL and PEARL SIM
-- `REAL`: UAV REAL and PEARL REAL
 
 Generate targets without launching:
 
 ```bash
-./launch.sh --mode=SIM --landmark_url=0.0.0.0:14560 --just_make --nogui 5
+./launch.sh --mode=SITL --just_make --nogui 5
 ```
 
-For SITL, start ArduCopter first and then start the mission. On macOS or in a
-headless environment, `--direct` avoids `sim_vehicle.py` opening another
-terminal and uses the already-built ArduCopter binary:
+For SITL, start the configured ArduPilot service first and then start the
+mission:
 
 ```bash
-./launch_sitl.sh --direct --no_rebuild
+./launch_sitl.sh
 ./launch.sh --mode=SITL
 ```
 
-`launch_sitl.sh` starts `sitl_landing_target.py`, which publishes a centered
-MAVLink 2 `LANDING_TARGET` on ArduCopter's SERIAL2 connection as the
-reproducible stand-in for the real vision source. Use `--no_landing_target` to
-verify that acquisition fails closed. The ArduPilot precision-landing target
-in `sitl.parm` matches the default SITL UAV home and default PEARL start. If
-those positions change, update `SIM_PLD_LAT` and `SIM_PLD_LON` before treating
+`launch_sitl.sh` delegates to
+`~/workspace/mit/pearl/ardupilot-sitl/bin/ardupilot-sitl` and starts
+`sitl_landing_target.py`, which publishes a centered MAVLink 2 `LANDING_TARGET`
+on ArduCopter's external-producer connection as the reproducible stand-in for
+the real vision source. The ArduPilot precision-landing target in `sitl.parm`
+matches the default SITL UAV home and default PEARL start. If those positions
+change, update `SIM_PLD_LAT` and `SIM_PLD_LON` before treating
 precision-landing results as meaningful.
 
 SITL uses PEARL's simulated battery, wind, and process-health telemetry to
-exercise the same pre-commit platform gate enabled in REAL. Basic SIM keeps
-that gate disabled so its lightweight attachment workflow remains immediately
-usable.
+exercise the same pre-commit platform gate enabled in REAL.
 
 Field operation uses the sublaunchers independently:
 
@@ -868,8 +821,8 @@ REAL mode retains the `may_test_run` setup:
 - `iSherlockTelemetry`
 - `pEchoVar` sensor-to-NAV translations
 
-SIM mode uses `pHelmIvP`, `pMarinePIDV22`, `pThrustMixer`, and
-`uSimMarineV22`. The simulator runs in differential-thrust mode. The mixer
+The simulated PEARL used in SITL mode runs `pHelmIvP`, `pMarinePIDV22`,
+`pThrustMixer`, and `uSimMarineV22` in differential-thrust mode. The mixer
 converts the PID's conventional thrust/rudder output into left/right motor
 commands using the same 100% thrust and 50% rudder limits as `iPEARL`. Opposed
 motor commands therefore rotate PEARL in place instead of forcing it through a

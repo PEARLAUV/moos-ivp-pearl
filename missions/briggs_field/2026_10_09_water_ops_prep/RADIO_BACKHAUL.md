@@ -361,7 +361,8 @@ obstructions dominated the earlier 50 m result.
 Before REAL operation:
 
 1. Generate all REAL targets and verify the forced pHostInfo addresses.
-2. Run each community in SIM mode on its intended host over the radio path.
+2. Run the UAV in SITL mode and PEARL in its simulated mode on their intended
+   hosts over the radio path.
 3. Confirm both vehicle brokers complete all connection phases.
 4. Confirm periodic `NODE_REPORT` traffic reaches shoreside and PEARL.
 5. Prove bidirectional pMediator and `NODE_REPORT` delivery over the explicit

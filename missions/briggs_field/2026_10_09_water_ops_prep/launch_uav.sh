@@ -26,7 +26,7 @@ VERBOSE="no"
 JUST_MAKE="no"
 AUTO_LAUNCHED="no"
 
-MODE="SIM"
+MODE="SITL"
 IS_SIM="true"
 IP_ADDR="localhost"
 MOOS_PORT="9001"
@@ -38,10 +38,8 @@ PEARL_IP="unused"
 PEARL_PSHARE="9202"
 VNAME="uav"
 COLOR="yellow"
-START_POS="-4,-22,0"
 AP_URL=""
 AP_PROTOCOL=""
-LANDMARK_URL=""
 TAKEOFF_ALTITUDE="8"
 SECONDARY_LANDING="10,15"
 MIN_STATE_TIME="0"
@@ -57,7 +55,7 @@ for ARGI; do
     echo "  --just_make, -j         Only create targ files"
     echo "  --verbose, -v           Verbose launch summary"
     echo "  --auto, -a              Script launch, no uMAC"
-    echo "  --mode=<SIM|SITL|REAL>  UAV operating mode"
+    echo "  --mode=<SITL|REAL>      UAV operating mode"
     echo "  --ip=<localhost>        Advertised UAV pShare host"
     echo "  --mport=<9001>          UAV MOOSDB port"
     echo "  --pshare=<9201>         UAV pShare port"
@@ -65,10 +63,8 @@ for ARGI; do
     echo "  --shore_pshare=<9200>   Shoreside pShare port"
     echo "  --pearl_ip=<address>    Direct PEARL host (optional)"
     echo "  --pearl_pshare=<9202>   Direct PEARL pShare port"
-    echo "  --start_pos=<X,Y,H>     UAV SIM start position"
     echo "  --ap_url=<endpoint>     ArduPilot endpoint"
     echo "  --ap_protocol=<proto>   udp, tcp, or serial"
-    echo "  --landmark_url=<host:port>  Required SIM Landmark UDP endpoint"
     echo "  --takeoff_altitude=<8>  Copter altitude, m AGL"
     echo "  --secondary_landing=<X,Y>  Fixed contingency landing point"
     echo "  --min_state_time=<0>       Minimum FSM state dwell, seconds"
@@ -102,14 +98,10 @@ for ARGI; do
     DIRECT_PEER="true"
   elif [[ "${ARGI}" == --pearl_pshare=* ]]; then
     PEARL_PSHARE="${ARGI#*=}"
-  elif [[ "${ARGI}" == --start_pos=* || "${ARGI}" == --startpos=* ]]; then
-    START_POS="${ARGI#*=}"
   elif [[ "${ARGI}" == --ap_url=* ]]; then
     AP_URL="${ARGI#*=}"
   elif [[ "${ARGI}" == --ap_protocol=* ]]; then
     AP_PROTOCOL="${ARGI#*=}"
-  elif [[ "${ARGI}" == --landmark_url=* ]]; then
-    LANDMARK_URL="${ARGI#*=}"
   elif [[ "${ARGI}" == --takeoff_altitude=* ]]; then
     TAKEOFF_ALTITUDE="${ARGI#*=}"
   elif [[ "${ARGI}" == --secondary_landing=* ]]; then
@@ -134,19 +126,12 @@ SECONDARY_LANDING_X="${SECONDARY_LANDING%%,*}"
 SECONDARY_LANDING_Y="${SECONDARY_LANDING#*,}"
 
 MODE=$(echo "$MODE" | tr '[:lower:]' '[:upper:]')
-if [ "$MODE" = "SIM" ]; then
-  IS_SIM="true"
-elif [ "$MODE" = "SITL" ]; then
+if [ "$MODE" = "SITL" ]; then
   IS_SIM="true"
 elif [ "$MODE" = "REAL" ]; then
   IS_SIM="false"
 else
-  echo "$ME: --mode must be SIM, SITL, or REAL. Exit Code 1."
-  exit 1
-fi
-
-if [ "$MODE" = "SIM" ] && [ -z "$LANDMARK_URL" ]; then
-  echo "$ME: --landmark_url=<host:port> is required in SIM mode. Exit Code 1."
+  echo "$ME: --mode must be SITL or REAL. Exit Code 1."
   exit 1
 fi
 
@@ -155,8 +140,6 @@ if [ -z "$AP_URL" ]; then
     AP_URL="127.0.0.1:5760"
   elif [ "$MODE" = "REAL" ]; then
     AP_URL="ttyACM0:115200"
-  else
-    AP_URL="unused"
   fi
 fi
 if [ -z "$AP_PROTOCOL" ]; then
@@ -164,8 +147,6 @@ if [ -z "$AP_PROTOCOL" ]; then
     AP_PROTOCOL="tcp"
   elif [ "$MODE" = "REAL" ]; then
     AP_PROTOCOL="serial"
-  else
-    AP_PROTOCOL="unused"
   fi
 fi
 
@@ -187,10 +168,8 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "DIRECT_PEER =       [${DIRECT_PEER}]"
   echo "PEARL_IP =          [${PEARL_IP}]"
   echo "PEARL_PSHARE =      [${PEARL_PSHARE}]"
-  echo "START_POS =         [${START_POS}]"
   echo "AP_URL =            [${AP_URL}]"
   echo "AP_PROTOCOL =       [${AP_PROTOCOL}]"
-  echo "LANDMARK_URL =      [${LANDMARK_URL}]"
   echo "TAKEOFF_ALTITUDE =  [${TAKEOFF_ALTITUDE}]"
   echo "SECONDARY_LANDING = [${SECONDARY_LANDING}]"
   echo "MIN_STATE_TIME =    [${MIN_STATE_TIME}]"
@@ -213,15 +192,15 @@ nsplug meta_uav.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
   PEARL_IP="$PEARL_IP" PEARL_PSHARE="$PEARL_PSHARE" \
   VNAME="$VNAME" COLOR="$COLOR" \
   PLATFORM_LENGTH="1.5" \
-  START_POS="$START_POS" AP_URL="$AP_URL" AP_PROTOCOL="$AP_PROTOCOL" \
-  LANDMARK_URL="$LANDMARK_URL" TAKEOFF_ALTITUDE="$TAKEOFF_ALTITUDE" \
+  AP_URL="$AP_URL" AP_PROTOCOL="$AP_PROTOCOL" \
+  TAKEOFF_ALTITUDE="$TAKEOFF_ALTITUDE" \
   SECONDARY_LANDING_X="$SECONDARY_LANDING_X" \
   MIN_STATE_TIME="$MIN_STATE_TIME" \
   SECONDARY_LANDING_Y="$SECONDARY_LANDING_Y" \
-  IS_SIM="$IS_SIM" XMODE="$MODE" PEARL_LIB_DIR="$PEARL_ROOT/lib"
+  IS_SIM="$IS_SIM" PEARL_LIB_DIR="$PEARL_ROOT/lib"
 
 nsplug meta_uav.bhv "targ_${VNAME}.bhv" "${NSFLAGS[@]}" \
-  VNAME="$VNAME" TAKEOFF_ALTITUDE="$TAKEOFF_ALTITUDE" XMODE="$MODE"
+  VNAME="$VNAME" TAKEOFF_ALTITUDE="$TAKEOFF_ALTITUDE"
 
 if [ "$JUST_MAKE" = "yes" ]; then
   echo "$ME: Targ files made; exiting without launch."

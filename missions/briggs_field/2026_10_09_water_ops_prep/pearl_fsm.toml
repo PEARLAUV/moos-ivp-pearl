@@ -30,7 +30,7 @@ takeoff_support_active = false
 takeoff_support_ready = false
 # The post-interruption uChecks instance owns the aggregate result.
 takeoff_postchecks_state = { initial = "inactive", initialize = false }
-# The cover actuator/telemetry owns this fact; SIM supplies a timed mock.
+# The cover actuator/telemetry owns this fact; the demo uses a timed mock.
 pearl_droneport_bay_cover_state = { initial = "closed", initialize = false }
 takeoff_clearance_state = "none"
 # Published authoritatively by the UAV FSM; never initialized by PEARL.

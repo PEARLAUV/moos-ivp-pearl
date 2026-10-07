@@ -26,15 +26,13 @@ LOG_CLEAN="no"
 XLAUNCHED="no"
 NOGUI="no"
 
-MODE="SIM"
-UAV_START="-4,-22,0"
+MODE="SITL"
 PEARL_START="-4,-22,0"
 TAKEOFF_ALTITUDE="8"
 SECONDARY_LANDING="10,15"
 MIN_STATE_TIME="0"
 AP_URL=""
 AP_PROTOCOL=""
-LANDMARK_URL=""
 
 SHORE_MPORT="9000"
 UAV_MPORT="9001"
@@ -52,8 +50,7 @@ for ARGI; do
     echo "$ME [OPTIONS] [time_warp]"
     echo
     echo "Modes:"
-    echo "  --sim                         Same as --mode=SIM (default)"
-    echo "  --mode=<SIM|SITL|REAL>        Whole-mission operating mode"
+    echo "  --mode=<SITL|REAL>            Whole-mission operating mode (default: SITL)"
     echo
     echo "Options:"
     echo "  --help, -h                    Show this help message"
@@ -62,14 +59,12 @@ for ARGI; do
     echo "  --log_clean, -lc              Run clean.sh before launch"
     echo "  --xlaunched, -x               Launched by automation"
     echo "  --nogui, -ng                  No pMarineViewer"
-    echo "  --uav_start=<X,Y,H>           UAV SIM start position"
-    echo "  --pearl_start=<X,Y,H>         PEARL SIM start position"
+    echo "  --pearl_start=<X,Y,H>         PEARL simulator start position (SITL mode)"
     echo "  --takeoff_altitude=<8>        UAV altitude, m AGL"
     echo "  --secondary_landing=<X,Y>     Fixed contingency landing point"
     echo "  --min_state_time=<0>          Minimum FSM state dwell, seconds"
     echo "  --ap_url=<endpoint>           UAV ArduPilot endpoint"
     echo "  --ap_protocol=<proto>         UAV udp, tcp, or serial"
-    echo "  --landmark_url=<host:port>    Required SIM Landmark UDP endpoint"
     echo
     echo "Ports:"
     echo "  --shore_mport=<9000>          Shoreside MOOSDB port"
@@ -85,8 +80,6 @@ for ARGI; do
       exit 1
     fi
     TIME_WARP=$ARGI
-  elif [ "${ARGI}" = "--sim" ]; then
-    MODE="SIM"
   elif [[ "${ARGI}" = "--verbose" || "${ARGI}" = "-v" ]]; then
     VERBOSE="yes"
   elif [[ "${ARGI}" = "--just_make" || "${ARGI}" = "-j" ]]; then
@@ -99,8 +92,6 @@ for ARGI; do
     NOGUI="yes"
   elif [[ "${ARGI}" == --mode=* ]]; then
     MODE="${ARGI#*=}"
-  elif [[ "${ARGI}" == --uav_start=* ]]; then
-    UAV_START="${ARGI#*=}"
   elif [[ "${ARGI}" == --pearl_start=* ]]; then
     PEARL_START="${ARGI#*=}"
   elif [[ "${ARGI}" == --takeoff_altitude=* ]]; then
@@ -113,8 +104,6 @@ for ARGI; do
     AP_URL="${ARGI#*=}"
   elif [[ "${ARGI}" == --ap_protocol=* ]]; then
     AP_PROTOCOL="${ARGI#*=}"
-  elif [[ "${ARGI}" == --landmark_url=* ]]; then
-    LANDMARK_URL="${ARGI#*=}"
   elif [[ "${ARGI}" == --shore_mport=* ]]; then
     SHORE_MPORT="${ARGI#*=}"
   elif [[ "${ARGI}" == --uav_mport=* ]]; then
@@ -134,12 +123,8 @@ for ARGI; do
 done
 
 MODE=$(echo "$MODE" | tr '[:lower:]' '[:upper:]')
-if [[ "$MODE" != "SIM" && "$MODE" != "SITL" && "$MODE" != "REAL" ]]; then
-  echo "$ME: --mode must be SIM, SITL, or REAL. Exit Code 1."
-  exit 1
-fi
-if [[ "$MODE" = "SIM" && -z "$LANDMARK_URL" ]]; then
-  echo "$ME: --landmark_url=<host:port> is required in SIM mode. Exit Code 1."
+if [[ "$MODE" != "SITL" && "$MODE" != "REAL" ]]; then
+  echo "$ME: --mode must be SITL or REAL. Exit Code 1."
   exit 1
 fi
 if [[ ! "$MIN_STATE_TIME" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -149,11 +134,8 @@ fi
 
 UAV_MODE="$MODE"
 PEARL_MODE="$MODE"
-SIM_ATTACHMENT="false"
 if [ "$MODE" = "SITL" ]; then
   PEARL_MODE="SIM"
-elif [ "$MODE" = "SIM" ]; then
-  SIM_ATTACHMENT="true"
 fi
 
 #------------------------------------------------------------
@@ -169,8 +151,6 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "MODE =              [${MODE}]"
   echo "UAV_MODE =          [${UAV_MODE}]"
   echo "PEARL_MODE =        [${PEARL_MODE}]"
-  echo "SIM_ATTACHMENT =    [${SIM_ATTACHMENT}]"
-  echo "UAV_START =         [${UAV_START}]"
   echo "PEARL_START =       [${PEARL_START}]"
   echo "SHORE_MPORT =       [${SHORE_MPORT}]"
   echo "UAV_MPORT =         [${UAV_MPORT}]"
@@ -180,7 +160,6 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "PEARL_PSHARE =      [${PEARL_PSHARE}]"
   echo "SECONDARY_LANDING = [${SECONDARY_LANDING}]"
   echo "MIN_STATE_TIME =    [${MIN_STATE_TIME}]"
-  echo "LANDMARK_URL =      [${LANDMARK_URL}]"
   echo -n "Hit any key to continue launch "
   read -r _
 fi
@@ -197,14 +176,13 @@ fi
 #------------------------------------------------------------
 UARGS=(--auto "$TIME_WARP" --mode="$UAV_MODE")
 UARGS+=(--mport="$UAV_MPORT" --pshare="$UAV_PSHARE")
-UARGS+=(--shore_pshare="$SHORE_PSHARE" --start_pos="$UAV_START")
+UARGS+=(--shore_pshare="$SHORE_PSHARE")
 UARGS+=(--pearl_ip=localhost --pearl_pshare="$PEARL_PSHARE")
 UARGS+=(--takeoff_altitude="$TAKEOFF_ALTITUDE")
 UARGS+=(--secondary_landing="$SECONDARY_LANDING")
 UARGS+=(--min_state_time="$MIN_STATE_TIME")
 [ -n "$AP_URL" ] && UARGS+=(--ap_url="$AP_URL")
 [ -n "$AP_PROTOCOL" ] && UARGS+=(--ap_protocol="$AP_PROTOCOL")
-[ -n "$LANDMARK_URL" ] && UARGS+=(--landmark_url="$LANDMARK_URL")
 [ "$JUST_MAKE" = "yes" ] && UARGS+=(--just_make)
 [ "$VERBOSE" = "yes" ] && UARGS+=(--verbose)
 
@@ -212,7 +190,6 @@ PARGS=(--auto "$TIME_WARP" --mode="$PEARL_MODE")
 PARGS+=(--mport="$PEARL_MPORT" --pshare="$PEARL_PSHARE")
 PARGS+=(--shore_pshare="$SHORE_PSHARE" --start_pos="$PEARL_START")
 PARGS+=(--uav_ip=localhost --uav_pshare="$UAV_PSHARE")
-PARGS+=(--sim_attachment="$SIM_ATTACHMENT")
 PARGS+=(--min_state_time="$MIN_STATE_TIME")
 [ "$JUST_MAKE" = "yes" ] && PARGS+=(--just_make)
 [ "$VERBOSE" = "yes" ] && PARGS+=(--verbose)

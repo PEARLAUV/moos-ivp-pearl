@@ -44,25 +44,8 @@ ProcessConfig = ANTLER
   Run = uTimerScript   @ NewConsole = false ~ uTaskingRendezvous
   Run = uTimerScript   @ NewConsole = false ~ uTaskingCancel
   Run = uTimerScript   @ NewConsole = false ~ uTaskingRejectOffnominal
-#ifdef XMODE SIM
-  // Observe the separately routed Landmark MAVLink stream. Passive mode does
-  // not register command inputs or issue MAVLink commands/rate requests.
-  Run = pArduBridge    @ NewConsole = false ~ pLandmarkBridge
-  Run = uTimerScript   @ NewConsole = false ~ uSimArmCommand
-Run = uTimerScript   @ NewConsole = false ~ uSimTakeoffCommand
-Run = uTimerScript   @ NewConsole = false ~ uSimPrecLandCommand
-Run = uTimerScript   @ NewConsole = false ~ uSimAttachmentCommand
-Run = uTimerScript   @ NewConsole = false ~ uSimUavBattery
-  Run = uTimerScript   @ NewConsole = false ~ uSimUavInitialArmed
-  Run = uTimerScript   @ NewConsole = false ~ uSimUavGroundTelemetry
-  Run = uSimAttachment @ NewConsole = false
-  Run = uSimMarineV22  @ NewConsole = false
-  Run = pMarinePIDV22  @ NewConsole = false
-  Run = pThrustMixer   @ NewConsole = false
-#else
   Run = pArduBridge    @ NewConsole = false
   Run = pDeadManPost   @ NewConsole = false
-#endif
   Run = uTimerScript   @ NewConsole = false ~ uRouteSequence
 }
 
@@ -171,16 +154,7 @@ ProcessConfig = uLoadWatch
   CommsTick = 1
   term_report_interval = 2
 
-#ifdef XMODE SIM
-  thresh = app=pLandmarkBridge, gapthresh=3
-  thresh = app=uSimUavBattery, gapthresh=3
-  thresh = app=uSimAttachment, gapthresh=3
-  thresh = app=uSimMarineV22,  gapthresh=3
-  thresh = app=pMarinePIDV22,  gapthresh=3
-  thresh = app=pThrustMixer,   gapthresh=3
-#else
   thresh = app=pArduBridge,    gapthresh=3
-#endif
   thresh = app=pHelmIvP,       gapthresh=3
   thresh = app=pTakeoffCoordinator, gapthresh=3
   thresh = app=pNodeReporter,  gapthresh=4
@@ -230,11 +204,7 @@ ProcessConfig = pNodeReporter
   platform_length = $(PLATFORM_LENGTH=4)
   platform_group  = drone
 
-#ifdef XMODE SIM
-  cross_fill_policy = local
-#else
   cross_fill_policy = global
-#endif
   report_cog        = true
 }
 
@@ -306,30 +276,27 @@ ProcessConfig = uFldNodeBroker
   bridge = src=UAV_TASK_TAKEOFF_REQUESTED
   bridge = src=UAV_TASK_ROUTE_STARTED
   bridge = src=UAV_TASK_REJECTION
-  bridge = src=LANDMARK_LANDING_TARGET_AVAILABLE,       alias=UAV_LANDING_TARGET_AVAILABLE
-  bridge = src=LANDMARK_LANDING_TARGET_AGE,             alias=UAV_LANDING_TARGET_AGE
-  bridge = src=LANDMARK_LANDING_TARGET_TIME_USEC,       alias=UAV_LANDING_TARGET_TIME_USEC
-  bridge = src=LANDMARK_LANDING_TARGET_SYSTEM_ID,       alias=UAV_LANDING_TARGET_SYSTEM_ID
-  bridge = src=LANDMARK_LANDING_TARGET_COMPONENT_ID,    alias=UAV_LANDING_TARGET_COMPONENT_ID
-  bridge = src=LANDMARK_LANDING_TARGET_TARGET_NUM,      alias=UAV_LANDING_TARGET_TARGET_NUM
-  bridge = src=LANDMARK_LANDING_TARGET_FRAME,           alias=UAV_LANDING_TARGET_FRAME
-  bridge = src=LANDMARK_LANDING_TARGET_TYPE,            alias=UAV_LANDING_TARGET_TYPE
-  bridge = src=LANDMARK_LANDING_TARGET_POSITION_VALID,  alias=UAV_LANDING_TARGET_POSITION_VALID
-  bridge = src=LANDMARK_LANDING_TARGET_ANGLE_X,         alias=UAV_LANDING_TARGET_ANGLE_X
-  bridge = src=LANDMARK_LANDING_TARGET_ANGLE_Y,         alias=UAV_LANDING_TARGET_ANGLE_Y
-  bridge = src=LANDMARK_LANDING_TARGET_DISTANCE,        alias=UAV_LANDING_TARGET_DISTANCE
-  bridge = src=LANDMARK_LANDING_TARGET_SIZE_X,          alias=UAV_LANDING_TARGET_SIZE_X
-  bridge = src=LANDMARK_LANDING_TARGET_SIZE_Y,          alias=UAV_LANDING_TARGET_SIZE_Y
-  bridge = src=LANDMARK_LANDING_TARGET_X,               alias=UAV_LANDING_TARGET_X
-  bridge = src=LANDMARK_LANDING_TARGET_Y,               alias=UAV_LANDING_TARGET_Y
-  bridge = src=LANDMARK_LANDING_TARGET_Z,               alias=UAV_LANDING_TARGET_Z
-  bridge = src=LANDMARK_LANDING_TARGET_Q_W,             alias=UAV_LANDING_TARGET_Q_W
-  bridge = src=LANDMARK_LANDING_TARGET_Q_X,             alias=UAV_LANDING_TARGET_Q_X
-  bridge = src=LANDMARK_LANDING_TARGET_Q_Y,             alias=UAV_LANDING_TARGET_Q_Y
-  bridge = src=LANDMARK_LANDING_TARGET_Q_Z,             alias=UAV_LANDING_TARGET_Q_Z
-  bridge = src=LANDMARK_HEALTH_AGE,                     alias=UAV_LANDING_TARGET_HEALTH_AGE
-  bridge = src=PARDUBRIDGE_PASSIVE_STATE
-  bridge = src=PARDUBRIDGE_PASSIVE_CONNECTED
+  bridge = src=UAV_LANDING_TARGET_AVAILABLE
+  bridge = src=UAV_LANDING_TARGET_AGE
+  bridge = src=UAV_LANDING_TARGET_TIME_USEC
+  bridge = src=UAV_LANDING_TARGET_SYSTEM_ID
+  bridge = src=UAV_LANDING_TARGET_COMPONENT_ID
+  bridge = src=UAV_LANDING_TARGET_TARGET_NUM
+  bridge = src=UAV_LANDING_TARGET_FRAME
+  bridge = src=UAV_LANDING_TARGET_TYPE
+  bridge = src=UAV_LANDING_TARGET_POSITION_VALID
+  bridge = src=UAV_LANDING_TARGET_ANGLE_X
+  bridge = src=UAV_LANDING_TARGET_ANGLE_Y
+  bridge = src=UAV_LANDING_TARGET_DISTANCE
+  bridge = src=UAV_LANDING_TARGET_SIZE_X
+  bridge = src=UAV_LANDING_TARGET_SIZE_Y
+  bridge = src=UAV_LANDING_TARGET_X
+  bridge = src=UAV_LANDING_TARGET_Y
+  bridge = src=UAV_LANDING_TARGET_Z
+  bridge = src=UAV_LANDING_TARGET_Q_W
+  bridge = src=UAV_LANDING_TARGET_Q_X
+  bridge = src=UAV_LANDING_TARGET_Q_Y
+  bridge = src=UAV_LANDING_TARGET_Q_Z
   bridge = src=UAV_LANDING_GATE_READY
   bridge = src=UAV_LANDING_GATE_REASON
   bridge = src=UAV_LANDING_TARGET_LOCK_AGE
@@ -350,26 +317,13 @@ ProcessConfig = uFldNodeBroker
   bridge = src=UAV_SECONDARY_RECOVERY_POINT
   bridge = src=UAV_SECONDARY_RECOVERY_DISTANCE
   bridge = src=NAV_ALTITUDE
-#ifdef XMODE SIM
-  bridge = src=STATION_KEEP
-  bridge = src=UAV_THRUST_MIXER_STATE
-  bridge = src=DESIRED_THRUST_L
-  bridge = src=DESIRED_THRUST_R
-  bridge = src=SIM_ATTACHMENT_ATTACHED, alias=UAV_SIM_ATTACHED
-  bridge = src=SIM_ATTACHMENT_STATE,    alias=UAV_SIM_ATTACHMENT_STATE
-#else
   bridge = src=DESIRED_HEADING
   bridge = src=DESIRED_SPEED
   bridge = src=DESIRED_ALTITUDE
-#endif
 }
 
 //----------------------------------------------------
-#ifdef XMODE SIM
-#include plug_uav_sim.moos
-#else
-#include plug_uav_real.moos
-#endif
+#include plug_uav_ardupilot.moos
 
 
 
@@ -393,10 +347,7 @@ ProcessConfig = pHelmIvP
   park_on_allstop  = false
   Domain    = course:0:359:360
   Domain    = speed:0:5:51
-#ifdef XMODE SIM
-#else
   Domain    = altitude:0:30:61
-#endif
 }
 
 
@@ -531,17 +482,8 @@ ProcessConfig = uOperatorDisarm
   event = var=UAV_TASK_CANCEL, val=true,  time=0
   event = var=ROUTE_DEPLOY,    val=false, time=0
   event = var=ROUTE_EXECUTE,   val=false, time=0
-#ifdef XMODE SIM
-  event = var=STATION_KEEP,    val=false,        time=0
-  event = var=UAV_IS_ARMED,    val=0,            time=0
-  event = var=UAV_LANDED_STATE, val=ON_GROUND,   time=0
-  event = var=NAV_ALTITUDE,    val=0,            time=0
-  event = var=AUTOPILOT_MODE,  val=SIM_DISARMED, time=0
-  event = var=UAV_COMMAND_RESULT, val="id=sim,command=DISARM,status=ACCEPTED,detail=SIMULATED", time=0
-#else
   event = var=MOOS_MANUAL_OVERRIDE, val=true,  time=0
   event = var=ARM_UAV,              val=false, time=0
-#endif
   event = var=UAV_DISARM_REQUEST, val=false, time=0.10
 }
 
@@ -723,11 +665,7 @@ ProcessConfig = pRendezvous
   critical_battery = 15
   battery_max_age = 3
   require_battery = true
-#ifdef XMODE SIM
-  require_health  = false
-#else
   require_health  = true
-#endif
   require_flight_state = true
 
   nav_stale_thresh = 10
@@ -737,20 +675,12 @@ ProcessConfig = pRendezvous
   arrival_radius   = 1.5
   arrival_dwell    = 2
   max_peer_separation = 3
-#ifdef XMODE SIM
-  require_platform_ready  = false
-#else
   require_platform_ready  = true
-#endif
   require_platform_health = true
   min_pearl_battery        = 15
   max_landing_wind_speed   = 4
   platform_data_max_age    = 3
-#ifdef XMODE SIM
-  require_landing_target = false
-#else
   require_landing_target = true
-#endif
   landing_target_max_age        = 0.5
   landing_target_lock_dwell     = 2
   landing_target_acquire_timeout = 30

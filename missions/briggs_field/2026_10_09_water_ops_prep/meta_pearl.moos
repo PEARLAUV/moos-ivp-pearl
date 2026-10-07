@@ -36,7 +36,7 @@ ProcessConfig = ANTLER
   Run = uChecks            @ NewConsole = false ~ uChecksTakeoff
   Run = uChecks            @ NewConsole = false ~ uChecksPostInterruption
   Run = uChecks            @ NewConsole = false ~ uChecksRecovery
-  Run = uTimerScript       @ NewConsole = false ~ uSimDroneportBayCover
+  Run = uTimerScript       @ NewConsole = false ~ uMockDroneportBayCover
 
   Run = pRendezvous        @ NewConsole = false
   Run = pFSMRuntime        @ NewConsole = false
@@ -153,8 +153,8 @@ ProcessConfig = uChecksRecovery
 
 //----------------------------------------------------
 // The demo has no physical droneport cover; this timed mock runs in both
-// SIM and REAL until a cover actuator/telemetry publisher is installed.
-ProcessConfig = uSimDroneportBayCover
+// SITL and REAL until a cover actuator/telemetry publisher is installed.
+ProcessConfig = uMockDroneportBayCover
 {
   AppTick = 10
   CommsTick = 10
@@ -163,7 +163,7 @@ ProcessConfig = uSimDroneportBayCover
   script_atomic = false
   reset_max = unlimited
   paused = false
-  script_name = SIM_DRONEPORT_BAY_COVER
+  script_name = MOCK_DRONEPORT_BAY_COVER
 
   event = var=PEARL_DRONEPORT_BAY_COVER_STATE, val=opening, time=0
   event = var=PEARL_DRONEPORT_BAY_COVER_STATE, val=open,    time=10
@@ -236,14 +236,6 @@ ProcessConfig = pShare
   output = src_name=TAKEOFF_CLEARANCE_STATE, route=$(UAV_IP):$(UAV_PSHARE)
   output = src_name=RECOVERY_REQUEST_STATE,  route=$(UAV_IP):$(UAV_PSHARE)
   output = src_name=LANDING_CLEARANCE_STATE, route=$(UAV_IP):$(UAV_PSHARE)
-#ifdef XMODE SIM
-#ifdef SIM_ATTACHMENT true
-  output = src_name=NAV_X,       dest_name=ATTACHMENT_NAV_X,       route=$(UAV_IP):$(UAV_PSHARE)
-  output = src_name=NAV_Y,       dest_name=ATTACHMENT_NAV_Y,       route=$(UAV_IP):$(UAV_PSHARE)
-  output = src_name=NAV_HEADING, dest_name=ATTACHMENT_NAV_HEADING, route=$(UAV_IP):$(UAV_PSHARE)
-  output = src_name=NAV_SPEED,   dest_name=ATTACHMENT_NAV_SPEED,   route=$(UAV_IP):$(UAV_PSHARE)
-#endif
-#endif
 #endif
 }
 

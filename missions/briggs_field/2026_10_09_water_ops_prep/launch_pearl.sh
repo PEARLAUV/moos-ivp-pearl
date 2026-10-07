@@ -32,7 +32,6 @@ PSHARE_PORT="9202"
 SHORE_IP="localhost"
 SHORE_PSHARE="9200"
 DIRECT_PEER="false"
-SIM_ATTACHMENT="true"
 UAV_IP="unused"
 UAV_PSHARE="9201"
 VNAME="pearl"
@@ -62,7 +61,6 @@ for ARGI; do
     echo "  --shore_pshare=<9200>  Shoreside pShare port"
     echo "  --uav_ip=<address>     Direct UAV host (optional)"
     echo "  --uav_pshare=<9201>    Direct UAV pShare port"
-    echo "  --sim_attachment=<true|false>  Send SIM attachment pose"
     echo "  --start_pos=<X,Y,H>    PEARL SIM start position"
     echo "  --speed=<0.5>          PEARL Helm speed, m/s"
     echo "  --min_state_time=<0>   Minimum FSM state dwell, seconds"
@@ -98,8 +96,6 @@ for ARGI; do
     DIRECT_PEER="true"
   elif [[ "${ARGI}" == --uav_pshare=* ]]; then
     UAV_PSHARE="${ARGI#*=}"
-  elif [[ "${ARGI}" == --sim_attachment=* ]]; then
-    SIM_ATTACHMENT="${ARGI#*=}"
   elif [[ "${ARGI}" == --start_pos=* || "${ARGI}" == --startpos=* ]]; then
     START_POS="${ARGI#*=}"
   elif [[ "${ARGI}" == --speed=* ]]; then
@@ -123,12 +119,6 @@ if [[ "$MODE" != "SIM" && "$MODE" != "REAL" ]]; then
 fi
 if [[ ! "$MIN_STATE_TIME" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   echo "$ME: --min_state_time must be a non-negative number. Exit Code 1."
-  exit 1
-fi
-
-SIM_ATTACHMENT=$(echo "$SIM_ATTACHMENT" | tr '[:upper:]' '[:lower:]')
-if [[ "$SIM_ATTACHMENT" != "true" && "$SIM_ATTACHMENT" != "false" ]]; then
-  echo "$ME: --sim_attachment must be true or false. Exit Code 1."
   exit 1
 fi
 
@@ -157,7 +147,6 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "DIRECT_PEER =    [${DIRECT_PEER}]"
   echo "UAV_IP =         [${UAV_IP}]"
   echo "UAV_PSHARE =     [${UAV_PSHARE}]"
-  echo "SIM_ATTACHMENT = [${SIM_ATTACHMENT}]"
   echo "START_POS =      [${START_POS}]"
   echo "CRUISE_SPEED =   [${CRUISE_SPEED}]"
   echo "MIN_STATE_TIME = [${MIN_STATE_TIME}]"
@@ -179,7 +168,6 @@ if ! nsplug meta_pearl.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
   WARP="$TIME_WARP" IP_ADDR="$IP_ADDR" MOOS_PORT="$MOOS_PORT" \
   PSHARE_PORT="$PSHARE_PORT" SHORE_IP="$SHORE_IP" \
   SHORE_PSHARE="$SHORE_PSHARE" DIRECT_PEER="$DIRECT_PEER" \
-  SIM_ATTACHMENT="$SIM_ATTACHMENT" \
   UAV_IP="$UAV_IP" UAV_PSHARE="$UAV_PSHARE" \
   VNAME="$VNAME" COLOR="$COLOR" \
   START_POS="$START_POS" SPEED="$CRUISE_SPEED" XMODE="$MODE" \

@@ -1,3 +1,4 @@
+// Shared ArduPilot interface for SITL and REAL UAV modes.
 //----------------------------------------------------
 // Order the Copter control handoff behind one route execution request. Route
 // state remains mission-owned; pArduBridge receives only generic commands.
