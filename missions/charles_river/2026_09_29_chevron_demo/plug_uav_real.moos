@@ -1,0 +1,65 @@
+//----------------------------------------------------
+// Order the Copter control handoff behind one route execution request. Route
+// state remains mission-owned; pArduBridge receives only generic commands.
+ProcessConfig = uRouteSequence
+{
+  AppTick   = 10
+  CommsTick = 10
+  term_report_interval = 2
+
+  condition     = ROUTE_EXECUTE = true
+  condition     = ((ROUTE_EXECUTE_PURPOSE = operator) and (UAV_FSM_OPERATION_STATE = MISSION_EXECUTION)) or ((ROUTE_EXECUTE_PURPOSE = recovery) and (UAV_FSM_OPERATION_STATE = LANDING_OPERATIONS))
+  condition     = ROUTE_READY = true
+  condition     = UAV_IS_ARMED = true
+  condition     = UAV_LANDED_STATE = IN_AIR
+  upon_awake    = restart
+  // CLEAR locally sets ROUTE_EXECUTE=false, which must be allowed to pause
+  // this handoff before a pending FLY_WAYPOINT post.
+  script_atomic = false
+  reset_max     = unlimited
+  paused        = false
+  script_name   = COPTER_ROUTE_SEQUENCE
+  status_var    = ROUTE_SEQUENCE_STATUS
+  event = var=HELM_STATUS,   val=true,         time=0
+  event = var=ROUTE_DEPLOY,  val=true,         time=0.20
+  event = var=ARDU_COMMAND,  val=FLY_WAYPOINT, time=0.80
+  event = var=ROUTE_EXECUTE, val=false,        time=0.90
+}
+
+//----------------------------------------------------
+ProcessConfig = pDeadManPost
+{
+  AppTick   = 4
+  CommsTick = 4
+  term_report_interval = 2
+
+  // Arm only after the first viewer heartbeat. Twenty continuous seconds
+  // without another heartbeat requests RTL through pArduBridge.
+  heartbeat_var   = HEARTBEAT
+  max_noheart     = 20
+  post_policy     = reset
+  active_at_start = false
+  deadflag        = DEAD_MAN_POST_INTERRUPT = true
+}
+
+//----------------------------------------------------
+ProcessConfig = pArduBridge
+{
+  AppTick   = 10
+  CommsTick = 10
+  term_report_interval = 2
+
+  url          = $(AP_URL)
+  url_protocol = $(AP_PROTOCOL)
+  vehicle_type = copter
+
+  vname  = $(VNAME)
+  vcolor = $(COLOR)
+  prefix = NAV
+
+  takeoff_altitude              = $(TAKEOFF_ALTITUDE)
+  helm_setpoint_timeout         = 2
+  command_groundspeed           = true
+  is_sim                        = $(IS_SIM)
+  logger                        = false
+}

@@ -320,7 +320,9 @@ ProcessConfig = pHelmIvP
   behaviors = targ_$(VNAME).bhv
   // Route points may be staged before DEPLOY. DRIVE is safe here because all
   // horizontal behaviors remain idle until their explicit conditions are met.
-  start_in_drive = true
+  // Keep DRIVE during NothingToDo so templated route updates can still spawn.
+  start_in_drive   = true
+  park_on_allstop  = false
   Domain    = course:0:359:360
   Domain    = speed:0:5:51
 #ifdef XMODE SIM

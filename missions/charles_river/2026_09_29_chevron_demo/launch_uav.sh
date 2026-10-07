@@ -41,6 +41,7 @@ COLOR="yellow"
 START_POS="-4,-22,0"
 AP_URL=""
 AP_PROTOCOL=""
+LANDMARK_URL=""
 TAKEOFF_ALTITUDE="8"
 SECONDARY_LANDING="10,15"
 MIN_STATE_TIME="0"
@@ -67,6 +68,7 @@ for ARGI; do
     echo "  --start_pos=<X,Y,H>     UAV SIM start position"
     echo "  --ap_url=<endpoint>     ArduPilot endpoint"
     echo "  --ap_protocol=<proto>   udp, tcp, or serial"
+    echo "  --landmark_url=<host:port>  Required SIM Landmark UDP endpoint"
     echo "  --takeoff_altitude=<8>  Copter altitude, m AGL"
     echo "  --secondary_landing=<X,Y>  Fixed contingency landing point"
     echo "  --min_state_time=<0>       Minimum FSM state dwell, seconds"
@@ -106,6 +108,8 @@ for ARGI; do
     AP_URL="${ARGI#*=}"
   elif [[ "${ARGI}" == --ap_protocol=* ]]; then
     AP_PROTOCOL="${ARGI#*=}"
+  elif [[ "${ARGI}" == --landmark_url=* ]]; then
+    LANDMARK_URL="${ARGI#*=}"
   elif [[ "${ARGI}" == --takeoff_altitude=* ]]; then
     TAKEOFF_ALTITUDE="${ARGI#*=}"
   elif [[ "${ARGI}" == --secondary_landing=* ]]; then
@@ -138,6 +142,11 @@ elif [ "$MODE" = "REAL" ]; then
   IS_SIM="false"
 else
   echo "$ME: --mode must be SIM, SITL, or REAL. Exit Code 1."
+  exit 1
+fi
+
+if [ "$MODE" = "SIM" ] && [ -z "$LANDMARK_URL" ]; then
+  echo "$ME: --landmark_url=<host:port> is required in SIM mode. Exit Code 1."
   exit 1
 fi
 
@@ -181,14 +190,20 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "START_POS =         [${START_POS}]"
   echo "AP_URL =            [${AP_URL}]"
   echo "AP_PROTOCOL =       [${AP_PROTOCOL}]"
+  echo "LANDMARK_URL =      [${LANDMARK_URL}]"
   echo "TAKEOFF_ALTITUDE =  [${TAKEOFF_ALTITUDE}]"
   echo "SECONDARY_LANDING = [${SECONDARY_LANDING}]"
   echo "MIN_STATE_TIME =    [${MIN_STATE_TIME}]"
 fi
 
 #------------------------------------------------------------
-#  Part 5: Generate UAV targets from the qualified field stack.
+#  Part 5: Regenerate the UAV FSM, then build targets from the field stack.
 #------------------------------------------------------------
+if ! "$PEARL_ROOT/scripts/generate_fsm.py" "$MISSION_DIR/uav_fsm.toml"; then
+  echo "$ME: Failed to generate UAV FSM artifacts; not launching." >&2
+  exit 1
+fi
+
 NSFLAGS=(--strict --force -x "--path=$MISSION_DIR:$UAV_BASE_DIR")
 
 nsplug meta_uav.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
@@ -199,7 +214,7 @@ nsplug meta_uav.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
   VNAME="$VNAME" COLOR="$COLOR" \
   PLATFORM_LENGTH="1.5" \
   START_POS="$START_POS" AP_URL="$AP_URL" AP_PROTOCOL="$AP_PROTOCOL" \
-  TAKEOFF_ALTITUDE="$TAKEOFF_ALTITUDE" \
+  LANDMARK_URL="$LANDMARK_URL" TAKEOFF_ALTITUDE="$TAKEOFF_ALTITUDE" \
   SECONDARY_LANDING_X="$SECONDARY_LANDING_X" \
   MIN_STATE_TIME="$MIN_STATE_TIME" \
   SECONDARY_LANDING_Y="$SECONDARY_LANDING_Y" \

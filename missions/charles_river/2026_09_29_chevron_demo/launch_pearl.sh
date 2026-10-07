@@ -166,11 +166,16 @@ if [ "$VERBOSE" = "yes" ]; then
 fi
 
 #------------------------------------------------------------
-#  Part 5: Generate PEARL targets.
+#  Part 5: Regenerate the PEARL FSM, then build mission targets.
 #------------------------------------------------------------
+if ! "$PEARL_ROOT/scripts/generate_fsm.py" "$MISSION_DIR/pearl_fsm.toml"; then
+  echo "$ME: Failed to generate PEARL FSM artifacts; not launching." >&2
+  exit 1
+fi
+
 NSFLAGS=(--strict --force -x)
 
-nsplug meta_pearl.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
+if ! nsplug meta_pearl.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
   WARP="$TIME_WARP" IP_ADDR="$IP_ADDR" MOOS_PORT="$MOOS_PORT" \
   PSHARE_PORT="$PSHARE_PORT" SHORE_IP="$SHORE_IP" \
   SHORE_PSHARE="$SHORE_PSHARE" DIRECT_PEER="$DIRECT_PEER" \
@@ -180,10 +185,16 @@ nsplug meta_pearl.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
   START_POS="$START_POS" SPEED="$CRUISE_SPEED" XMODE="$MODE" \
   MIN_STATE_TIME="$MIN_STATE_TIME" PEARL_LIB_DIR="$PEARL_ROOT/lib" \
   SHERLOCK_METRICS_HOST="$SHERLOCK_METRICS_HOST" \
-  SHERLOCK_METRICS_PORT="$SHERLOCK_METRICS_PORT"
+  SHERLOCK_METRICS_PORT="$SHERLOCK_METRICS_PORT"; then
+  echo "$ME: Failed to generate targ_${VNAME}.moos; not launching." >&2
+  exit 1
+fi
 
-nsplug meta_pearl.bhv "targ_${VNAME}.bhv" "${NSFLAGS[@]}" \
-  VNAME="$VNAME" SPEED="$CRUISE_SPEED" XMODE="$MODE"
+if ! nsplug meta_pearl.bhv "targ_${VNAME}.bhv" "${NSFLAGS[@]}" \
+  VNAME="$VNAME" SPEED="$CRUISE_SPEED" XMODE="$MODE"; then
+  echo "$ME: Failed to generate targ_${VNAME}.bhv; not launching." >&2
+  exit 1
+fi
 
 if [ "$JUST_MAKE" = "yes" ]; then
   echo "$ME: Targ files made; exiting without launch."

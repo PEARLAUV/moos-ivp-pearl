@@ -1,0 +1,73 @@
+# User-facing Landmark Precision Landing System configuration file.
+
+[detection]
+# Landing target JSON files and runtime settings.
+# Each landing target entry supports:
+#   - file: File in landmark/landing-targets (or absolute path)
+#   - target_num: Value of target_num field in MAVLink LANDING_TARGET message (0-255)
+#   - priority: Lower number = higher priority (0 is highest)
+# Example:
+# landing_targets = [
+#   { file = "bullseye.json", target_num = 0, priority = 0 },
+#   { file = "custom-target.json", target_num = 1, priority = 1 }
+# ]
+landing_targets = [
+  #{ file = "bullseye.json", target_num = 0, priority = 0 },
+  { file = "target-1.json", target_num = 1, priority = 0 },
+  { file = "target-2.json", target_num = 2, priority = 10 },
+  { file = "target-3.json", target_num = 3, priority = 20 },
+]
+
+# Landing target detection selection policy.
+# Allowed values:
+#   - "closest_to_center": Select the detected target closest to image center.
+#   - "priority_then_center": Select from highest-priority detected targets, then choose the one closest to image center.
+#   - "all": Send all detected targets.
+landing_target_selection_policy = "closest_to_center"
+
+
+[runtime]
+# Reduce detection loop frequency when no landing target is present to reduce CPU/heat.
+enable_low_power_mode = true
+
+# Controls whether the camera keeps a queued frame ready for immediate capture.
+# false: lower latency (waits for next frame, always newest image).
+# true: higher throughput (returns immediately, but image may be slightly older).
+enable_image_queue = false
+
+
+[mavlink]
+# MAVLink connection string for pymavlink.
+# Format: [protocol:]address[:port]
+# Examples: "/dev/serial0", "udpin:0.0.0.0:14540", "udpout:127.0.0.1:14550", "tcp:127.0.0.1:5760"
+# Docs: https://mavlink.io/en/mavgen_python/#connection_string
+connection_string = "/dev/serial0"
+
+# Serial baud rate (used for serial device paths, e.g. /dev/serial0).
+baud_rate = 230400
+
+# MAVLink IDs
+source_system_id = 1  # Default system ID for most autopilots is 1
+source_component_id = 158  # MAV_COMP_ID_PERIPHERAL (158)
+# target_system_id = 1  # If omitted, the target system ID is inferred from incoming MAVLink messages.
+target_component_id = 1  # MAV_COMP_ID_AUTOPILOT1 (1)
+
+# Coordinate frame used for the pose in the MAVLink LANDING_TARGET message.
+# Allowed values:
+#   - "MAV_FRAME_BODY_FRD"
+#   - "MAV_FRAME_LOCAL_NED"
+# If omitted, the frame is selected based on the detected autopilot.
+# landing_target_frame = "MAV_FRAME_BODY_FRD"
+
+
+# Optional transform applied to each detected landing target pose before sending the MAVLink LANDING_TARGET message.
+# If omitted, no transform is applied.
+# Translation units: meters
+# Rotation units: degrees, applied as intrinsic Z-Y-X (yaw, then pitch, then roll)
+# [landing_target_transform]
+# x_m = 0.0
+# y_m = 0.0
+# z_m = 0.0
+# yaw_deg = 0.0
+# pitch_deg = 0.0
+# roll_deg = 0.0

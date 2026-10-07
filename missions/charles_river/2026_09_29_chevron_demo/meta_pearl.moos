@@ -23,13 +23,21 @@ ProcessConfig = ANTLER
   Run = pShare             @ NewConsole = false
   Run = pHostInfo          @ NewConsole = false
   Run = pLogger            @ NewConsole = false
+#ifdef XMODE REAL
   Run = pEchoVar           @ NewConsole = false
+#endif
   Run = pNodeReporter      @ NewConsole = false
   Run = uFldNodeBroker     @ NewConsole = false
   Run = uFldMessageHandler @ NewConsole = false
   Run = pMediator          @ NewConsole = false
   Run = uTimerScript       @ NewConsole = false ~ uMediatorPrime
-  Run = pTakeoffGate       @ NewConsole = false
+
+  Run = pTakeoffProcessor  @ NewConsole = false
+  Run = uChecks            @ NewConsole = false ~ uChecksTakeoff
+  Run = uChecks            @ NewConsole = false ~ uChecksPostInterruption
+  Run = uChecks            @ NewConsole = false ~ uChecksRecovery
+  Run = uTimerScript       @ NewConsole = false ~ uSimDroneportBayCover
+
   Run = pRendezvous        @ NewConsole = false
   Run = pFSMRuntime        @ NewConsole = false
   Run = pHelmIvP           @ NewConsole = false
@@ -61,6 +69,107 @@ ProcessConfig = pFSMRuntime
 }
 
 //----------------------------------------------------
+// One session-scoped collection owns PEARL's takeoff precheck result.
+ProcessConfig = uChecksTakeoff
+{
+  AppTick = 4
+  CommsTick = 4
+  // Continue checking throughout bay opening and post-interruption checks;
+  // stop before awaiting departure. The request ID scopes each check run.
+  condition = ((PEARL_FSM_SUPPORT_ACTIVITY_STATE=TAKEOFF_PRE_INTERRUPTION_CHECKS) or (PEARL_FSM_TAKEOFF_SUPPORT_STATE=ESTABLISHING_TAKEOFF_CONDITIONS)) or (PEARL_FSM_TAKEOFF_SUPPORT_STATE=POST_INTERRUPTION_CHECKS)
+  session_var = TAKEOFF_REQUEST_ID
+  result_var = TAKEOFF_PRECHECKS_STATE
+  result_prefix = TAKEOFF_CHECK_
+
+  // GPS_QUALITY is an NMEA GGA string and publishes only on change. Pair it
+  // with fresh GGA latitude/longitude from the same GPS source.
+  check = name=GPS_FIX,timeout=60
+  require = check=GPS_FIX,var=GPS_QUALITY,type=string,one_of=1|2|4|5,on_mismatch=fail
+  check = name=GPS_STREAM,timeout=10,max_age=3
+  require = check=GPS_STREAM,var=GPS_LATITUDE,type=double,min=-90,max=90,on_mismatch=wait
+  require = check=GPS_STREAM,var=GPS_LONGITUDE,type=double,min=-180,max=180,on_mismatch=wait
+
+  check = name=BATTERY,timeout=5,max_age=3
+  require = check=BATTERY,var=PEARL_BATTERY_DATA_VALID,type=double,equals=1,on_mismatch=fail
+  require = check=BATTERY,var=PEARL_BATTERY_SOC,type=double,min=15,on_mismatch=fail
+  require = check=BATTERY,var=PEARL_BATTERY_DATA_AGE,type=double,min=0,max=3,on_mismatch=wait
+
+  check = name=WIND,timeout=5,max_age=3
+  require = check=WIND,var=PEARL_WIND_DATA_VALID,type=double,equals=1,on_mismatch=fail
+  require = check=WIND,var=PEARL_WIND_SPEED,type=double,min=0,max=4,on_mismatch=fail
+  require = check=WIND,var=PEARL_AIRMAR_DATA_AGE,type=double,min=0,max=3,on_mismatch=wait
+}
+
+//----------------------------------------------------
+// The post-interruption collection separately confirms the cover is open.
+// Keep it active while awaiting departure so a close is observable.
+ProcessConfig = uChecksPostInterruption
+{
+  AppTick = 4
+  CommsTick = 4
+  condition = (PEARL_FSM_TAKEOFF_SUPPORT_STATE=POST_INTERRUPTION_CHECKS) or (PEARL_FSM_TAKEOFF_SUPPORT_STATE=AWAITING_DRONE_DEPARTURE)
+  session_var = TAKEOFF_REQUEST_ID
+  result_var = TAKEOFF_POSTCHECKS_STATE
+  result_prefix = TAKEOFF_POSTCHECK_
+
+  // The cover event is posted once. No input-age lease is appropriate.
+  check = name=DRONEPORT_BAY,timeout=20
+  require = check=DRONEPORT_BAY,var=PEARL_DRONEPORT_BAY_COVER_STATE,type=string,equals=open,on_mismatch=fail
+}
+
+//----------------------------------------------------
+// Recovery admission checks are observation-only. In particular, this
+// collection verifies that the droneport is already open; it never commands
+// the cover or activates the takeoff-only cover mock below.
+ProcessConfig = uChecksRecovery
+{
+  AppTick = 4
+  CommsTick = 4
+  condition = PEARL_FSM_SUPPORT_ACTIVITY_STATE=RECOVERY_PRE_INTERRUPTION_CHECKS
+  session_var = PEARL_RENDEZVOUS_SESSION
+  result_var = RECOVERY_PRECHECKS_STATE
+  result_prefix = RECOVERY_CHECK_
+
+  check = name=GPS_FIX,timeout=60
+  require = check=GPS_FIX,var=GPS_QUALITY,type=string,one_of=1|2|4|5,on_mismatch=fail
+  check = name=GPS_STREAM,timeout=10,max_age=3
+  require = check=GPS_STREAM,var=GPS_LATITUDE,type=double,min=-90,max=90,on_mismatch=wait
+  require = check=GPS_STREAM,var=GPS_LONGITUDE,type=double,min=-180,max=180,on_mismatch=wait
+
+  check = name=BATTERY,timeout=5,max_age=3
+  require = check=BATTERY,var=PEARL_BATTERY_DATA_VALID,type=double,equals=1,on_mismatch=fail
+  require = check=BATTERY,var=PEARL_BATTERY_SOC,type=double,min=15,on_mismatch=fail
+  require = check=BATTERY,var=PEARL_BATTERY_DATA_AGE,type=double,min=0,max=3,on_mismatch=wait
+
+  check = name=WIND,timeout=5,max_age=3
+  require = check=WIND,var=PEARL_WIND_DATA_VALID,type=double,equals=1,on_mismatch=fail
+  require = check=WIND,var=PEARL_WIND_SPEED,type=double,min=0,max=4,on_mismatch=fail
+  require = check=WIND,var=PEARL_AIRMAR_DATA_AGE,type=double,min=0,max=3,on_mismatch=wait
+
+  // Passive telemetry check: no actuator publication or opening side effect.
+  check = name=DRONEPORT_OPEN,timeout=5
+  require = check=DRONEPORT_OPEN,var=PEARL_DRONEPORT_BAY_COVER_STATE,type=string,equals=open,on_mismatch=fail
+}
+
+//----------------------------------------------------
+// The demo has no physical droneport cover; this timed mock runs in both
+// SIM and REAL until a cover actuator/telemetry publisher is installed.
+ProcessConfig = uSimDroneportBayCover
+{
+  AppTick = 10
+  CommsTick = 10
+  condition = PEARL_FSM_TAKEOFF_SUPPORT_STATE=ESTABLISHING_TAKEOFF_CONDITIONS
+  upon_awake = restart
+  script_atomic = false
+  reset_max = unlimited
+  paused = false
+  script_name = SIM_DRONEPORT_BAY_COVER
+
+  event = var=PEARL_DRONEPORT_BAY_COVER_STATE, val=opening, time=0
+  event = var=PEARL_DRONEPORT_BAY_COVER_STATE, val=open,    time=10
+}
+
+//----------------------------------------------------
 ProcessConfig = pShare
 {
   AppTick   = 4
@@ -74,21 +183,26 @@ ProcessConfig = pShare
 
   output = src_name=TAKEOFF_REQUEST_ID,       route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=TAKEOFF_REQUEST_STATE,    route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=UAV_TAKEOFF_PROGRESS,     route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=TAKEOFF_PRECHECKS_STATE,  route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=TAKEOFF_PRECHECKS_STATE_STATE, route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=TAKEOFF_PRECHECKS_STATE_SNAPSHOT, dest_name=PEARL_TAKEOFF_PRECHECKS_SNAPSHOT, route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=TAKEOFF_SUPPORT_ACTIVE,   route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=TAKEOFF_SUPPORT_READY,    route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=TAKEOFF_POSTCHECKS_STATE, route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=TAKEOFF_POSTCHECKS_STATE_STATE, route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=TAKEOFF_POSTCHECKS_STATE_SNAPSHOT, dest_name=PEARL_TAKEOFF_POSTCHECKS_SNAPSHOT, route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=PEARL_DRONEPORT_BAY_COVER_STATE, route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=TAKEOFF_CLEARANCE_STATE,  route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=TAKEOFF_CANCEL_STATE,      route=$(SHORE_IP):$(SHORE_PSHARE)
-  output = src_name=TAKEOFF_SUPPORT_OUTCOME,   route=$(SHORE_IP):$(SHORE_PSHARE)
-  output = src_name=PEARL_TAKEOFF_GATE_READY,       route=$(SHORE_IP):$(SHORE_PSHARE)
-  output = src_name=PEARL_TAKEOFF_GATE_REASON,      route=$(SHORE_IP):$(SHORE_PSHARE)
-  output = src_name=PEARL_TAKEOFF_CONTROL_HISTORY,  route=$(SHORE_IP):$(SHORE_PSHARE)
-  output = src_name=PEARL_TAKEOFF_CONTROL_RESTORED, route=$(SHORE_IP):$(SHORE_PSHARE)
 
   output = src_name=RECOVERY_REQUEST_ID,       route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=RECOVERY_REQUEST_STATE,    route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=RECOVERY_PRECHECKS_STATE,  route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=RECOVERY_PRECHECKS_STATE_STATE, route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=RECOVERY_PRECHECKS_STATE_SNAPSHOT, dest_name=PEARL_RECOVERY_PRECHECKS_SNAPSHOT, route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=RECOVERY_CHECK_DRONEPORT_OPEN, route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=RECOVERY_CHECK_DRONEPORT_OPEN_STATE, route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=RENDEZVOUS_STATE,           route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=RECOVERY_SUPPORT_ACTIVE,   route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=RECOVERY_SUPPORT_READY,    route=$(SHORE_IP):$(SHORE_PSHARE)
@@ -101,12 +215,10 @@ ProcessConfig = pShare
   output = src_name=IVPHELM_MODESET,          route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=IVPHELM_STATEVARS,        route=$(SHORE_IP):$(SHORE_PSHARE)
 
-  // Concrete behavior conditions are namespaced on shore so they cannot be
-  // confused with the operator command variables distributed by the broker.
-  output = src_name=DEPLOY,               dest_name=PEARL_HELM_DEPLOY,          route=$(SHORE_IP):$(SHORE_PSHARE)
-  output = src_name=RETURN,               dest_name=PEARL_HELM_RETURN,          route=$(SHORE_IP):$(SHORE_PSHARE)
-  output = src_name=STATION_KEEP,         dest_name=PEARL_HELM_STATION_KEEP,    route=$(SHORE_IP):$(SHORE_PSHARE)
-  output = src_name=MOOS_MANUAL_OVERRIDE, dest_name=PEARL_HELM_MANUAL_OVERRIDE, route=$(SHORE_IP):$(SHORE_PSHARE)
+  // Do not also export the canonical Helm command variables from this pShare.
+  // pShare suppresses an imported key when it is registered locally for an
+  // output route, so bidirectional DEPLOY/RETURN/STATION_KEEP/manual-override
+  // routes would silently discard the addressed commands arriving from shore.
   output = src_name=PEARL_RENDEZVOUS_ACTIVE,  route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=PEARL_RENDEZVOUS_ARRIVED, route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=PEARL_CONTROL_HISTORY,     route=$(SHORE_IP):$(SHORE_PSHARE)
@@ -121,9 +233,6 @@ ProcessConfig = pShare
   output = src_name=PROC_WATCH_ALL_OK, dest_name=PEARL_PROC_WATCH_ALL_OK, route=$(UAV_IP):$(UAV_PSHARE)
   output = src_name=NODE_REPORT_LOCAL, dest_name=NODE_REPORT, route=$(UAV_IP):$(UAV_PSHARE)
 
-  // PEARL owns request/clearance decisions. The UAV companion FSM subscribes
-  // to these facts but never initializes or publishes them.
-  output = src_name=TAKEOFF_REQUEST_STATE,   route=$(UAV_IP):$(UAV_PSHARE)
   output = src_name=TAKEOFF_CLEARANCE_STATE, route=$(UAV_IP):$(UAV_PSHARE)
   output = src_name=RECOVERY_REQUEST_STATE,  route=$(UAV_IP):$(UAV_PSHARE)
   output = src_name=LANDING_CLEARANCE_STATE, route=$(UAV_IP):$(UAV_PSHARE)
@@ -194,7 +303,7 @@ ProcessConfig = uLoadWatch
   thresh = app=pThrustMixer,   gapthresh=3
 #endif
   thresh = app=pHelmIvP,       gapthresh=3
-  thresh = app=pTakeoffGate,   gapthresh=3
+  thresh = app=pTakeoffProcessor, gapthresh=3
   thresh = app=pNodeReporter,  gapthresh=4
   thresh = app=pHostInfo,      gapthresh=5
   thresh = app=any,            gapthresh=2.0
@@ -217,9 +326,14 @@ ProcessConfig = uSimTakeoffInputs
   script_name = SIM_TAKEOFF_INPUTS
 
   event = var=PEARL_BATTERY_SOC,        val=80,   time=0
-  event = var=PEARL_BATTERY_DATA_VALID, val=true, time=0
+  event = var=PEARL_BATTERY_DATA_VALID, val=1,    time=0
+  event = var=PEARL_BATTERY_DATA_AGE,   val=0,    time=0
   event = var=PEARL_WIND_SPEED,         val=2,    time=0
-  event = var=PEARL_WIND_DATA_VALID,    val=true, time=0
+  event = var=PEARL_WIND_DATA_VALID,    val=1,    time=0
+  event = var=PEARL_AIRMAR_DATA_AGE,    val=0,    time=0
+  event = var=GPS_QUALITY,              val="1",  time=0
+  event = var=GPS_LATITUDE,             val=42.36,time=0
+  event = var=GPS_LONGITUDE,            val=-71.09,time=0
 }
 #endif
 
@@ -274,24 +388,36 @@ ProcessConfig = uMediatorPrime
 }
 
 //----------------------------------------------------
-// PEARL authoritatively stages takeoff support and returns clearance to the
-// UAV only after its support-state facts have been made observable.
-ProcessConfig = pTakeoffGate
+// Grants only when every session-matched uChecks aggregate succeeds. A failed
+// check denies immediately; pending/missing results are bounded by timeout.
+ProcessConfig = pTakeoffProcessor
 {
-  AppTick   = 4
+  AppTick = 4
   CommsTick = 4
   term_report_interval = 2
+  ownship = $(VNAME)
+  requester = uav
 
-  role                    = pearl
-  ownship                 = $(VNAME)
-  peer_node               = uav
-  request_timeout         = 100
-  coordination_step_delay = 1
-  fsm_state_max_age       = 2.5
+  receipt_var = TAKEOFF_REQUEST_ID
+  // PEARL-owned FSM acknowledgement (monitored shoreside, not sent to UAV).
+  status_var = TAKEOFF_REQUEST_STATE
+  // Flight progress is ID-tagged and does not overwrite the granted guard.
+  progress_var = UAV_TAKEOFF_PROGRESS
+  progress_grace = 120
 
-  min_pearl_soc  = 15
-  max_wind_speed = 4
-  input_max_age  = 3
+  // Processor-owned takeoff hint: 6 m diameter, dashed until granted.
+  view_label = $(VNAME):takeoff-support
+  view_radius = 3
+  view_x_var = NAV_X
+  view_y_var = NAV_Y
+  view_post_interval = 1
+
+  checks_result_var = TAKEOFF_PRECHECKS_STATE
+  checks_result_var = TAKEOFF_POSTCHECKS_STATE
+
+  release_condition = PEARL_FSM_OPERATION_STATE=NORMAL_OPERATION
+
+  timeout = 100
 }
 
 //----------------------------------------------------
@@ -307,7 +433,7 @@ ProcessConfig = pRendezvous
   ownship   = $(VNAME)
   peer_node = uav
 
-  uav_speed       = 3
+  uav_speed       = 1.5
   pearl_speed     = $(SPEED)
   min_battery     = 25
   critical_battery = 15
@@ -315,6 +441,9 @@ ProcessConfig = pRendezvous
   require_battery = true
   require_health  = false
   require_flight_state = false
+  // A retained result from another rendezvous cannot authorize this request:
+  // pRendezvous also requires the matching session in the _STATE diagnostic.
+  require_check = RECOVERY_PRECHECKS_STATE
 
   nav_stale_thresh = 10
   request_timeout  = 100
@@ -334,9 +463,10 @@ ProcessConfig = pRendezvous
   landing_target_acquire_timeout = 30
 }
 
+#ifdef XMODE REAL
 //----------------------------------------------------
-// Translate PEARL's sensors into the standard NAV variables and keep PEARL's
-// operator controls namespaced away from the UAV.
+// Translate PEARL's hardware sensor names into the standard NAV variables.
+// Operator and supervisory controls already use their canonical local names.
 ProcessConfig = pEchoVar
 {
   AppTick   = 10
@@ -351,13 +481,8 @@ ProcessConfig = pEchoVar
   Echo = IMU_PITCH        -> NAV_PITCH
   Echo = IMU_ROLL         -> NAV_ROLL
   Echo = GPS_SPEED        -> NAV_SPEED
-
-  Echo = PEARL_TASK_EXECUTE    -> TASK_EXECUTE
-  Echo = PEARL_DEPLOY          -> DEPLOY
-  Echo = PEARL_RETURN          -> RETURN
-  Echo = PEARL_STATION_KEEP    -> STATION_KEEP
-  Echo = PEARL_MANUAL_OVERRIDE -> MOOS_MANUAL_OVERRIDE
 }
+#endif
 
 //----------------------------------------------------
 ProcessConfig = pNodeReporter
@@ -549,7 +674,9 @@ ProcessConfig = uSimMarineV22
   term_report_interval = 2
 
   start_pos = $(START_POS)
-  prefix    = NAV
+  // uSimMarine always prefixes navigation publications; NAV is the canonical
+  // Helm interface and avoids a second translation layer from its USM default.
+  prefix = NAV
 
   max_speed        = 1
   max_deceleration = 0.5

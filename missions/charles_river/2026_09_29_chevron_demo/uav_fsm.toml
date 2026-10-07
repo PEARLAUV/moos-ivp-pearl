@@ -2,16 +2,14 @@ version = 2
 
 [outputs]
 runtime = "plug_uav_fsm_runtime.moos"
-bhv = "plug_uav_states.bhv"
 d2 = "uav_fsm/overview.d2"
 svg = "uav_fsm/svg"
 bindings = "uav_fsm/bindings.json"
 pshare = "plug_uav_fsm_pshare.moos"
 scopes = "plug_uav_fsm_scopes.moos"
 
-[targets.bhv]
+[targets.runtime]
 prefix = "UAV"
-behavior = "BHV_FSM"
 state_name_case = "upper_snake"
 section_name_case = "upper_snake"
 
@@ -27,10 +25,14 @@ direction = "down"
 uav_landed_state = { initial = "UNKNOWN", initialize = false }
 uav_health_all_ok = { initial = "UNKNOWN", initialize = false }
 uav_gps_available = { initial = "UNKNOWN", initialize = false }
-uav_is_armed = { initial = false, initialize = false }
-uav_takeoff_gate_ready = { initial = 0, initialize = false }
-uav_takeoff_approved = { initial = 0, initialize = false }
-uav_takeoff_result = { initial = "UNKNOWN", initialize = false }
+uav_is_armed = { initial = "UNKNOWN", initialize = false }
+# Shoreside triggers each UAV task; the runtime consumes the request on entry.
+task_execute = { initial = false, initialize = false }
+# One local uChecks process owns the aggregate and all named check results.
+takeoff_prechecks = { initial = "inactive", initialize = false }
+# The FSM publishes a new token on each entry to TAKEOFF_OPERATIONS.
+uav_fsm_operation_state_takeoff_operations_epoch = { initial = "none", initialize = false }
+takeoff_request_result = { initial = "UNKNOWN", initialize = false }
 route_buffer_vehicle_state = { initial = "UNKNOWN", initialize = false }
 uav_rendezvous_phase = { initial = "IDLE", initialize = false }
 uav_rendezvous_arrived = { initial = 0, initialize = false }
@@ -54,7 +56,7 @@ layout = { left = 120, top = 500, width = 200 }
 
 [states.idle.transitions.begin_takeoff_operations]
 to = "takeoff_operations"
-when = "((uav_takeoff_approved==1) && (uav_landed_state==ON_GROUND)) || (uav_landed_state==TAKING_OFF) || (uav_landed_state==IN_AIR)"
+when = "task_execute==true"
 label = "Tasking received"
 
 [states.takeoff_operations]
@@ -62,6 +64,8 @@ label = "Takeoff operations"
 layout = { left = 400, top = 280, width = 250 }
 initial = "establishing_takeoff_readiness"
 diagram = true
+entry_epoch = true
+entry_effects = { task_execute = false }
 
 [states.takeoff_operations.sinks.completed_successfully]
 label = "Completed"
@@ -75,12 +79,12 @@ layout = { top = 170, left = 0, width = 250}
 
 [states.takeoff_operations.states.establishing_takeoff_readiness.transitions.established]
 to = "requesting_takeoff_clearance"
-when = "((uav_takeoff_gate_ready==1) && (uav_takeoff_approved==1) && (uav_landed_state==ON_GROUND)) || (uav_landed_state==TAKING_OFF) || (uav_landed_state==IN_AIR)"
+when = "check_result(takeoff_prechecks, success)"
 label = "Readiness established"
 
 [states.takeoff_operations.states.establishing_takeoff_readiness.transitions.not_ready]
 to = "sink.aborted"
-when = "(uav_landed_state==ON_GROUND) && (uav_takeoff_gate_ready==0) && (uav_takeoff_approved==0) && (uav_takeoff_result!=UNKNOWN)"
+when = "check_result(takeoff_prechecks, fail)"
 label = "Not ready"
 
 [states.takeoff_operations.states.requesting_takeoff_clearance]
@@ -89,12 +93,12 @@ layout = { top = 340, left = 0, width = 250}
 
 [states.takeoff_operations.states.requesting_takeoff_clearance.transitions.clearance_granted]
 to = "takeoff"
-when = "(uav_takeoff_approved==1) || (uav_landed_state==TAKING_OFF) || (uav_landed_state==IN_AIR)"
+when = "takeoff_request_result==APPROVED"
 label = "Granted"
 
 [states.takeoff_operations.states.requesting_takeoff_clearance.transitions.clearance_rejected]
 to = "sink.aborted"
-when = "(uav_landed_state==ON_GROUND) && (uav_takeoff_gate_ready==0) && (uav_takeoff_approved==0) && (uav_takeoff_result!=UNKNOWN)"
+when = "(takeoff_request_result==REJECTED) || (takeoff_request_result==CANCELLED) || (takeoff_request_result==TIMEOUT)"
 label = "Denied"
 
 [states.takeoff_operations.states.takeoff]
@@ -108,7 +112,7 @@ label = "Confirmed"
 
 [states.takeoff_operations.states.takeoff.transitions.takeoff_failed]
 to = "sink.aborted"
-when = "(uav_landed_state==ON_GROUND) && (uav_takeoff_gate_ready==0) && (uav_takeoff_approved==0) && (uav_takeoff_result!=UNKNOWN)"
+when = "(uav_landed_state==ON_GROUND) && ((takeoff_request_result==REJECTED) || (takeoff_request_result==TIMEOUT) || (takeoff_request_result==CANCELLED))"
 label = "Failed"
 
 [states.takeoff_operations.transitions.takeoff_completed]
@@ -164,12 +168,12 @@ layout = { left = 150, top = 80, width = 300 }
 
 [states.landing_operations.states.establishing_landing_readiness.transitions.readiness_established]
 to = "requesting_recovery"
-when = "((uav_health_all_ok==true) && (uav_gps_available==true) && (uav_is_armed==true) && (uav_landed_state==IN_AIR)) || (uav_rendezvous_phase==REQUESTING) || (uav_rendezvous_phase==RENDEZVOUS) || (uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)"
+when = "((uav_health_all_ok==1) && (uav_gps_available==1) && (uav_is_armed==1) && (uav_landed_state==IN_AIR)) || (uav_rendezvous_phase==REQUESTING) || (uav_rendezvous_phase==RENDEZVOUS) || (uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)"
 label = "Ready"
 
 [states.landing_operations.states.establishing_landing_readiness.transitions.readiness_failed]
 to = "transiting_to_secondary_loiter_location"
-when = "(uav_health_all_ok==false) || (uav_gps_available==false)"
+when = "(uav_health_all_ok==0) || (uav_gps_available==0)"
 label = "Readiness failed"
 
 [states.landing_operations.states.requesting_recovery]
@@ -248,7 +252,7 @@ layout = { left = 150, top = 980, width = 300 }
 
 [states.landing_operations.states.landing.transitions.landing_completed]
 to = "sink.nominal"
-when = "(uav_rendezvous_phase==COMPLETE) && (uav_landed_state==ON_GROUND) && (uav_is_armed==false)"
+when = "(uav_rendezvous_phase==COMPLETE) && (uav_landed_state==ON_GROUND) && (uav_is_armed==0)"
 label = "Landed and disarmed"
 
 [states.landing_operations.states.landing.transitions.landing_target_lost]
@@ -290,7 +294,7 @@ layout = { left = 980, top = 680, width = 250 }
 
 [states.landing_operations.states.secondary_landing.transitions.secondary_landing_completed]
 to = "sink.offnominal"
-when = "(uav_secondary_recovery_state==LANDED) && (uav_landed_state==ON_GROUND) && (uav_is_armed==false)"
+when = "(uav_secondary_recovery_state==LANDED) && (uav_landed_state==ON_GROUND) && (uav_is_armed==0)"
 label = "Secondary\nlanding\ncomplete"
 
 [states.landing_operations.states.transiting_to_secondary_loiter_location]

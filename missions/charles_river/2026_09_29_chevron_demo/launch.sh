@@ -34,6 +34,7 @@ SECONDARY_LANDING="10,15"
 MIN_STATE_TIME="0"
 AP_URL=""
 AP_PROTOCOL=""
+LANDMARK_URL=""
 
 SHORE_MPORT="9000"
 UAV_MPORT="9001"
@@ -68,6 +69,7 @@ for ARGI; do
     echo "  --min_state_time=<0>          Minimum FSM state dwell, seconds"
     echo "  --ap_url=<endpoint>           UAV ArduPilot endpoint"
     echo "  --ap_protocol=<proto>         UAV udp, tcp, or serial"
+    echo "  --landmark_url=<host:port>    Required SIM Landmark UDP endpoint"
     echo
     echo "Ports:"
     echo "  --shore_mport=<9000>          Shoreside MOOSDB port"
@@ -111,6 +113,8 @@ for ARGI; do
     AP_URL="${ARGI#*=}"
   elif [[ "${ARGI}" == --ap_protocol=* ]]; then
     AP_PROTOCOL="${ARGI#*=}"
+  elif [[ "${ARGI}" == --landmark_url=* ]]; then
+    LANDMARK_URL="${ARGI#*=}"
   elif [[ "${ARGI}" == --shore_mport=* ]]; then
     SHORE_MPORT="${ARGI#*=}"
   elif [[ "${ARGI}" == --uav_mport=* ]]; then
@@ -132,6 +136,10 @@ done
 MODE=$(echo "$MODE" | tr '[:lower:]' '[:upper:]')
 if [[ "$MODE" != "SIM" && "$MODE" != "SITL" && "$MODE" != "REAL" ]]; then
   echo "$ME: --mode must be SIM, SITL, or REAL. Exit Code 1."
+  exit 1
+fi
+if [[ "$MODE" = "SIM" && -z "$LANDMARK_URL" ]]; then
+  echo "$ME: --landmark_url=<host:port> is required in SIM mode. Exit Code 1."
   exit 1
 fi
 if [[ ! "$MIN_STATE_TIME" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -172,6 +180,7 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "PEARL_PSHARE =      [${PEARL_PSHARE}]"
   echo "SECONDARY_LANDING = [${SECONDARY_LANDING}]"
   echo "MIN_STATE_TIME =    [${MIN_STATE_TIME}]"
+  echo "LANDMARK_URL =      [${LANDMARK_URL}]"
   echo -n "Hit any key to continue launch "
   read -r _
 fi
@@ -195,6 +204,7 @@ UARGS+=(--secondary_landing="$SECONDARY_LANDING")
 UARGS+=(--min_state_time="$MIN_STATE_TIME")
 [ -n "$AP_URL" ] && UARGS+=(--ap_url="$AP_URL")
 [ -n "$AP_PROTOCOL" ] && UARGS+=(--ap_protocol="$AP_PROTOCOL")
+[ -n "$LANDMARK_URL" ] && UARGS+=(--landmark_url="$LANDMARK_URL")
 [ "$JUST_MAKE" = "yes" ] && UARGS+=(--just_make)
 [ "$VERBOSE" = "yes" ] && UARGS+=(--verbose)
 

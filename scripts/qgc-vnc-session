@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# PATH-visible shim for the QGroundControl container launcher.
+set -Eeuo pipefail
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+launcher="$script_dir/../../qgc-vnc-docker/qgc-vnc-session"
+if [[ ! -x $launcher ]]; then
+  echo "QGC VNC launcher not found or not executable: $launcher" >&2
+  exit 1
+fi
+exec "$launcher" "$@"

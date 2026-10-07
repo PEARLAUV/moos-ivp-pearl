@@ -7,5 +7,7 @@ ethan_sim/
 **/targ_*.bhv
 **/LOG_*/
 **/XLOG_*/
+**/qgc-home/
+**/gcf-home/
 **/.LastOpenedMOOSLogDirectory
 .DS_Store

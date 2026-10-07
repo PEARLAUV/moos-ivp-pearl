@@ -54,6 +54,7 @@ RouteBuffer::RouteBuffer()
   m_vehicle_deploy_pending_since = 0;
   m_vehicle_route_replay_pending = false;
   m_vehicle_route_replay_pending_since = 0;
+  m_vehicle_active_route_name = "";
 }
 
 //---------------------------------------------------------
@@ -90,6 +91,11 @@ bool RouteBuffer::OnNewMail(MOOSMSG_LIST &NewMail)
       handled = handleMailCommand(msg);
     else if((m_role == "vehicle") && (key == m_route_ready_var)) {
       m_route_ready = mailIsTrue(msg);
+      handled = true;
+    }
+    else if((m_role == "vehicle") && !m_operation_state_var.empty() &&
+            (key == m_operation_state_var) && msg.IsString()) {
+      m_operation_state = msg.GetString();
       handled = true;
     }
     else if(key == "APPCAST_REQ")
@@ -129,9 +135,9 @@ bool RouteBuffer::Iterate()
     else if((m_role == "shoreside") && !m_pending_actions.empty())
       processPendingAction();
     else if((m_role == "vehicle") && !m_pending_commands.empty()) {
-      string command = m_pending_commands.front();
+      const auto command = m_pending_commands.front();
       m_pending_commands.pop_front();
-      processVehicleCommand(command);
+      processVehicleCommand(command.first, command.second);
     }
 
     if((m_role == "vehicle") && m_vehicle_deploy_pending) {
@@ -237,6 +243,22 @@ bool RouteBuffer::OnStartUp()
       handled = setNonWhiteVarOnString(m_route_ready_var, value);
     else if(param == "route_name")
       handled = setNonWhiteVarOnString(m_route_name, value);
+    else if(param == "route_purpose_var")
+      handled = setNonWhiteVarOnString(m_route_purpose_var, value);
+    else if(param == "operation_state_var")
+      handled = setNonWhiteVarOnString(m_operation_state_var, value);
+    else if(param == "recovery_source")
+      handled = setNonWhiteVarOnString(m_recovery_source, value);
+    else if(param == "operator_stage_state") {
+      string state;
+      handled = setNonWhiteVarOnString(state, value) &&
+                m_operator_states.insert(state).second;
+    }
+    else if(param == "recovery_stage_state") {
+      string state;
+      handled = setNonWhiteVarOnString(state, value) &&
+                m_recovery_states.insert(state).second;
+    }
     else if(param == "manual_override_var")
       handled = setNonWhiteVarOnString(m_manual_override_var, value);
     else if(param == "max_points")
@@ -265,6 +287,18 @@ bool RouteBuffer::OnStartUp()
     reportConfigWarning("destination_node is required for shoreside role");
     m_config_valid = false;
   }
+  if(m_role == "vehicle" &&
+     (!m_route_purpose_var.empty() || !m_operation_state_var.empty() ||
+      !m_recovery_source.empty() || !m_operator_states.empty() ||
+      !m_recovery_states.empty()) &&
+     (m_route_purpose_var.empty() || m_operation_state_var.empty() ||
+      m_recovery_source.empty() || m_operator_states.empty() ||
+      m_recovery_states.empty())) {
+    reportConfigWarning("Route purpose policy needs a purpose variable, FSM state variable, recovery source, and allowed states");
+    m_config_valid = false;
+  }
+  if(m_config_valid && !m_route_purpose_var.empty())
+    Notify(m_route_purpose_var, "none");
 
   registerVariables();
   return(true);
@@ -287,6 +321,7 @@ void RouteBuffer::registerVariables()
   else if(m_role == "vehicle") {
     Register(m_command_var, 0);
     Register(m_route_ready_var, 0);
+    if(!m_operation_state_var.empty()) Register(m_operation_state_var, 0);
   }
 }
 
@@ -313,18 +348,16 @@ bool RouteBuffer::handleMailPoint(const CMOOSMsg& msg)
   m_points.push_back(point);
   m_last_submitted_points = "";
   postPoint(point, m_points.size(), true);
-  postSegList(true);
 
+  bool sent_append = false;
   if(m_live_append && m_route_deployed) {
     string point_spec = doubleToStringX(point.x(), 6) + ",";
     point_spec += doubleToStringX(point.y(), 6);
-    if(!sendMediatedCommand("action=append # point=" + point_spec))
-      return(false);
-    postState("APPEND_SUBMITTED");
+    sent_append = sendMediatedCommand("action=append # point=" + point_spec);
   }
-  else
-    postState("EDITING");
-
+  if(!sent_append) m_route_deployed = false;
+  postSegList(true);
+  postState(sent_append ? "APPEND_SUBMITTED" : "EDITING");
   return(true);
 }
 
@@ -386,7 +419,7 @@ bool RouteBuffer::handleMailCommand(const CMOOSMsg& msg)
   if(!msg.IsString())
     return(false);
 
-  m_pending_commands.push_back(msg.GetString());
+  m_pending_commands.emplace_back(msg.GetString(), msg.GetSource());
   return(true);
 }
 
@@ -437,6 +470,7 @@ bool RouteBuffer::processPendingAction()
 
     clearVisualization();
     m_points.clear();
+    m_route_deployed = false;
     m_points.push_back(m_contact_points[target]);
     postPoint(m_points.front(), 1, true);
     postSegList(true);
@@ -448,6 +482,7 @@ bool RouteBuffer::processPendingAction()
 
     m_last_submitted_points = points;
     m_route_deployed = true;
+    postSegList(true);
     postState("GOTO_SUBMITTED");
     reportEvent("Submitted GOTO route for " + target);
     return(true);
@@ -475,6 +510,7 @@ bool RouteBuffer::processPendingAction()
 
   m_last_submitted_points = points;
   m_route_deployed = true;
+  postSegList(true);
   postState("SUBMITTED");
   return(true);
 }
@@ -482,7 +518,8 @@ bool RouteBuffer::processPendingAction()
 //---------------------------------------------------------
 // Procedure: processVehicleCommand()
 
-bool RouteBuffer::processVehicleCommand(const string& command)
+bool RouteBuffer::processVehicleCommand(const string& command,
+                                        const string& source)
 {
   m_commands_received++;
 
@@ -490,6 +527,11 @@ bool RouteBuffer::processVehicleCommand(const string& command)
   string action;
   string points;
   string point;
+  string speed;
+  string capture_radius;
+  string slip_radius;
+  string route_name;
+  string purpose = "operator";
   for(unsigned int i=0; i<fields.size(); i++) {
     string field = stripBlankEnds(fields[i]);
     string param = tolower(biteStringX(field, '='));
@@ -501,6 +543,16 @@ bool RouteBuffer::processVehicleCommand(const string& command)
       points = value;
     else if(param == "point")
       point = value;
+    else if(param == "speed")
+      speed = value;
+    else if(param == "capture_radius")
+      capture_radius = value;
+    else if(param == "slip_radius")
+      slip_radius = value;
+    else if(param == "route_name")
+      route_name = value;
+    else if(param == "purpose")
+      purpose = tolower(value);
   }
 
   if(action == "sync") {
@@ -512,16 +564,51 @@ bool RouteBuffer::processVehicleCommand(const string& command)
     m_vehicle_deploy_pending = false;
     m_vehicle_route_replay_pending = false;
     m_vehicle_pending_route_update.clear();
+    m_vehicle_route_purpose.clear();
+    m_route_deployed = false;
+    if(!m_route_purpose_var.empty()) Notify(m_route_purpose_var, "none");
+    if(!m_vehicle_active_route_name.empty()) {
+      // Repeating this update can respawn an expired Helm behavior while idle.
+      Notify(m_route_update_var,
+             "name=" + m_vehicle_active_route_name + "#duration=0");
+      m_vehicle_active_route_name.clear();
+    }
     Notify(m_route_clear_var, "true");
     postState("CLEAR_ACCEPTED");
     reportEvent("Accepted mediated CLEAR");
     return(true);
   }
 
-  if(action == "deploy")
-    return(postRouteSnapshot(points));
+  if(action == "deploy") {
+    if(purpose != "operator" && purpose != "recovery") {
+      m_commands_rejected++;
+      postState("DEPLOY_REJECTED_PURPOSE");
+      return(false);
+    }
+    if(!m_route_purpose_var.empty()) {
+      const auto& allowed = purpose == "operator" ? m_operator_states :
+                                                m_recovery_states;
+      if(!allowed.count(m_operation_state) ||
+         (purpose == "recovery" && source != m_recovery_source)) {
+        m_commands_rejected++;
+        postState("DEPLOY_REJECTED_AUTHORITY");
+        reportRunWarning("DEPLOY rejected: " + purpose + " route from " +
+                         source + " in " + m_operation_state);
+        return(false);
+      }
+    }
+    return(postRouteSnapshot(points, speed, capture_radius, slip_radius,
+                             route_name, purpose));
+  }
 
   if(action == "append") {
+    if(!m_route_purpose_var.empty() &&
+       (m_vehicle_route_purpose != "operator" ||
+        !m_operator_states.count(m_operation_state))) {
+      m_commands_rejected++;
+      postState("APPEND_REJECTED_AUTHORITY");
+      return(false);
+    }
     XYPoint new_point = string2Point(point);
     if(!new_point.valid()) {
       m_commands_rejected++;
@@ -567,8 +654,45 @@ bool RouteBuffer::sendMediatedCommand(const string& command)
 //---------------------------------------------------------
 // Procedure: postRouteSnapshot()
 
-bool RouteBuffer::postRouteSnapshot(const string& points)
+bool RouteBuffer::postRouteSnapshot(const string& points, const string& speed,
+                                    const string& capture_radius,
+                                    const string& slip_radius,
+                                    const string& route_name,
+                                    const string& purpose)
 {
+  double route_speed = 0;
+  if((speed != "") && !setPosDoubleOnString(route_speed, speed)) {
+    m_commands_rejected++;
+    postState("DEPLOY_REJECTED_SPEED");
+    reportRunWarning("DEPLOY rejected: invalid route speed");
+    return(false);
+  }
+
+  double route_capture_radius = 0;
+  if((capture_radius != "") &&
+     !setPosDoubleOnString(route_capture_radius, capture_radius)) {
+    m_commands_rejected++;
+    postState("DEPLOY_REJECTED_CAPTURE_RADIUS");
+    reportRunWarning("DEPLOY rejected: invalid capture radius");
+    return(false);
+  }
+
+  double route_slip_radius = 0;
+  if((slip_radius != "") &&
+     !setNonNegDoubleOnString(route_slip_radius, slip_radius)) {
+    m_commands_rejected++;
+    postState("DEPLOY_REJECTED_SLIP_RADIUS");
+    reportRunWarning("DEPLOY rejected: invalid slip radius");
+    return(false);
+  }
+
+  if((route_name != "") && strContainsWhite(route_name)) {
+    m_commands_rejected++;
+    postState("DEPLOY_REJECTED_ROUTE_NAME");
+    reportRunWarning("DEPLOY rejected: invalid route name");
+    return(false);
+  }
+
   string parse_points = points;
   if(strBegins(parse_points, "{"))
     parse_points = "pts=" + parse_points;
@@ -581,9 +705,19 @@ bool RouteBuffer::postRouteSnapshot(const string& points)
     return(false);
   }
 
-  string update = "name=" + m_route_name;
+  string update_name = (route_name == "") ? m_route_name : route_name;
+  string update = "name=" + update_name;
+  m_vehicle_active_route_name = update_name;
+  m_vehicle_route_purpose = purpose;
   update += " # order=normal";
   update += " # points=" + seglist.get_spec_pts();
+  if(speed != "")
+    update += " # speed=" + doubleToStringX(route_speed, 2);
+  if(capture_radius != "")
+    update += " # capture_radius=" +
+              doubleToStringX(route_capture_radius, 2);
+  if(slip_radius != "")
+    update += " # slip_radius=" + doubleToStringX(route_slip_radius, 2);
   update += " # duration=-1";
 
   if(m_deploy_delay > 0) {
@@ -592,6 +726,7 @@ bool RouteBuffer::postRouteSnapshot(const string& points)
     Notify(m_route_deploy_var, "false");
   }
   Notify(m_route_clear_var, "false");
+  if(!m_route_purpose_var.empty()) Notify(m_route_purpose_var, purpose);
   Notify(m_route_update_var, update);
   m_vehicle_route_replay_pending = false;
   m_vehicle_pending_route_update = update;
@@ -612,9 +747,11 @@ void RouteBuffer::postPoint(const XYPoint& point, unsigned int index,
   XYPoint view_point = point;
   view_point.set_label("route_buffer_" + uintToString(index));
   view_point.set_type("route_pending");
-  view_point.set_label_color("aqua");
+  // Keep the label as the stable identity used by clearVisualization(),
+  // but do not draw its text over the route.
+  view_point.set_label_color("off");
   view_point.set_vertex_color("yellow");
-  view_point.set_vertex_size(8);
+  view_point.set_vertex_size(4);
   view_point.set_active(active);
   Notify("VIEW_POINT", view_point.get_spec());
 
@@ -631,9 +768,14 @@ void RouteBuffer::postSegList(bool active)
   for(unsigned int i=0; i<m_points.size(); i++)
     seglist.add_vertex(m_points[i]);
 
+  // The label is the viewer identity; keep it stable through editing, deploy,
+  // and clear. Only the staged preview needs an explanatory visible message.
   seglist.set_label("route_buffer_path");
-  seglist.set_edge_color("yellow");
-  seglist.set_vertex_color("yellow");
+  const bool uncommitted = active && !m_route_deployed;
+  if(uncommitted) seglist.set_msg("route (uncommitted)");
+  seglist.set_label_color(uncommitted ? "orange" : "off");
+  seglist.set_edge_color(uncommitted ? "orange" : "yellow");
+  seglist.set_vertex_color(uncommitted ? "orange" : "yellow");
   seglist.set_vertex_size(4);
   seglist.set_edge_size(1);
   seglist.set_active(active);

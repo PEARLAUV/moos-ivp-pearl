@@ -2,7 +2,6 @@ version = 2
 
 [outputs]
 runtime = "plug_pearl_fsm_runtime.moos"
-bhv = "plug_pearl_states.bhv"
 d2 = "pearl_fsm/overview.d2"
 svg = "pearl_fsm/svg"
 bindings = "pearl_fsm/bindings.json"
@@ -10,9 +9,8 @@ pshare = "plug_pearl_fsm_pshare.moos"
 scopes = "plug_pearl_fsm_scopes.moos"
 
 # Output target configuration.
-[targets.bhv]
+[targets.runtime]
 prefix = "PEARL"
-behavior = "BHV_FSM"
 state_name_case = "upper_snake"
 section_name_case = "upper_snake"
 
@@ -22,17 +20,24 @@ direction = "down"
 # Implementation-neutral domain model. Output targets refer to these facts,
 # states, inferred child machines, and transitions by ID.
 [facts]
-takeoff_request_id = "none"
-takeoff_request_state = "inactive"
-takeoff_prechecks_state = "idle"
+# The PEARL processor owns the request ID; the FSM only observes it.
+takeoff_request_id = { initial = "none", initialize = false }
+# The PEARL processor publishes its local clearance status.
+takeoff_request_state = { initial = "inactive", initialize = false }
+# The PEARL uChecks instance owns the aggregate result.
+takeoff_prechecks_state = { initial = "inactive", initialize = false }
 takeoff_support_active = false
 takeoff_support_ready = false
-takeoff_postchecks_state = "idle"
+# The post-interruption uChecks instance owns the aggregate result.
+takeoff_postchecks_state = { initial = "inactive", initialize = false }
+# The cover actuator/telemetry owns this fact; SIM supplies a timed mock.
+pearl_droneport_bay_cover_state = { initial = "closed", initialize = false }
 takeoff_clearance_state = "none"
 # Published authoritatively by the UAV FSM; never initialized by PEARL.
 uav_fsm_operation_state = { initial = "IDLE", initialize = false }
 takeoff_cancel_state = "none"
-takeoff_support_outcome = "none"
+# PEARL's session-scoped pre-recovery checks are observation-only.
+recovery_prechecks_state = { initial = "inactive", initialize = false }
 # Published authoritatively by pRendezvous in the PEARL community.
 pearl_rendezvous_phase = { initial = "IDLE", initialize = false }
 pearl_rendezvous_arrived = { initial = false, initialize = false }
@@ -42,6 +47,11 @@ uav_fsm_landing_operations_state = { initial = "none", initialize = false }
 base_restore_state = "idle"
 # Published by the mission-tasking component after task setup is complete.
 task_execute = { initial = false, initialize = false }
+# Published by PEARL's main-task and return waypoint behaviors.
+main_task_status = { initial = "none", initialize = false }
+moos_manual_override = { initial = true, initialize = false }
+# Shoreside owns this broker-addressed autonomy hold; Helm seeds it at startup.
+pearl_allstop = { initial = false, initialize = false }
 deploy = false
 return = false
 station_keep = false
@@ -49,6 +59,8 @@ station_keep = false
 [machine]
 label = "PEARL operation"
 initial = "normal_operation"
+condition = "(moos_manual_override==false) && (pearl_allstop==false)"
+history = true
 initial_layout = { top = 0, left = 358 }
 
 [states.normal_operation]
@@ -65,6 +77,7 @@ history_layout = { top = 140, left = 500 }
 [states.normal_operation.regions.main_activity.states.idle]
 label = "Idle"
 layout = { top = 125, left = 100 }
+entry_effects = { task_execute = false }
 
 [states.normal_operation.regions.main_activity.states.idle.transitions.start_mission]
 to = "executing_mission"
@@ -77,16 +90,17 @@ layout = { top = 0, left = 300 }
 
 [states.normal_operation.regions.main_activity.states.executing_mission.transitions.begin_return]
 to = "returning_to_base"
-when = "(deploy==true) && (return==true)"
+when = "main_task_status==completed"
 label = "Mission\ncomplete"
 
 [states.normal_operation.regions.main_activity.states.returning_to_base]
 label = "Returning to base"
 layout = { top = 250, left = 300 }
+entry_effects = { main_task_status = "none" }
 
 [states.normal_operation.regions.main_activity.states.returning_to_base.transitions.return_complete]
 to = "idle"
-when = "(return==false) && (station_keep==true)"
+when = "main_task_status==returned"
 label = "Return complete"
 
 [states.normal_operation.regions.support_activity]
@@ -101,7 +115,7 @@ layout = { left = 100, top = 200, height = 120 }
 
 [states.normal_operation.regions.support_activity.states.no_active_request.transitions.start_takeoff_request]
 to = "takeoff_pre_interruption_checks"
-when = "(takeoff_request_id!=none) && (takeoff_request_state==open) && (takeoff_prechecks_state==pending)"
+when = "takeoff_request_id!=none"
 label = "Takeoff request\nreceived"
 
 [states.normal_operation.regions.support_activity.states.no_active_request.transitions.start_recovery_request]
@@ -115,17 +129,17 @@ layout = { left = 300, top = 0 }
 
 [states.normal_operation.regions.support_activity.states.takeoff_pre_interruption_checks.transitions.normal_to_takeoff]
 to = "takeoff_support"
-when = "(takeoff_request_id!=none) && (takeoff_request_state==open) && (takeoff_prechecks_state==passed) && (takeoff_support_ready==true)"
+when = "check_result(takeoff_prechecks_state, success)"
 label = "Checks passed"
 
 [states.normal_operation.regions.support_activity.states.takeoff_pre_interruption_checks.transitions.takeoff_withdrawn]
 to = "no_active_request"
-when = "(takeoff_request_id==none)"
+when = "takeoff_request_id==none"
 label = "Cancelled"
 
 [states.normal_operation.regions.support_activity.states.takeoff_pre_interruption_checks.transitions.takeoff_rejected]
 to = "no_active_request"
-when = "(takeoff_request_id!=none) && (takeoff_request_state==rejected)"
+when = "check_result(takeoff_prechecks_state, fail)"
 label = "Rejected"
 
 [states.normal_operation.regions.support_activity.states.recovery_pre_interruption_checks]
@@ -134,7 +148,7 @@ layout = { left = 300, top = 430 }
 
 [states.normal_operation.regions.support_activity.states.recovery_pre_interruption_checks.transitions.recovery_checks_pass]
 to = "agreeing_rendezvous"
-when = "(pearl_rendezvous_phase==REQUESTING) || (pearl_rendezvous_phase==RENDEZVOUS) || (pearl_rendezvous_phase==ACQUIRING_TARGET) || (pearl_rendezvous_phase==LANDING)"
+when = "check_result(recovery_prechecks_state, success) && ((pearl_rendezvous_phase==REQUESTING) || (pearl_rendezvous_phase==RENDEZVOUS) || (pearl_rendezvous_phase==ACQUIRING_TARGET) || (pearl_rendezvous_phase==LANDING))"
 label = "Checks passed"
 
 [states.normal_operation.regions.support_activity.states.recovery_pre_interruption_checks.transitions.recovery_withdrawn]
@@ -144,7 +158,7 @@ label = "Cancelled"
 
 [states.normal_operation.regions.support_activity.states.recovery_pre_interruption_checks.transitions.recovery_rejected]
 to = "no_active_request"
-when = "pearl_rendezvous_phase==ABORT"
+when = "(pearl_rendezvous_phase==ABORT) && check_result(recovery_prechecks_state, fail)"
 label = "Rejected"
 
 [states.normal_operation.regions.support_activity.states.agreeing_rendezvous]
@@ -173,7 +187,6 @@ sink_layout = { left = 800, top = 850 }
 [states.takeoff_support.transitions.takeoff_to_normal]
 to = "normal_operation"
 history = { machine = "main_activity", state = "history" }
-when = "(((takeoff_support.state==takeoff_in_progress) && (uav_fsm_operation_state==MISSION_EXECUTION) && (takeoff_support_active==false) && (takeoff_support_outcome==completed)) || (((takeoff_support.state==cancelling_before_clearance) || (takeoff_support.state==disengaging_takeoff_support)) && (takeoff_support_active==false) && (takeoff_support_outcome==cancelled))) && (base_restore_state==restoring)"
 label = "Resume\nnominal\noperation"
 
 [states.takeoff_support.states.establishing_takeoff_conditions]
@@ -182,12 +195,12 @@ layout = { left = 0, top = 100, width = 300 }
 
 [states.takeoff_support.states.establishing_takeoff_conditions.transitions.establishing_takeoff_conditions_to_post_interruption_checks]
 to = "post_interruption_checks"
-when = "(takeoff_support_ready==true) && (takeoff_support_active==true) && ((takeoff_postchecks_state==pending) || (takeoff_postchecks_state==passed)) && (takeoff_cancel_state==none)"
+when = "pearl_droneport_bay_cover_state==open"
 label = "Takeoff conditions established"
 
 [states.takeoff_support.states.establishing_takeoff_conditions.transitions.establishing_takeoff_conditions_to_cancelling_before_clearance]
 to = "cancelling_before_clearance"
-when = "(takeoff_cancel_state==before_clearance)"
+when = "takeoff_cancel_state!=none"
 label = "Takeoff cancelled before clearance"
 
 [states.takeoff_support.states.post_interruption_checks]
@@ -196,17 +209,17 @@ layout = { left = 0, top = 300, width = 300 }
 
 [states.takeoff_support.states.post_interruption_checks.transitions.post_interruption_checks_to_awaiting_drone_departure]
 to = "awaiting_drone_departure"
-when = "(takeoff_request_id!=none) && (takeoff_postchecks_state==passed) && (takeoff_clearance_state==granted) && ((uav_fsm_operation_state==TAKEOFF_OPERATIONS) || (uav_fsm_operation_state==MISSION_EXECUTION)) && (takeoff_cancel_state==none)"
-label = "Takeoff clearance granted"
+when = "takeoff_request_state==granted && check_result(takeoff_postchecks_state, success) && check_result(takeoff_prechecks_state, success)"
+label = "Post-interruption checks passed"
 
 [states.takeoff_support.states.post_interruption_checks.transitions.post_interruption_checks_to_cancelling_before_clearance]
 to = "cancelling_before_clearance"
-when = "(takeoff_request_id!=none) && (takeoff_cancel_state==before_clearance)"
+when = "takeoff_request_state==canceled"
 label = "Takeoff cancelled before clearance"
 
 [states.takeoff_support.states.post_interruption_checks.transitions.post_interruption_checks_failed]
 to = "cancelling_before_clearance"
-when = "(takeoff_request_id!=none) && (takeoff_postchecks_state==failed) && (takeoff_cancel_state==none)"
+when = "takeoff_request_state==denied"
 label = "Post-interruption checks failed"
 
 [states.takeoff_support.states.awaiting_drone_departure]
@@ -234,7 +247,8 @@ label = "Takeoff cancelled during departure"
 
 [states.takeoff_support.states.takeoff_in_progress.transitions.takeoff_in_progress_to_sink]
 to = "sink"
-label = "Drone departe"
+when = "takeoff_request_state==complete"
+label = "Drone departed"
 
 [states.takeoff_support.states.cancelling_before_clearance]
 label = "Cancelling before clearance"

@@ -15,7 +15,6 @@ commits precision landing.
 
 [`pearl_fsm.toml`](pearl_fsm.toml) is the source for the executable
 [`plug_pearl_fsm_runtime.moos`](plug_pearl_fsm_runtime.moos) configuration,
-the fallback [`plug_pearl_states.bhv`](plug_pearl_states.bhv) configuration,
 generated pShare-route and shoreside-scope include fragments, the composed
 [`pearl_fsm/overview.d2`](pearl_fsm/overview.d2) overview and detail boards,
 the linked SVG set under `pearl_fsm/svg/`, and the
@@ -25,17 +24,25 @@ and check them with:
 ```bash
 ../../../scripts/generate_fsm.py pearl_fsm.toml
 ../../../scripts/generate_fsm.py pearl_fsm.toml --check
-# Optional legacy behavior backend, or both artifacts together:
-../../../scripts/generate_fsm.py pearl_fsm.toml --backend bhv
-../../../scripts/generate_fsm.py pearl_fsm.toml --backend both
-../../../scripts/generate_fsm.py pearl_fsm.toml --backend both --check
 ```
 
-The default backend is the standalone `pFSMRuntime` MOOS utility. The generated
-runtime and behavior plugs have distinct names and may coexist. Mission BHV
-files retain the behavior `#include` as a commented fallback; do not enable it
-while `pFSMRuntime` is running because both backends publish the same
-authoritative state variables. Each utility instance also publishes
+`launch_pearl.sh` and `launch_uav.sh` automatically regenerate their respective
+FSM artifacts before expanding mission targets, including
+in `--just_make` mode. Generation failures stop that vehicle's launch. Both
+launchers therefore require a TALA-capable `d2` executable (or `D2_BIN`).
+
+The sole backend is the standalone `pFSMRuntime` MOOS utility. It publishes
+`FSM_TRANSITION` as a JSON batch whenever transitions occur; each occurrence
+includes its transition ID, source and destination node IDs, and occurrence ID.
+Top-level `transition_time` records the MOOS time of the match; a top-level
+`context` records all candidate guard inputs from the winning
+source node when its guard matched, before exit effects. For `check_result(...)`
+inputs it embeds the full local `uChecks` snapshot as a JSON object under
+`<RESULT_VAR>_SNAPSHOT` instead of repeating the scalar result (or `null` if
+unavailable). The scalar still controls the guard; a snapshot is diagnostic and
+may lag it. PEARL
+and UAV route these to shoreside under distinct prefixed names. The utility
+also publishes
 `<PREFIX>_FSM_RUNTIME_STATE=READY`, a startup epoch, and a periodic heartbeat;
 consumers can use the heartbeat as a lease and reject persistent MOOS values
 after the runtime process fails. The `pFSMRuntime` blocks in `meta_uav.moos`
@@ -52,7 +59,13 @@ state-machine model from its output adapters:
   Fact keys are IDs. A scalar value is initialized by the selected runtime; the
   table form `{ initial = ..., initialize = false }` declares a subscribed fact
   owned by another app or MOOS community and prevents this FSM from initializing
-  it. States and transitions are keyed tables; child-machine IDs are inferred
+  it. A machine may declare `condition = "..."` and `history = true|false`;
+  a false condition publishes `none` throughout its hierarchy, and reactivation
+  either restores deep history or resets all descendants. States may contain
+  `entry_effects` and `exit_effects` tables whose keys
+  are declared fact IDs and whose scalar values are typed assignments. Entry
+  effects execute after the state publication and exit effects before leaving
+  the state. States and transitions are keyed tables; child-machine IDs are inferred
   from the hierarchy.
   Each transition is nested beneath its source state, so only its `to` endpoint
   is declared. A target may belong to the source machine or an ancestor
@@ -61,26 +74,37 @@ state-machine model from its output adapters:
   Transitions have nonempty labels except that a parent named-exit route may
   omit one and use its inferred sink label. Node placement and optional dimensions
   are co-located in `layout`; visual styling is inferred. The model contains no
-  MOOS variables, BHV parameters, or `graphics` tables.
+  MOOS variables or `graphics` tables.
 - A state without children is simple, a state with nested `states` is
   composite, and a state with named `regions` is orthogonal. Declaring both
   `states` and `regions` is invalid. The generator infers executable FSMs for
   the root, each composite state, and every region.
 - Neutral guards use fact identifiers and inferred-machine state references,
-  for example `takeoff_support.state == support_completed`. Child activation is
-  inferred from the hierarchy, so guards do not repeat root-state checks.
-- `[targets.bhv]` provides the naming prefix. Fact IDs are converted directly
-  to upper-snake-case MOOS variables. Each machine automatically receives a
-  `<PREFIX>_FSM_<MACHINE>`
-  behavior name plus `_STATE`, `_STATUS`, and `_TRANSITION` output variables.
+  for example `takeoff_support.state == support_completed`. They may also use
+  `check_result(takeoff_prechecks, success)` inside `when`, combined with
+  `&&`, `||`, and parentheses. Its first argument is an externally owned string
+  fact ID; the generator compiles it to a comparison of that scalar result and
+  derives its diagnostic snapshot variable as `<RESULT_VAR>_SNAPSHOT`. A state
+  can opt into `entry_epoch = true` to publish a string per-entry token derived
+  from the runtime epoch and state entry count. The guard
+  binding AST retains both fact and snapshot references without a separate
+  check-set table. It does **not** imply that the checks are active or
+  session-matched: PEARL still verifies
+  request IDs before granting clearance. Child activation is inferred from
+  the hierarchy, so guards do not repeat root-state checks.
+- `[targets.runtime]` provides the naming prefix. Fact IDs are converted
+  directly to upper-snake-case MOOS variables. Each machine automatically
+  receives `<PREFIX>_FSM_<MACHINE>_STATE`, `_STATUS`, and `_TRANSITION` output
+  variables.
   Each state entry increments an inferred `<STATE_VAR>_<STATE>_COUNT` variable;
   a count variable is not published until its state is entered. The root
   publishes the shared `<PREFIX>_FSM_STATE` aggregate. State names and
   hierarchical `substate` entries are derived from `[states]`.
 - `[outputs].pshare` and `[outputs].scopes` name generated MOOS include
-  fragments. They are included directly inside the `pShare` and shoreside
-  viewer `ProcessConfig` sections, respectively, so inferred FSM variable names
-  cannot drift after machine renames.
+  fragments. Shoreside receives only runtime health (`READY`, heartbeat, epoch)
+  and the JSON `FSM_TRANSITION` event; individual FSM state, status, transition,
+  aggregate-state, and entry-count variables are neither bridged nor scoped
+  there. Cross-vehicle state routes required by coordination guards remain.
 - `[targets.d2]` contains `layout.direction`. The generator fixes the layout
   engine to TALA and emits no diagram title. Per-node layout may use `near`, or
   a paired `top` and `left`; `near` cannot be combined with absolute
@@ -92,10 +116,17 @@ state-machine model from its output adapters:
   transitions from the hierarchy. A composite state with `diagram = true`
   remains a linked node in its parent board and is expanded into an independent
   D2 layer in the same composed source.
-  Terminal detail states may use legacy diagram-only transitions with
-  `to = "sink"`; these links are excluded from executable BHV and MOOS bindings,
-  while the containing composite declares its executable exit directly. For
-  guarded exit choices, nested transitions target `sink.<id>` and exactly one
+  Terminal detail states may transition to the default `to = "sink"`, with an
+  optional `when`. Each direct parent exit requires its own guard (when
+  provided) **and** an active nested default-sink transition whose source
+  state and optional `when` hold. Multiple default-sink transitions are ORed; their result is ANDed with
+  each parent exit guard. If `when` is omitted, the transition is eligible as
+  soon as its source state is active (subject to any other parent guard and
+  configured dwell time); ordinary and named-sink transitions support the same
+  omission. Entry and exit effects still run on the actual transition. The
+  parent transition retains the runtime ID, target, and optional history. For
+  individually routed exits, nested transitions
+  target `sink.<id>` and exactly one
   parent transition pairs with each inferred sink through `exit = "<id>"`. An
   optional keyed `[...sinks.<id>]` table may provide that sink's `label` and
   `layout`, but is not required. Without an explicit label, the sink ID is shown
@@ -145,8 +176,8 @@ state-machine model from its output adapters:
   source guard, compiled effective MOOS guard, and typed source/effective guard
   ASTs. Ancestor-targeting transitions also expose their inferred
   `source_constraint`. Boolean AST nodes contain `and`/`or` operands;
-  predicate nodes contain typed fact or machine-state references plus literal
-  or state-valued right operands.
+  predicate nodes contain typed fact, check-result, or machine-state references
+  plus literal or state-valued right operands.
 
 All generated D2 sources select the TALA layout engine. SVG rendering uses 10
 pixels of outer canvas padding. Generation requires a TALA-capable `d2`
@@ -174,8 +205,7 @@ failure divert through the rally point and `SECONDARY_LANDING` before exiting to
 `OFFNOMINAL`. Readiness failure instead transits to the secondary loiter
 location and exits through `LOITERING`. Neither root outcome has a takeoff exit,
 so both inhibit a new takeoff pending recovery intervention. It generates the
-default [`plug_uav_fsm_runtime.moos`](plug_uav_fsm_runtime.moos), optional
-[`plug_uav_states.bhv`](plug_uav_states.bhv), pShare/scope fragments, JSON UI
+[`plug_uav_fsm_runtime.moos`](plug_uav_fsm_runtime.moos), pShare/scope fragments, JSON UI
 bindings, [`uav_fsm/overview.d2`](uav_fsm/overview.d2), and
 `uav_fsm/svg/index.svg`:
 
@@ -186,10 +216,14 @@ bindings, [`uav_fsm/overview.d2`](uav_fsm/overview.d2), and
 
 The cross-community contract has one writer per coordination fact:
 
-- PEARL owns `TAKEOFF_REQUEST_STATE`, `TAKEOFF_CLEARANCE_STATE`,
-  `RECOVERY_REQUEST_STATE`, and `LANDING_CLEARANCE_STATE`. The UAV FSM only
-  subscribes to them, and `initialize = false` prevents fallback values from
-  being posted into the UAV MOOSDB.
+- PEARL's `pTakeoffProcessor` owns its local `TAKEOFF_REQUEST_STATE` clearance
+  status. It posts `granted` only after sending the ID-tagged clearance; this
+  PEARL-owned variable is routed to shoreside for diagnosis, not to the UAV.
+  The processor publishes `complete` only for session-matched takeoff
+  completion; the FSM uses this single fact to leave takeoff support. PEARL
+  also owns `TAKEOFF_CLEARANCE_STATE`, `RECOVERY_REQUEST_STATE`, and
+  `LANDING_CLEARANCE_STATE`; `initialize = false` prevents the UAV FSM from
+  posting fallback values for externally owned facts.
 - The UAV community's `pFSMRuntime` owns `UAV_FSM_OPERATION_STATE` and the
   active nested takeoff and landing state variables. Helm behavior modes consume
   these authoritative publications rather than writing them. PEARL subscribes
@@ -210,12 +244,15 @@ The cross-community contract has one writer per coordination fact:
   progress and its authoritative root outcome, but only PEARL can report that
   its own recovery postchecks passed and grant landing clearance.
 
-Direct pShare routes carry the four PEARL-owned request/clearance variables to
-the UAV and the UAV-owned operation/detail variables to PEARL. The UAV also
+Direct pShare routes carry other PEARL-owned coordination variables to the
+UAV and the UAV-owned operation/detail variables to PEARL. The UAV also
 periodically routes its rendezvous phase and session to PEARL as a reconciliation
-channel for delayed or lost one-shot landing status messages. Full UAV FSM
-state, status, transition, aggregate, and sparse entry-count observability is
-routed directly to shoreside.
+channel for delayed or lost one-shot landing status messages. UAV FSM runtime
+health and JSON transition batches are routed to shoreside; per-machine FSM
+state, status, transition, and count variables remain local except for the
+two operation/landing state routes PEARL requires for coordination. The D2
+binding maps remain generated, but their state/edge highlighting needs a
+consumer of the JSON feed rather than individual MOOS scopes.
 
 ## Implemented rendezvous state machine
 
@@ -258,16 +295,29 @@ rejecting the aircraft; takeoff has the separate reserve gate described below.
 `pMediator` carries the actions that must survive an occasional dropped UDP
 datagram:
 
-- operator ARM, DISARM, TAKEOFF, route DEPLOY, route CLEAR,
-  RENDEZVOUS, and RNDV ABORT;
+- UAV-directed operator ARM, DISARM, TAKEOFF, route DEPLOY, and route CLEAR;
 - UAV takeoff request, PEARL takeoff clearance, UAV rendezvous request, PEARL
   proposal, UAV acceptance/completion, and PEARL landing clearance;
 - acknowledgements and retries at one-second mission-time intervals, up to ten
   retries.
 
 Mouse clicks remain shoreside-local until DEPLOY sends one complete route
-snapshot. Periodic state such as node reports, health, rendezvous status, and
-navigation uses ordinary broker/pShare routing. RealmCast bridging is disabled.
+snapshot. The staged path is solid orange and marked `route (uncommitted)`;
+a successful submission turns it yellow and removes that text. Editing again
+restores the orange preview until resubmission. On the UAV, `pRouteBuffer`
+stages each snapshot on
+`ROUTE_UPDATE` and raises `ROUTE_EXECUTE` in both SIM and REAL. The mode-specific
+`uRouteSequence` waits for `ROUTE_READY`, armed, and `IN_AIR` feedback before
+setting `ROUTE_DEPLOY` for the Helm. Operator snapshots may be staged in IDLE,
+TAKEOFF_OPERATIONS, or MISSION_EXECUTION, but execute only in MISSION_EXECUTION.
+Only `pRendezvous` may submit `purpose=recovery` snapshots, which stage and
+execute in LANDING_OPERATIONS. A rejected operator snapshot cannot overwrite an
+active recovery route. REAL also enables the ArduBridge Helm
+handoff and commands `FLY_WAYPOINT`; SIM uses Helm directly. PEARL-shoreside
+task, manual-control, abort, and telemetry traffic uses the bidirectional field
+broker rather than `pMediator`. Periodic state such
+as node reports, health, rendezvous status, and navigation uses ordinary
+broker/pShare routing. RealmCast bridging is disabled.
 
 UAV and PEARL pMediator envelopes and node reports also use direct unicast
 pShare routes on their shared vehicle network. Shoreside uses the UAV's
@@ -282,68 +332,153 @@ would not receive the UAV reports required to grant clearance.
 
 UAV controls:
 
-- `UAV TASK`: submit the selected route and autonomously arm, take off,
-  traverse the route, and request rendezvous when traversal completes.
-- `UAV ARM`, `UAV DISARM`, `UAV TAKEOFF`: manual controls retained for
-  checkout and recovery.
-- `UAV DEPLOY`, `UAV CLEAR`: manual route controls; clearing or disarming also
-  cancels an active task sequence.
+- `UAV TASK`: send `TASK_EXECUTE=true` to the UAV and submit the selected route.
+  After readiness checks and PEARL clearance, the UAV coordinator arms and
+  commands takeoff; route traversal waits for airborne telemetry. `PEARL TASK`
+  remains a separate button.
+- `UAV DISARM`: remote disarm remains for safety. No shoreside arm/takeoff
+  buttons exist; the on-board coordinator commands them only after checks and
+  PEARL clearance.
+- `uav-clear`: right-click context action that clears the staged UAV route and
+  cancels an active task. The standalone `UAV DEPLOY` and `UAV CLEAR` buttons
+  are removed; `UAV TASK` still deploys the selected route.
 
-Each `UAV TAKEOFF` request is first checked on the UAV and then sent reliably
-to PEARL. PEARL publishes the takeoff request, precheck, support, postcheck, and
-clearance facts that drive its support FSM before returning approval. The UAV
-cannot enter takeoff operations until that session-tagged PEARL clearance is
-received. The following fresh, valid inputs must pass:
+PEARL's `pTakeoffProcessor` draws a red, 6 m-diameter circle centered on
+`NAV_X`/`NAV_Y` while a request is active. Its outline is dashed while checks
+are pending, solid after clearance is granted, and removed when the request is
+released, denied, or canceled. It refreshes once per second and is visual only;
+it does not change StationKeep's 0.25/0.5/0.75 m control radii.
 
-- UAV battery SOC is at least 30 percent;
-- PEARL battery SOC is at least 15 percent; and
-- apparent wind over PEARL is no more than 4 m/s.
+A condition edge in `pTakeoffCoordinator` starts an ID-tagged clearance request
+from the UAV's requesting-clearance state while grounded. It retries that same
+ID every five seconds until a reply, cancellation, or timeout. PEARL's
+`pTakeoffProcessor` publishes the received ID, verifies session-matched
+`uChecks` results, denies concurrent requests, and times out unanswered ones.
+It grants only after both PEARL check collections succeed for the same request:
+GPS/battery/wind prechecks and a post-interruption droneport-bay check requiring
+`PEARL_DRONEPORT_BAY_COVER_STATE=open`. The receipt remains busy until PEARL
+returns to normal operation. The coordinator cancels before arming if its
+conditions cease to hold and ignores late grants. PEARL's GPS, battery,
+and wind checks remain active through pre-interruption, establishing conditions,
+and post-interruption checks. A failure before clearance denies the request;
+pre-interruption failures return support activity to `NO_ACTIVE_REQUEST`;
+a withdrawn or failed request during takeoff support enters
+`CANCELLING_BEFORE_CLEARANCE`. The processor does not retract a clearance
+already granted if a later check fails.
+The UAV enters `TAKEOFF_OPERATIONS` on its own `TASK_EXECUTE=true`.
+`uPretakeoffChecks` publishes individual UAV readiness checks and aggregate
+`TAKEOFF_PRECHECKS` locally for the FSM's readiness transition. Each entry into
+`TAKEOFF_OPERATIONS` publishes
+`UAV_FSM_OPERATION_STATE_TAKEOFF_OPERATIONS_EPOCH`, which is the readiness
+collection's session ID. A new ID clears its held results and failure latches;
+the scalar FSM guards do not compare sessions, so an old result can still be
+observed briefly before `uChecks` receives the new ID. The same collection
+stays active through clearance; the coordinator verifies its scalar status and
+session against the entry epoch before arming. Its distinct
+`UAV_TAKEOFF_REQUEST_ID` still identifies the mediated PEARL clearance request.
+Before first
+activation statuses are `inactive`; age-limited checks retain their last
+result after deactivation until a required input expires. Flight-plan input
+has no age limit: the Helm's `ROUTE_READY` spawnflag remains valid until changed.
+GPS requires a fresh 3D fix within 60 seconds and a continuous 5-second hold;
+flight-plan receipt has 60 seconds; low or invalid battery fails immediately
+(missing data gets 5 seconds). The armability check requires fresh health telemetry,
+`UAV_IS_ARMABLE=1`, disarmed state, `UAV_LANDED_STATE=ON_GROUND`, and landed
+telemetry no older than 3 seconds. SIM supplies matching mock health and
+on-deck feedback while attached. Each named check has typed requirements,
+per-variable immediate-fail or timeout policies, and an optional continuous
+success hold. Readiness succeeds only when all six named checks succeed; one
+failure follows the existing aborted takeoff path. The coordinator publishes
+`TAKEOFF_REQUEST_RESULT` (`PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`, or
+`TIMEOUT`), ID-tagged `TAKEOFF_REQUEST_STATE`, and
+`TAKEOFF_REQUEST_REASON`. It waits for PEARL's grant *and* the UAV `uChecks`
+result before sending `ARM_UAV=true`; after `UAV_IS_ARMED=1` telemetry it
+sends `ARDU_COMMAND=DO_TAKEOFF`. Once arming begins it no longer gates on
+prechecks. It repeatedly sends ID-tagged `armed`, then `taking_off` and finally
+`takeoff_complete` progress on the existing request channel. Completion is
+retried for 60 seconds; PEARL accepts late progress for the just-released grant
+for 120 seconds. PEARL publishes progress separately as `UAV_TAKEOFF_PROGRESS`
+and pShare bridges it to shoreside. The processor advances its local
+`TAKEOFF_REQUEST_STATE` from `granted` to `complete` on confirmed departure;
+the PEARL FSM accepts either for the earlier clearance transition and requires
+`complete` before leaving takeoff support. `uOperatorPrecLand` still posts
+`ARDU_COMMAND=AUTOLAND` after landing clearance. SIM alone runs
+`uSimArmCommand`, `uSimTakeoffCommand`, `uSimPrecLandCommand`, and
+`uSimAttachmentCommand` in `plug_uav_sim.moos` to turn local commands and the
+nominal Idle-on-deck outcome into simulated armed, altitude, landed, mode, and
+attachment feedback. SIM raises `NAV_ALTITUDE` in 25
+steps scheduled 0.1 seconds apart, scaled to the configured takeoff altitude;
+it reports
+`IN_AIR` and target-altitude completion after the final step.
+The PEARL processor does
+not hard-code battery or wind thresholds: the PEARL
+`uChecks` configuration owns them. Each collection publishes a JSON snapshot
+of its session, activation, observed inputs, configured requirements, check
+statuses, and timers at 1 Hz while active; the four demo snapshots are routed
+to shoreside. PEARL's local default snapshot names are aliased to
+`PEARL_TAKEOFF_PRECHECKS_SNAPSHOT` and `PEARL_TAKEOFF_POSTCHECKS_SNAPSHOT`
+on shoreside. PEARL's pre-recovery snapshot is aliased to
+`PEARL_RECOVERY_PRECHECKS_SNAPSHOT`. The UAV keeps
+`TAKEOFF_PRECHECKS_SNAPSHOT` locally and aliases it to
+`UAV_TAKEOFF_PRECHECKS_SNAPSHOT` on the shoreside bridge. These are diagnostic,
+not alternate authorization facts.
 
-The gate publishes `UAV_TAKEOFF_GATE_READY`, `UAV_TAKEOFF_GATE_REASON`, and a
-per-request `UAV_TAKEOFF_RESULT` (`PENDING`, `APPROVED`, or `REJECTED`). During
-an approved request PEARL enters StationKeep and visibly traverses
-`TAKEOFF_SUPPORT`; after departure it restores both its main-activity history
-and the saved Helm control values. A rejected or
-timed-out request cannot remain pending and cause a later takeoff. SIM supplies
-80-percent batteries and 2 m/s wind so the normal operator sequence remains
-immediately usable; focused tests may poke the same variables to exercise each
-rejection.
+PEARL also runs session-scoped `uChecksRecovery` while its support FSM is in
+`RECOVERY_PRE_INTERRUPTION_CHECKS`. It requires valid GPS, battery, and wind
+inputs plus `PEARL_DRONEPORT_BAY_COVER_STATE=open`; the recovery FSM cannot
+advance to `AGREEING_RENDEZVOUS` until the aggregate succeeds for the current
+`PEARL_RENDEZVOUS_SESSION`. This is a passive telemetry check: entering recovery
+never posts an opening command and does not activate the takeoff cover mock.
+Takeoff-support Helm controls are not
+snapshotted by this exchange; their binding to authoritative PEARL states and
+post-interruption support lifecycle remain separate work. SIM supplies a GPS
+fix, 80-percent battery, and 2 m/s wind for PEARL prechecks, and a timed mock
+that reports the droneport bay cover `opening` on entering takeoff support and
+`open` ten seconds later. With no physical cover installed, this mock runs in
+both SIM and REAL, but only while establishing takeoff conditions; recovery
+merely observes the resulting cover state.
 
 Choose the `route` mouse context and click an ordered route. `UAV TASK` sends
-the stored snapshot, then uses short deliberate delays between arming, takeoff,
-route release, rendezvous request, and simulated touchdown so their FSM states
+the stored snapshot, waits for independent prechecks and coordinator-driven
+arming/takeoff feedback, then uses short deliberate delays before route release, rendezvous
+request, and simulated touchdown so their FSM states
 remain visible in the UI. Every stage still waits for authoritative feedback,
 and route execution remains inhibited until `UAV_LANDED_STATE=IN_AIR`. When the
 route behavior completes, the UAV posts `RENDEZVOUS_START` locally after the
-presentation delay. `UAV DEPLOY` remains available to send the
-stored snapshot without starting the autonomous task sequence. During
+presentation delay. During
 coordinated landing-target acquisition, `pRendezvous` automatically maintains
 a one-point route to PEARL's fresh position. This is not a separate operator
 button.
 
 PEARL controls:
 
-- `PEARL TASK`: sends `TASK_EXECUTE=true` to PEARL through the addressed shore
-  broker after mission tasking has been prepared by its owning component.
-- `PEARL RETURN`, `PEARL STATION`, `PEARL ALLSTOP`: retained manual controls.
+- `PEARL TASK`: sends `TASK_EXECUTE=true` directly to PEARL through the
+  addressed field broker after tasking has been prepared by its owning component.
+- `PEARL ALLSTOP`: sets `PEARL_ALLSTOP=true` and clears manual override,
+  suspending the PEARL FSM with deep history while the existing autonomous
+  StationKeep behavior holds position. `PEARL TASK`, `PEARL RETURN`, and
+  `PEARL STATION` clear the hold and resume the FSM.
+- `CLOSE PORT`: sends the addressed telemetry spoof
+  `PEARL_DRONEPORT_BAY_COVER_STATE=closed` to the PEARL community. This supports
+  the current mock setup; it is not an actuator command, and there is
+  intentionally no matching manual open button.
 
-Coordinated controls:
+Rendezvous starts automatically from the feedback-gated UAV task sequence; no
+standalone `RENDEZVOUS` or `RNDV ABORT` buttons are exposed.
 
-- `RENDEZVOUS`: request a meeting after the UAV is armed and airborne.
-- `RNDV ABORT`: independently sends acknowledged aborts to both vehicles.
-
-The normal sequence is:
+The intended operator sequence is:
 
 1. Select the UAV route with the `route` mouse context.
 2. Press `UAV TASK` once.
 3. Monitor `UAV_TASK_ACTIVE`, `UAV_FSM_OPERATION_STATE`,
    `UAV_RENDEZVOUS_STATE`, and `PEARL_RENDEZVOUS_STATE`.
-4. Let the coordinated workflow request precision landing, or press
-   `UAV CLEAR`, `UAV DISARM`, or `RNDV ABORT` as appropriate.
+4. Let the coordinated workflow request precision landing, choose `uav-clear`
+from the right-click menu, or press `UAV DISARM` as appropriate.
 
 The task sequencer remains feedback-gated: presentation delays do not replace
-its checks. Takeoff waits for `UAV_IS_ARMED=true` and numeric
-`UAV_TAKEOFF_GATE_READY=1`, route execution waits for
+its checks. The takeoff coordinator requires PEARL clearance and successful
+UAV prechecks before arming, then waits for armed feedback before takeoff;
+route execution waits for
 `UAV_LANDED_STATE=IN_AIR`, and rendezvous waits for a route that was observed
 active to finish. A new autonomous task may start only from `IDLE`. After a
 secondary landing reaches terminal `OFFNOMINAL`, every later `UAV_TASK_REQUEST`
@@ -464,8 +599,11 @@ UAV navigation publishers.
 An approved SIM takeoff detaches the UAV automatically. The app captures one
 final platform position and heading, resets `uSimMarineV22` to that exact pose,
 and then returns navigation ownership to the simulator. The UAV therefore
-resumes independent flight from the takeoff point without jumping. SIM
-precision landing reattaches it, and the cycle may repeat.
+resumes independent flight from the takeoff point without jumping. After a
+normal SIM precision landing, a separate timer waits for both
+`NAV_ALTITUDE=0` and the companion FSM's `IDLE` (Idle on deck) state before
+requesting reattachment. A secondary rally-point landing ends in
+`OFFNOMINAL`, so it remains detached from PEARL. The nominal cycle may repeat.
 
 The app interface is vehicle-name agnostic: it consumes generic attachment
 pose and request variables. This mission maps PEARL navigation into that
@@ -489,17 +627,27 @@ PEARL attachment-pose stream.
 - UAV: MOOSDB `9001`, pShare `9201`
 - PEARL: MOOSDB `9002`, pShare `9202`
 
-The top-level launcher is for same-host testing:
+The top-level launcher is for same-host testing. SIM requires the UDP endpoint
+carrying the routed Landmark MAVLink stream:
 
 ```bash
-./launch.sh --mode=SIM
+./launch.sh --mode=SIM --landmark_url=0.0.0.0:14560
 ```
+
+Only SIM launches `pLandmarkBridge`, an aliased `pArduBridge` in passive mode.
+It receives all telemetry supported by `pArduBridge`, including the full
+`LANDING_TARGET` pose, but does not perform mission setup, poll parameters,
+request message rates, register command inputs, or issue commands. Its regular
+telemetry variables use the `LANDMARK` prefix, including
+`LANDMARK_LANDING_TARGET_*`, so they cannot overwrite SIM-owned `UAV_*`
+telemetry. The UAV node-report bridge aliases the landing-target family back to
+`UAV_LANDING_TARGET_*` only when forwarding it to shoreside. MAVSDK may still emit its ground-station heartbeat.
 
 The FSM minimum dwell defaults to zero. For slowed state visualization, pass it
 through the top-level launcher to both vehicle runtimes:
 
 ```bash
-./launch.sh --mode=SIM --min_state_time=20
+./launch.sh --mode=SIM --landmark_url=0.0.0.0:14560 --min_state_time=20
 ```
 
 Modes are:
@@ -511,7 +659,7 @@ Modes are:
 Generate targets without launching:
 
 ```bash
-./launch.sh --mode=SIM --just_make --nogui 5
+./launch.sh --mode=SIM --landmark_url=0.0.0.0:14560 --just_make --nogui 5
 ```
 
 For SITL, start ArduCopter first and then start the mission. On macOS or in a

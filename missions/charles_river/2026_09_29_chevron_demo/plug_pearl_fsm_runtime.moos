@@ -4,21 +4,16 @@
   // Include inside ProcessConfig = pFSMRuntime.
   //-------------------------------------------------
   runtime = state_var=PEARL_FSM_RUNTIME_STATE, heartbeat_var=PEARL_FSM_RUNTIME_HEARTBEAT, epoch_var=PEARL_FSM_RUNTIME_EPOCH, heartbeat_interval=1
-  initialize = var=TAKEOFF_REQUEST_ID, type=string, value=none
-  initialize = var=TAKEOFF_REQUEST_STATE, type=string, value=inactive
-  initialize = var=TAKEOFF_PRECHECKS_STATE, type=string, value=idle
   initialize = var=TAKEOFF_SUPPORT_ACTIVE, type=string, value=false
   initialize = var=TAKEOFF_SUPPORT_READY, type=string, value=false
-  initialize = var=TAKEOFF_POSTCHECKS_STATE, type=string, value=idle
   initialize = var=TAKEOFF_CLEARANCE_STATE, type=string, value=none
   initialize = var=TAKEOFF_CANCEL_STATE, type=string, value=none
-  initialize = var=TAKEOFF_SUPPORT_OUTCOME, type=string, value=none
   initialize = var=BASE_RESTORE_STATE, type=string, value=idle
   initialize = var=DEPLOY, type=string, value=false
   initialize = var=RETURN, type=string, value=false
   initialize = var=STATION_KEEP, type=string, value=false
 
-  machine = id=operation, state_var=PEARL_FSM_OPERATION_STATE, initial_state=NORMAL_OPERATION, initial_node=start, initial_transition_id=INITIAL, initially_active=true, status_var=PEARL_FSM_OPERATION_STATUS, transition_var=PEARL_FSM_OPERATION_TRANSITION, active_state_var=PEARL_FSM_STATE
+  machine = id=operation, state_var=PEARL_FSM_OPERATION_STATE, initial_state=NORMAL_OPERATION, initial_node=start, initial_transition_id=INITIAL, initially_active=true, status_var=PEARL_FSM_OPERATION_STATUS, transition_var=PEARL_FSM_OPERATION_TRANSITION, active_state_var=PEARL_FSM_STATE, activation_condition="(MOOS_MANUAL_OVERRIDE=false) and (PEARL_ALLSTOP=false)", condition_history=true
   state = machine=operation, value=NORMAL_OPERATION
   state = machine=operation, value=TAKEOFF_SUPPORT
   state = machine=operation, value=RECOVERY_SUPPORT
@@ -26,50 +21,52 @@
   substate = machine=operation, parent=NORMAL_OPERATION, section=SUPPORT_ACTIVITY, var=PEARL_FSM_SUPPORT_ACTIVITY_STATE
   substate = machine=operation, parent=TAKEOFF_SUPPORT, var=PEARL_FSM_TAKEOFF_SUPPORT_STATE
   substate = machine=operation, parent=RECOVERY_SUPPORT, var=PEARL_FSM_RECOVERY_SUPPORT_STATE
-  transition = machine=operation, id=TAKEOFF_TO_NORMAL, from=TAKEOFF_SUPPORT, to=NORMAL_OPERATION, guard="(((((PEARL_FSM_TAKEOFF_SUPPORT_STATE=TAKEOFF_IN_PROGRESS) and (UAV_FSM_OPERATION_STATE=MISSION_EXECUTION)) and (TAKEOFF_SUPPORT_ACTIVE=false)) and (TAKEOFF_SUPPORT_OUTCOME=completed)) or ((((PEARL_FSM_TAKEOFF_SUPPORT_STATE=CANCELLING_BEFORE_CLEARANCE) or (PEARL_FSM_TAKEOFF_SUPPORT_STATE=DISENGAGING_TAKEOFF_SUPPORT)) and (TAKEOFF_SUPPORT_ACTIVE=false)) and (TAKEOFF_SUPPORT_OUTCOME=cancelled))) and (BASE_RESTORE_STATE=restoring)"
-  transition = machine=operation, id=RECOVERY_TO_NORMAL, from=RECOVERY_SUPPORT, to=NORMAL_OPERATION, guard="(((PEARL_FSM_RECOVERY_SUPPORT_STATE=CONFIRMING_RECOVERY) and (PEARL_RENDEZVOUS_PHASE=COMPLETE)) and (UAV_FSM_OPERATION_STATE=IDLE)) or (((PEARL_FSM_RECOVERY_SUPPORT_STATE=CANCELLING_BEFORE_CLEARANCE) or (PEARL_FSM_RECOVERY_SUPPORT_STATE=DISENGAGING_RECOVERY_SUPPORT)) and (PEARL_RENDEZVOUS_PHASE=ABORT))"
-  transition = machine=operation, id=NORMAL_TO_TAKEOFF, from=NORMAL_OPERATION, to=TAKEOFF_SUPPORT, guard="((((PEARL_FSM_SUPPORT_ACTIVITY_STATE=TAKEOFF_PRE_INTERRUPTION_CHECKS) and (TAKEOFF_REQUEST_ID!=none)) and (TAKEOFF_REQUEST_STATE=open)) and (TAKEOFF_PRECHECKS_STATE=passed)) and (TAKEOFF_SUPPORT_READY=true)"
+  transition = machine=operation, id=TAKEOFF_TO_NORMAL, from=TAKEOFF_SUPPORT, to=NORMAL_OPERATION, guard="(PEARL_FSM_OPERATION_STATE=TAKEOFF_SUPPORT) and ((((PEARL_FSM_TAKEOFF_SUPPORT_STATE=TAKEOFF_IN_PROGRESS) and (TAKEOFF_REQUEST_STATE=complete)) or (PEARL_FSM_TAKEOFF_SUPPORT_STATE=CANCELLING_BEFORE_CLEARANCE)) or (PEARL_FSM_TAKEOFF_SUPPORT_STATE=DISENGAGING_TAKEOFF_SUPPORT))"
+  transition = machine=operation, id=RECOVERY_TO_NORMAL, from=RECOVERY_SUPPORT, to=NORMAL_OPERATION, guard="((((PEARL_FSM_RECOVERY_SUPPORT_STATE=CONFIRMING_RECOVERY) and (PEARL_RENDEZVOUS_PHASE=COMPLETE)) and (UAV_FSM_OPERATION_STATE=IDLE)) or (((PEARL_FSM_RECOVERY_SUPPORT_STATE=CANCELLING_BEFORE_CLEARANCE) or (PEARL_FSM_RECOVERY_SUPPORT_STATE=DISENGAGING_RECOVERY_SUPPORT)) and (PEARL_RENDEZVOUS_PHASE=ABORT))) and (((PEARL_FSM_RECOVERY_SUPPORT_STATE=CONFIRMING_RECOVERY) or (PEARL_FSM_RECOVERY_SUPPORT_STATE=CANCELLING_BEFORE_CLEARANCE)) or (PEARL_FSM_RECOVERY_SUPPORT_STATE=DISENGAGING_RECOVERY_SUPPORT))"
+  transition = machine=operation, id=NORMAL_TO_TAKEOFF, from=NORMAL_OPERATION, to=TAKEOFF_SUPPORT, guard="(PEARL_FSM_SUPPORT_ACTIVITY_STATE=TAKEOFF_PRE_INTERRUPTION_CHECKS) and (TAKEOFF_PRECHECKS_STATE=success)", check_snapshots=TAKEOFF_PRECHECKS_STATE:TAKEOFF_PRECHECKS_STATE_SNAPSHOT
   transition = machine=operation, id=NORMAL_TO_RECOVERY, from=NORMAL_OPERATION, to=RECOVERY_SUPPORT, guard="(PEARL_FSM_SUPPORT_ACTIVITY_STATE=AGREEING_RENDEZVOUS) and ((((PEARL_RENDEZVOUS_PHASE=RENDEZVOUS) or (PEARL_RENDEZVOUS_PHASE=ACQUIRING_TARGET)) or (PEARL_RENDEZVOUS_PHASE=LANDING)) or (PEARL_RENDEZVOUS_PHASE=COMPLETE))"
 
-  machine = id=main_activity, state_var=PEARL_FSM_MAIN_ACTIVITY_STATE, initial_state=IDLE, initial_node=start, initial_transition_id=INITIAL, initially_active=true, status_var=PEARL_FSM_MAIN_ACTIVITY_STATUS, transition_var=PEARL_FSM_MAIN_ACTIVITY_TRANSITION, parent_state_var=PEARL_FSM_OPERATION_STATE, parent_state=NORMAL_OPERATION, reset_on_inactive=false
+  machine = id=main_activity, state_var=PEARL_FSM_MAIN_ACTIVITY_STATE, initial_state=IDLE, initial_node=start, initial_transition_id=INITIAL, initially_active=true, status_var=PEARL_FSM_MAIN_ACTIVITY_STATUS, transition_var=PEARL_FSM_MAIN_ACTIVITY_TRANSITION, activation_condition="(MOOS_MANUAL_OVERRIDE=false) and (PEARL_ALLSTOP=false)", condition_history=true, parent_state_var=PEARL_FSM_OPERATION_STATE, parent_state=NORMAL_OPERATION, reset_on_inactive=false
   state = machine=main_activity, value=IDLE
   state = machine=main_activity, value=EXECUTING_MISSION
   state = machine=main_activity, value=RETURNING_TO_BASE
+  effect = machine=main_activity, state=IDLE, phase=entry, var=TASK_EXECUTE, type=string, value=false
+  effect = machine=main_activity, state=RETURNING_TO_BASE, phase=entry, var=MAIN_TASK_STATUS, type=string, value=none
   transition = machine=main_activity, id=START_MISSION, from=IDLE, to=EXECUTING_MISSION, guard="TASK_EXECUTE=true"
-  transition = machine=main_activity, id=BEGIN_RETURN, from=EXECUTING_MISSION, to=RETURNING_TO_BASE, guard="(DEPLOY=true) and (RETURN=true)"
-  transition = machine=main_activity, id=RETURN_COMPLETE, from=RETURNING_TO_BASE, to=IDLE, guard="(RETURN=false) and (STATION_KEEP=true)"
+  transition = machine=main_activity, id=BEGIN_RETURN, from=EXECUTING_MISSION, to=RETURNING_TO_BASE, guard="MAIN_TASK_STATUS=completed"
+  transition = machine=main_activity, id=RETURN_COMPLETE, from=RETURNING_TO_BASE, to=IDLE, guard="MAIN_TASK_STATUS=returned"
 
-  machine = id=support_activity, state_var=PEARL_FSM_SUPPORT_ACTIVITY_STATE, initial_state=NO_ACTIVE_REQUEST, initial_node=start, initial_transition_id=INITIAL, initially_active=true, status_var=PEARL_FSM_SUPPORT_ACTIVITY_STATUS, transition_var=PEARL_FSM_SUPPORT_ACTIVITY_TRANSITION, parent_state_var=PEARL_FSM_OPERATION_STATE, parent_state=NORMAL_OPERATION, reset_on_inactive=true
+  machine = id=support_activity, state_var=PEARL_FSM_SUPPORT_ACTIVITY_STATE, initial_state=NO_ACTIVE_REQUEST, initial_node=start, initial_transition_id=INITIAL, initially_active=true, status_var=PEARL_FSM_SUPPORT_ACTIVITY_STATUS, transition_var=PEARL_FSM_SUPPORT_ACTIVITY_TRANSITION, activation_condition="(MOOS_MANUAL_OVERRIDE=false) and (PEARL_ALLSTOP=false)", condition_history=true, parent_state_var=PEARL_FSM_OPERATION_STATE, parent_state=NORMAL_OPERATION, reset_on_inactive=true
   state = machine=support_activity, value=NO_ACTIVE_REQUEST
   state = machine=support_activity, value=TAKEOFF_PRE_INTERRUPTION_CHECKS
   state = machine=support_activity, value=RECOVERY_PRE_INTERRUPTION_CHECKS
   state = machine=support_activity, value=AGREEING_RENDEZVOUS
-  transition = machine=support_activity, id=START_TAKEOFF_REQUEST, from=NO_ACTIVE_REQUEST, to=TAKEOFF_PRE_INTERRUPTION_CHECKS, guard="((TAKEOFF_REQUEST_ID!=none) and (TAKEOFF_REQUEST_STATE=open)) and (TAKEOFF_PRECHECKS_STATE=pending)"
+  transition = machine=support_activity, id=START_TAKEOFF_REQUEST, from=NO_ACTIVE_REQUEST, to=TAKEOFF_PRE_INTERRUPTION_CHECKS, guard="TAKEOFF_REQUEST_ID!=none"
   transition = machine=support_activity, id=START_RECOVERY_REQUEST, from=NO_ACTIVE_REQUEST, to=RECOVERY_PRE_INTERRUPTION_CHECKS, guard="(((PEARL_RENDEZVOUS_PHASE=REQUESTING) or (PEARL_RENDEZVOUS_PHASE=RENDEZVOUS)) or (PEARL_RENDEZVOUS_PHASE=ACQUIRING_TARGET)) or (PEARL_RENDEZVOUS_PHASE=LANDING)"
   transition = machine=support_activity, id=TAKEOFF_WITHDRAWN, from=TAKEOFF_PRE_INTERRUPTION_CHECKS, to=NO_ACTIVE_REQUEST, guard="TAKEOFF_REQUEST_ID=none"
-  transition = machine=support_activity, id=TAKEOFF_REJECTED, from=TAKEOFF_PRE_INTERRUPTION_CHECKS, to=NO_ACTIVE_REQUEST, guard="(TAKEOFF_REQUEST_ID!=none) and (TAKEOFF_REQUEST_STATE=rejected)"
-  transition = machine=support_activity, id=RECOVERY_CHECKS_PASS, from=RECOVERY_PRE_INTERRUPTION_CHECKS, to=AGREEING_RENDEZVOUS, guard="(((PEARL_RENDEZVOUS_PHASE=REQUESTING) or (PEARL_RENDEZVOUS_PHASE=RENDEZVOUS)) or (PEARL_RENDEZVOUS_PHASE=ACQUIRING_TARGET)) or (PEARL_RENDEZVOUS_PHASE=LANDING)"
+  transition = machine=support_activity, id=TAKEOFF_REJECTED, from=TAKEOFF_PRE_INTERRUPTION_CHECKS, to=NO_ACTIVE_REQUEST, guard="TAKEOFF_PRECHECKS_STATE=fail", check_snapshots=TAKEOFF_PRECHECKS_STATE:TAKEOFF_PRECHECKS_STATE_SNAPSHOT
+  transition = machine=support_activity, id=RECOVERY_CHECKS_PASS, from=RECOVERY_PRE_INTERRUPTION_CHECKS, to=AGREEING_RENDEZVOUS, guard="(RECOVERY_PRECHECKS_STATE=success) and ((((PEARL_RENDEZVOUS_PHASE=REQUESTING) or (PEARL_RENDEZVOUS_PHASE=RENDEZVOUS)) or (PEARL_RENDEZVOUS_PHASE=ACQUIRING_TARGET)) or (PEARL_RENDEZVOUS_PHASE=LANDING))", check_snapshots=RECOVERY_PRECHECKS_STATE:RECOVERY_PRECHECKS_STATE_SNAPSHOT
   transition = machine=support_activity, id=RECOVERY_WITHDRAWN, from=RECOVERY_PRE_INTERRUPTION_CHECKS, to=NO_ACTIVE_REQUEST, guard="PEARL_RENDEZVOUS_PHASE=IDLE"
-  transition = machine=support_activity, id=RECOVERY_REJECTED, from=RECOVERY_PRE_INTERRUPTION_CHECKS, to=NO_ACTIVE_REQUEST, guard="PEARL_RENDEZVOUS_PHASE=ABORT"
+  transition = machine=support_activity, id=RECOVERY_REJECTED, from=RECOVERY_PRE_INTERRUPTION_CHECKS, to=NO_ACTIVE_REQUEST, guard="(PEARL_RENDEZVOUS_PHASE=ABORT) and (RECOVERY_PRECHECKS_STATE=fail)", check_snapshots=RECOVERY_PRECHECKS_STATE:RECOVERY_PRECHECKS_STATE_SNAPSHOT
   transition = machine=support_activity, id=RENDEZVOUS_WITHDRAWN, from=AGREEING_RENDEZVOUS, to=NO_ACTIVE_REQUEST, guard="PEARL_RENDEZVOUS_PHASE=ABORT"
 
-  machine = id=takeoff_support, state_var=PEARL_FSM_TAKEOFF_SUPPORT_STATE, initial_state=ESTABLISHING_TAKEOFF_CONDITIONS, initial_node=start, initial_transition_id=INITIAL, initially_active=false, status_var=PEARL_FSM_TAKEOFF_SUPPORT_STATUS, transition_var=PEARL_FSM_TAKEOFF_SUPPORT_TRANSITION, parent_state_var=PEARL_FSM_OPERATION_STATE, parent_state=TAKEOFF_SUPPORT, reset_on_inactive=true
+  machine = id=takeoff_support, state_var=PEARL_FSM_TAKEOFF_SUPPORT_STATE, initial_state=ESTABLISHING_TAKEOFF_CONDITIONS, initial_node=start, initial_transition_id=INITIAL, initially_active=false, status_var=PEARL_FSM_TAKEOFF_SUPPORT_STATUS, transition_var=PEARL_FSM_TAKEOFF_SUPPORT_TRANSITION, activation_condition="(MOOS_MANUAL_OVERRIDE=false) and (PEARL_ALLSTOP=false)", condition_history=true, parent_state_var=PEARL_FSM_OPERATION_STATE, parent_state=TAKEOFF_SUPPORT, reset_on_inactive=true
   state = machine=takeoff_support, value=ESTABLISHING_TAKEOFF_CONDITIONS
   state = machine=takeoff_support, value=POST_INTERRUPTION_CHECKS
   state = machine=takeoff_support, value=AWAITING_DRONE_DEPARTURE
   state = machine=takeoff_support, value=TAKEOFF_IN_PROGRESS
   state = machine=takeoff_support, value=CANCELLING_BEFORE_CLEARANCE
   state = machine=takeoff_support, value=DISENGAGING_TAKEOFF_SUPPORT
-  transition = machine=takeoff_support, id=ESTABLISHING_TAKEOFF_CONDITIONS_TO_POST_INTERRUPTION_CHECKS, from=ESTABLISHING_TAKEOFF_CONDITIONS, to=POST_INTERRUPTION_CHECKS, guard="(((TAKEOFF_SUPPORT_READY=true) and (TAKEOFF_SUPPORT_ACTIVE=true)) and ((TAKEOFF_POSTCHECKS_STATE=pending) or (TAKEOFF_POSTCHECKS_STATE=passed))) and (TAKEOFF_CANCEL_STATE=none)"
-  transition = machine=takeoff_support, id=ESTABLISHING_TAKEOFF_CONDITIONS_TO_CANCELLING_BEFORE_CLEARANCE, from=ESTABLISHING_TAKEOFF_CONDITIONS, to=CANCELLING_BEFORE_CLEARANCE, guard="TAKEOFF_CANCEL_STATE=before_clearance"
-  transition = machine=takeoff_support, id=POST_INTERRUPTION_CHECKS_TO_AWAITING_DRONE_DEPARTURE, from=POST_INTERRUPTION_CHECKS, to=AWAITING_DRONE_DEPARTURE, guard="((((TAKEOFF_REQUEST_ID!=none) and (TAKEOFF_POSTCHECKS_STATE=passed)) and (TAKEOFF_CLEARANCE_STATE=granted)) and ((UAV_FSM_OPERATION_STATE=TAKEOFF_OPERATIONS) or (UAV_FSM_OPERATION_STATE=MISSION_EXECUTION))) and (TAKEOFF_CANCEL_STATE=none)"
-  transition = machine=takeoff_support, id=POST_INTERRUPTION_CHECKS_TO_CANCELLING_BEFORE_CLEARANCE, from=POST_INTERRUPTION_CHECKS, to=CANCELLING_BEFORE_CLEARANCE, guard="(TAKEOFF_REQUEST_ID!=none) and (TAKEOFF_CANCEL_STATE=before_clearance)"
-  transition = machine=takeoff_support, id=POST_INTERRUPTION_CHECKS_FAILED, from=POST_INTERRUPTION_CHECKS, to=CANCELLING_BEFORE_CLEARANCE, guard="((TAKEOFF_REQUEST_ID!=none) and (TAKEOFF_POSTCHECKS_STATE=failed)) and (TAKEOFF_CANCEL_STATE=none)"
+  transition = machine=takeoff_support, id=ESTABLISHING_TAKEOFF_CONDITIONS_TO_POST_INTERRUPTION_CHECKS, from=ESTABLISHING_TAKEOFF_CONDITIONS, to=POST_INTERRUPTION_CHECKS, guard="PEARL_DRONEPORT_BAY_COVER_STATE=open"
+  transition = machine=takeoff_support, id=ESTABLISHING_TAKEOFF_CONDITIONS_TO_CANCELLING_BEFORE_CLEARANCE, from=ESTABLISHING_TAKEOFF_CONDITIONS, to=CANCELLING_BEFORE_CLEARANCE, guard="TAKEOFF_CANCEL_STATE!=none"
+  transition = machine=takeoff_support, id=POST_INTERRUPTION_CHECKS_TO_AWAITING_DRONE_DEPARTURE, from=POST_INTERRUPTION_CHECKS, to=AWAITING_DRONE_DEPARTURE, guard="((TAKEOFF_REQUEST_STATE=granted) and (TAKEOFF_POSTCHECKS_STATE=success)) and (TAKEOFF_PRECHECKS_STATE=success)", check_snapshots=TAKEOFF_POSTCHECKS_STATE:TAKEOFF_POSTCHECKS_STATE_SNAPSHOT;TAKEOFF_PRECHECKS_STATE:TAKEOFF_PRECHECKS_STATE_SNAPSHOT
+  transition = machine=takeoff_support, id=POST_INTERRUPTION_CHECKS_TO_CANCELLING_BEFORE_CLEARANCE, from=POST_INTERRUPTION_CHECKS, to=CANCELLING_BEFORE_CLEARANCE, guard="TAKEOFF_REQUEST_STATE=canceled"
+  transition = machine=takeoff_support, id=POST_INTERRUPTION_CHECKS_FAILED, from=POST_INTERRUPTION_CHECKS, to=CANCELLING_BEFORE_CLEARANCE, guard="TAKEOFF_REQUEST_STATE=denied"
   transition = machine=takeoff_support, id=AWAITING_DRONE_DEPARTURE_TO_TAKEOFF_IN_PROGRESS, from=AWAITING_DRONE_DEPARTURE, to=TAKEOFF_IN_PROGRESS, guard="(UAV_FSM_OPERATION_STATE=MISSION_EXECUTION) and (TAKEOFF_CANCEL_STATE=none)"
   transition = machine=takeoff_support, id=AWAITING_DRONE_DEPARTURE_TO_DISENGAGING_TAKEOFF_SUPPORT, from=AWAITING_DRONE_DEPARTURE, to=DISENGAGING_TAKEOFF_SUPPORT, guard="TAKEOFF_CANCEL_STATE=disengaging"
   transition = machine=takeoff_support, id=TAKEOFF_IN_PROGRESS_TO_DISENGAGING_TAKEOFF_SUPPORT, from=TAKEOFF_IN_PROGRESS, to=DISENGAGING_TAKEOFF_SUPPORT, guard="(TAKEOFF_CANCEL_STATE=disengaging) and (UAV_FSM_OPERATION_STATE!=MISSION_EXECUTION)"
 
-  machine = id=recovery_support, state_var=PEARL_FSM_RECOVERY_SUPPORT_STATE, initial_state=MOVING_TO_RENDEZVOUS, initial_node=start, initial_transition_id=INITIAL, initially_active=false, status_var=PEARL_FSM_RECOVERY_SUPPORT_STATUS, transition_var=PEARL_FSM_RECOVERY_SUPPORT_TRANSITION, parent_state_var=PEARL_FSM_OPERATION_STATE, parent_state=RECOVERY_SUPPORT, reset_on_inactive=true
+  machine = id=recovery_support, state_var=PEARL_FSM_RECOVERY_SUPPORT_STATE, initial_state=MOVING_TO_RENDEZVOUS, initial_node=start, initial_transition_id=INITIAL, initially_active=false, status_var=PEARL_FSM_RECOVERY_SUPPORT_STATUS, transition_var=PEARL_FSM_RECOVERY_SUPPORT_TRANSITION, activation_condition="(MOOS_MANUAL_OVERRIDE=false) and (PEARL_ALLSTOP=false)", condition_history=true, parent_state_var=PEARL_FSM_OPERATION_STATE, parent_state=RECOVERY_SUPPORT, reset_on_inactive=true
   state = machine=recovery_support, value=MOVING_TO_RENDEZVOUS
   state = machine=recovery_support, value=ESTABLISHING_RECOVERY_CONDITIONS
   state = machine=recovery_support, value=POST_INTERRUPTION_CHECKS

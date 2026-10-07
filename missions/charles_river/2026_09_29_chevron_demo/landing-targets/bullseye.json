@@ -1,0 +1,116 @@
+{
+  "markers": [
+    {
+      "family": "tagLandmark36h11",
+      "id": 0,
+      "size_mm": 12.8,
+      "position_mm": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "orientation_quat": {
+        "w": 1,
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "family": "tagLandmark36h11",
+      "id": 1,
+      "size_mm": 32,
+      "position_mm": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "orientation_quat": {
+        "w": 1,
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "family": "tagLandmark36h11",
+      "id": 2,
+      "size_mm": 80,
+      "position_mm": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "orientation_quat": {
+        "w": 1,
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "family": "tagLandmark36h11",
+      "id": 3,
+      "size_mm": 200,
+      "position_mm": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "orientation_quat": {
+        "w": 1,
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "family": "tagLandmark36h11",
+      "id": 4,
+      "size_mm": 500,
+      "position_mm": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "orientation_quat": {
+        "w": 1,
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "family": "tagLandmark36h11",
+      "id": 5,
+      "size_mm": 1250,
+      "position_mm": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "orientation_quat": {
+        "w": 1,
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "family": "tagLandmark36h11",
+      "id": 6,
+      "size_mm": 3125,
+      "position_mm": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "orientation_quat": {
+        "w": 1,
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    }
+  ]
+}

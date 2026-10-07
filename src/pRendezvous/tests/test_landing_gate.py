@@ -5,14 +5,13 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import signal
 import socket
 import subprocess
 import tempfile
 import time
 import unittest
-
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MOOS_BIN_DIR = Path(
@@ -58,10 +57,17 @@ class LandingGateIntegrationTest(unittest.TestCase):
         self.temp_path = Path(self.temp_dir.name)
         self.mission_path = self.temp_path / "landing_gate.moos"
         self.antler_log_path = self.temp_path / "pAntler.log"
+        required_check_tests = {
+            "test_required_check_pending_waits",
+            "test_required_check_failure_aborts",
+            "test_required_check_success_proceeds",
+            "test_required_check_success_still_requires_other_gates",
+        }
         pearl_role = self._testMethodName in {
             "test_pearl_rejects_unready_platform",
             "test_pearl_separation_is_continuous",
-        }
+            "test_pearl_reconciles_completion_and_restores_controls",
+        } | required_check_tests
         role = "pearl" if pearl_role else "uav"
         ownship = "pearl" if pearl_role else "uav"
         peer_node = "uav" if pearl_role else "pearl"
@@ -88,6 +94,13 @@ class LandingGateIntegrationTest(unittest.TestCase):
             if self._testMethodName == "test_stale_platform_data_blocks_start"
             else 30
         )
+        secondary_enabled = self._testMethodName == "test_secondary_recovery_lands"
+        require_check = (
+            "  require_check = TEST_RECOVERY_CHECKS_STATE\n"
+            "  require_check = TEST_PLATFORM_CHECKS_STATE\n"
+            if self._testMethodName in required_check_tests
+            else ""
+        )
         self.mission_path.write_text(
             f"""ServerHost = 127.0.0.1
 ServerPort = {self.moos_port}
@@ -109,7 +122,7 @@ ProcessConfig = pRendezvous
   peer_node = {peer_node}
   require_health = false
   require_battery = {str(battery_required).lower()}
-  battery_max_age = {battery_max_age}
+{require_check}  battery_max_age = {battery_max_age}
   min_battery = 25
   critical_battery = 15
   require_flight_state = false
@@ -135,6 +148,12 @@ ProcessConfig = pRendezvous
   reacquire_update_interval = 0.2
   reacquire_update_distance = 0.1
   state_post_interval = 0.1
+  secondary_landing_enabled = {str(secondary_enabled).lower()}
+  secondary_landing_x = 10
+  secondary_landing_y = 15
+  secondary_arrival_radius = 2
+  secondary_arrival_dwell = 0.5
+  secondary_landing_delay = 1
 }}
 """,
             encoding="utf-8",
@@ -247,6 +266,7 @@ ProcessConfig = pRendezvous
             "UAV_RENDEZVOUS_PHASE", "UAV_RENDEZVOUS_PHASE!=__missing__"
         )
         self.assertEqual(phase, "RENDEZVOUS")
+        self.assert_query("UAV_RENDEZVOUS_ARRIVED=1")
         self.poke(
             "NODE_REPORT:=NAME=pearl,X=0.5,Y=0",
             f"LANDING_CLEARANCE:=id={session}#status=cleared#x=0.5#y=0",
@@ -316,6 +336,33 @@ ProcessConfig = pRendezvous
             "UAV_LANDING_GATE_REASON=landing_target_timeout",
             wait=7,
         )
+
+    def test_secondary_recovery_lands(self) -> None:
+        self.poke(
+            "NAV_X=0",
+            "NAV_Y=0",
+            "UAV_IS_ARMED=true",
+            "UAV_LANDED_STATE:=IN_AIR",
+        )
+        time.sleep(0.2)
+        self.poke("RENDEZVOUS_START=true")
+        self.assert_query("UAV_RENDEZVOUS_PHASE=REQUESTING")
+        self.poke("RENDEZVOUS_ABORT=true")
+        self.assert_query(
+            "UAV_RENDEZVOUS_PHASE=ABORT",
+            "UAV_SECONDARY_RECOVERY_STATE=TRANSITING",
+            "UAV_SECONDARY_RECOVERY_POINT={10,15}",
+        )
+
+        self.poke("NAV_X=10", "NAV_Y=15")
+        self.assert_query("UAV_SECONDARY_RECOVERY_STATE=ARRIVED")
+        self.assert_query(
+            "UAV_SECONDARY_RECOVERY_STATE=LANDING",
+            "UAV_PREC_LAND_COMMIT=true",
+        )
+
+        self.poke("UAV_LANDED_STATE:=ON_GROUND", "UAV_IS_ARMED=false")
+        self.assert_query("UAV_SECONDARY_RECOVERY_STATE=LANDED")
 
     def test_low_battery_prioritizes_recovery(self) -> None:
         self.poke(
@@ -425,6 +472,75 @@ ProcessConfig = pRendezvous
             wait=7,
         )
 
+    def post_required_check(self, session: str, status: str) -> None:
+        self.poke(
+            f"TEST_RECOVERY_CHECKS_STATE:={status}",
+            f"TEST_RECOVERY_CHECKS_STATE_STATE:=status={status},session={session}",
+            f"TEST_PLATFORM_CHECKS_STATE:={status}",
+            f"TEST_PLATFORM_CHECKS_STATE_STATE:=status={status},session={session}",
+        )
+
+    def request_pearl_rendezvous(self, session: str, *, with_nav: bool = True) -> None:
+        if with_nav:
+            self.poke("NAV_X=0", "NAV_Y=0")
+            time.sleep(0.2)
+        self.poke(
+            f"RENDEZVOUS_REQUEST:=id={session}#x=20#y=0#speed=3"
+            "#battery=80#priority=normal#health=ok"
+        )
+
+    def test_required_check_pending_waits(self) -> None:
+        self.request_pearl_rendezvous("check-pending")
+        state = self.query_value(
+            "PEARL_RENDEZVOUS_STATE", "PEARL_RENDEZVOUS_PHASE=REQUESTING"
+        )
+        self.assertIn("reason=required_checks_pending", state)
+
+        # Neither a scalar success nor a stale diagnostic can authorize.
+        self.poke("TEST_RECOVERY_CHECKS_STATE:=success")
+        self.poke(
+            "TEST_RECOVERY_CHECKS_STATE_STATE:="
+            "status=success,session=old-session"
+        )
+        time.sleep(0.3)
+        state = self.query_value(
+            "PEARL_RENDEZVOUS_STATE", "PEARL_RENDEZVOUS_PHASE=REQUESTING"
+        )
+        self.assertIn("reason=required_checks_pending", state)
+
+    def test_required_check_failure_aborts(self) -> None:
+        self.request_pearl_rendezvous("check-fail")
+        # One confirmed failure aborts without waiting for the other check.
+        self.poke(
+            "TEST_RECOVERY_CHECKS_STATE:=fail",
+            "TEST_RECOVERY_CHECKS_STATE_STATE:="
+            "status=fail,session=check-fail",
+        )
+        state = self.query_value(
+            "PEARL_RENDEZVOUS_STATE", "PEARL_RENDEZVOUS_PHASE=ABORT"
+        )
+        self.assertIn(
+            "reason=required_check_fail:TEST_RECOVERY_CHECKS_STATE", state
+        )
+
+    def test_required_check_success_proceeds(self) -> None:
+        self.request_pearl_rendezvous("check-success")
+        self.post_required_check("check-success", "success")
+        time.sleep(0.3)
+        state = self.query_value(
+            "PEARL_RENDEZVOUS_STATE", "PEARL_RENDEZVOUS_PHASE=REQUESTING"
+        )
+        self.assertIn("reason=proposal_sent", state)
+        self.assertIn("id=check-success", state)
+
+    def test_required_check_success_still_requires_other_gates(self) -> None:
+        self.request_pearl_rendezvous("check-no-nav", with_nav=False)
+        self.post_required_check("check-no-nav", "success")
+        state = self.query_value(
+            "PEARL_RENDEZVOUS_STATE", "PEARL_RENDEZVOUS_PHASE=ABORT"
+        )
+        self.assertIn("reason=pearl_navigation_stale", state)
+
     def test_pearl_rejects_unready_platform(self) -> None:
         self.poke(
             "NAV_X=0",
@@ -452,6 +568,47 @@ ProcessConfig = pRendezvous
             "#priority=emergency#health=ok"
         )
         self.assert_query("PEARL_RENDEZVOUS_PHASE=REQUESTING")
+
+    def test_pearl_reconciles_completion_and_restores_controls(self) -> None:
+        self.poke(
+            "NAV_X=0",
+            "NAV_Y=0",
+            "DEPLOY=true",
+            "RETURN=true",
+            "STATION_KEEP=false",
+            "MOOS_MANUAL_OVERRIDE=false",
+        )
+        time.sleep(0.2)
+        self.poke(
+            "RENDEZVOUS_REQUEST:=id=restore#x=20#y=0#speed=3"
+            "#battery=80#priority=NORMAL#health=ok"
+        )
+        self.assert_query("PEARL_RENDEZVOUS_PHASE=REQUESTING")
+        self.poke("RENDEZVOUS_RESPONSE:=id=restore#status=accepted")
+        self.assert_query(
+            "PEARL_RENDEZVOUS_PHASE=RENDEZVOUS",
+            "PEARL_RENDEZVOUS_ACTIVE=true",
+        )
+        update = self.query_value(
+            "PEARL_RENDEZVOUS_UPDATE", "PEARL_RENDEZVOUS_UPDATE!=__missing__"
+        )
+        self.assertIn("name=restore", update)
+        self.assertIn(" # points=", update)
+
+        # Periodic UAV phase/session publications provide a reconciliation
+        # path when a one-shot mediated landing status is missed.
+        self.poke(
+            "UAV_RENDEZVOUS_SESSION:=restore",
+            "UAV_RENDEZVOUS_PHASE:=COMPLETE",
+        )
+        self.assert_query(
+            "PEARL_RENDEZVOUS_PHASE=COMPLETE",
+            "PEARL_CONTROL_RESTORED=true",
+            "DEPLOY=true",
+            "RETURN=true",
+            "STATION_KEEP=false",
+            "MOOS_MANUAL_OVERRIDE=false",
+        )
 
     def test_pearl_separation_is_continuous(self) -> None:
         self.poke("NAV_X=0", "NAV_Y=0")

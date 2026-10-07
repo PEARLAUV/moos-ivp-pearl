@@ -12,31 +12,47 @@
         "UAV_FSM_OPERATION_STATE": {
           "IDLE": {
             "d2_id": "idle",
+            "label": "Idle on deck",
             "count_variable": "UAV_FSM_OPERATION_STATE_IDLE_COUNT",
             "selector": ".moos_var_UAV_FSM_OPERATION_STATE.moos_value_IDLE"
           },
           "TAKEOFF_OPERATIONS": {
             "d2_id": "takeoff_operations",
+            "label": "Takeoff operations",
             "count_variable": "UAV_FSM_OPERATION_STATE_TAKEOFF_OPERATIONS_COUNT",
-            "selector": ".moos_var_UAV_FSM_OPERATION_STATE.moos_value_TAKEOFF_OPERATIONS"
+            "selector": ".moos_var_UAV_FSM_OPERATION_STATE.moos_value_TAKEOFF_OPERATIONS",
+            "effects": {
+              "entry": [
+                {
+                  "fact": "task_execute",
+                  "moos_variable": "TASK_EXECUTE",
+                  "type": "string",
+                  "value": false
+                }
+              ]
+            }
           },
           "MISSION_EXECUTION": {
             "d2_id": "mission_execution",
+            "label": "Executing mission",
             "count_variable": "UAV_FSM_OPERATION_STATE_MISSION_EXECUTION_COUNT",
             "selector": ".moos_var_UAV_FSM_OPERATION_STATE.moos_value_MISSION_EXECUTION"
           },
           "LANDING_OPERATIONS": {
             "d2_id": "landing_operations",
+            "label": "Landing operations",
             "count_variable": "UAV_FSM_OPERATION_STATE_LANDING_OPERATIONS_COUNT",
             "selector": ".moos_var_UAV_FSM_OPERATION_STATE.moos_value_LANDING_OPERATIONS"
           },
           "OFFNOMINAL": {
             "d2_id": "offnominal",
+            "label": "Off-nominal landing Takeoff inhibited",
             "count_variable": "UAV_FSM_OPERATION_STATE_OFFNOMINAL_COUNT",
             "selector": ".moos_var_UAV_FSM_OPERATION_STATE.moos_value_OFFNOMINAL"
           },
           "LOITERING": {
             "d2_id": "loitering",
+            "label": "Loitering at secondary altitude Awaiting recovery",
             "count_variable": "UAV_FSM_OPERATION_STATE_LOITERING_COUNT",
             "selector": ".moos_var_UAV_FSM_OPERATION_STATE.moos_value_LOITERING"
           }
@@ -105,135 +121,33 @@
               "to": "TAKEOFF_OPERATIONS"
             },
             "guard": {
-              "expression": "((uav_takeoff_approved==1) && (uav_landed_state==ON_GROUND)) || (uav_landed_state==TAKING_OFF) || (uav_landed_state==IN_AIR)",
+              "expression": "task_execute==true",
               "ast": {
-                "type": "boolean",
-                "operator": "or",
-                "operands": [
-                  {
-                    "type": "boolean",
-                    "operator": "and",
-                    "operands": [
-                      {
-                        "type": "predicate",
-                        "left": {
-                          "type": "fact",
-                          "id": "uav_takeoff_approved",
-                          "moos_variable": "UAV_TAKEOFF_APPROVED"
-                        },
-                        "operator": "==",
-                        "right": {
-                          "type": "literal",
-                          "value": 1
-                        }
-                      },
-                      {
-                        "type": "predicate",
-                        "left": {
-                          "type": "fact",
-                          "id": "uav_landed_state",
-                          "moos_variable": "UAV_LANDED_STATE"
-                        },
-                        "operator": "==",
-                        "right": {
-                          "type": "literal",
-                          "value": "ON_GROUND"
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "TAKING_OFF"
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "IN_AIR"
-                    }
-                  }
-                ]
+                "type": "predicate",
+                "left": {
+                  "type": "fact",
+                  "id": "task_execute",
+                  "moos_variable": "TASK_EXECUTE"
+                },
+                "operator": "==",
+                "right": {
+                  "type": "literal",
+                  "value": true
+                }
               },
-              "moos_expression": "(((UAV_TAKEOFF_APPROVED=1) and (UAV_LANDED_STATE=ON_GROUND)) or (UAV_LANDED_STATE=TAKING_OFF)) or (UAV_LANDED_STATE=IN_AIR)",
+              "moos_expression": "TASK_EXECUTE=true",
               "effective_ast": {
-                "type": "boolean",
-                "operator": "or",
-                "operands": [
-                  {
-                    "type": "boolean",
-                    "operator": "and",
-                    "operands": [
-                      {
-                        "type": "predicate",
-                        "left": {
-                          "type": "fact",
-                          "id": "uav_takeoff_approved",
-                          "moos_variable": "UAV_TAKEOFF_APPROVED"
-                        },
-                        "operator": "==",
-                        "right": {
-                          "type": "literal",
-                          "value": 1
-                        }
-                      },
-                      {
-                        "type": "predicate",
-                        "left": {
-                          "type": "fact",
-                          "id": "uav_landed_state",
-                          "moos_variable": "UAV_LANDED_STATE"
-                        },
-                        "operator": "==",
-                        "right": {
-                          "type": "literal",
-                          "value": "ON_GROUND"
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "TAKING_OFF"
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "IN_AIR"
-                    }
-                  }
-                ]
+                "type": "predicate",
+                "left": {
+                  "type": "fact",
+                  "id": "task_execute",
+                  "moos_variable": "TASK_EXECUTE"
+                },
+                "operator": "==",
+                "right": {
+                  "type": "literal",
+                  "value": true
+                }
               }
             },
             "d2_id": "(idle -> takeoff_operations)[0]",
@@ -361,66 +275,22 @@
               "to": "IDLE"
             },
             "guard": {
-              "expression": "(uav_landed_state==ON_GROUND) && (uav_takeoff_gate_ready==0) && (uav_takeoff_approved==0) && (uav_takeoff_result!=UNKNOWN)",
+              "expression": "check_result(takeoff_prechecks, fail)",
               "ast": {
-                "type": "boolean",
-                "operator": "and",
-                "operands": [
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "ON_GROUND"
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_gate_ready",
-                      "moos_variable": "UAV_TAKEOFF_GATE_READY"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_result",
-                      "moos_variable": "UAV_TAKEOFF_RESULT"
-                    },
-                    "operator": "!=",
-                    "right": {
-                      "type": "literal",
-                      "value": "UNKNOWN"
-                    }
-                  }
-                ]
+                "type": "predicate",
+                "left": {
+                  "type": "check_result",
+                  "result_fact": "takeoff_prechecks",
+                  "moos_variable": "TAKEOFF_PRECHECKS",
+                  "snapshot_var": "TAKEOFF_PRECHECKS_SNAPSHOT"
+                },
+                "operator": "==",
+                "right": {
+                  "type": "literal",
+                  "value": "fail"
+                }
               },
-              "moos_expression": "((((UAV_FSM_TAKEOFF_OPERATIONS_STATE=ESTABLISHING_TAKEOFF_READINESS) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_TAKEOFF_GATE_READY=0)) and (UAV_TAKEOFF_APPROVED=0)) and (UAV_TAKEOFF_RESULT!=UNKNOWN)",
+              "moos_expression": "(UAV_FSM_TAKEOFF_OPERATIONS_STATE=ESTABLISHING_TAKEOFF_READINESS) and (TAKEOFF_PRECHECKS=fail)",
               "effective_ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -443,53 +313,15 @@
                   {
                     "type": "predicate",
                     "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
+                      "type": "check_result",
+                      "result_fact": "takeoff_prechecks",
+                      "moos_variable": "TAKEOFF_PRECHECKS",
+                      "snapshot_var": "TAKEOFF_PRECHECKS_SNAPSHOT"
                     },
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": "ON_GROUND"
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_gate_ready",
-                      "moos_variable": "UAV_TAKEOFF_GATE_READY"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_result",
-                      "moos_variable": "UAV_TAKEOFF_RESULT"
-                    },
-                    "operator": "!=",
-                    "right": {
-                      "type": "literal",
-                      "value": "UNKNOWN"
+                      "value": "fail"
                     }
                   }
                 ]
@@ -551,66 +383,53 @@
               "to": "IDLE"
             },
             "guard": {
-              "expression": "(uav_landed_state==ON_GROUND) && (uav_takeoff_gate_ready==0) && (uav_takeoff_approved==0) && (uav_takeoff_result!=UNKNOWN)",
+              "expression": "(takeoff_request_result==REJECTED) || (takeoff_request_result==CANCELLED) || (takeoff_request_result==TIMEOUT)",
               "ast": {
                 "type": "boolean",
-                "operator": "and",
+                "operator": "or",
                 "operands": [
                   {
                     "type": "predicate",
                     "left": {
                       "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
+                      "id": "takeoff_request_result",
+                      "moos_variable": "TAKEOFF_REQUEST_RESULT"
                     },
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": "ON_GROUND"
+                      "value": "REJECTED"
                     }
                   },
                   {
                     "type": "predicate",
                     "left": {
                       "type": "fact",
-                      "id": "uav_takeoff_gate_ready",
-                      "moos_variable": "UAV_TAKEOFF_GATE_READY"
+                      "id": "takeoff_request_result",
+                      "moos_variable": "TAKEOFF_REQUEST_RESULT"
                     },
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": 0
+                      "value": "CANCELLED"
                     }
                   },
                   {
                     "type": "predicate",
                     "left": {
                       "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
+                      "id": "takeoff_request_result",
+                      "moos_variable": "TAKEOFF_REQUEST_RESULT"
                     },
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_result",
-                      "moos_variable": "UAV_TAKEOFF_RESULT"
-                    },
-                    "operator": "!=",
-                    "right": {
-                      "type": "literal",
-                      "value": "UNKNOWN"
+                      "value": "TIMEOUT"
                     }
                   }
                 ]
               },
-              "moos_expression": "((((UAV_FSM_TAKEOFF_OPERATIONS_STATE=REQUESTING_TAKEOFF_CLEARANCE) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_TAKEOFF_GATE_READY=0)) and (UAV_TAKEOFF_APPROVED=0)) and (UAV_TAKEOFF_RESULT!=UNKNOWN)",
+              "moos_expression": "(UAV_FSM_TAKEOFF_OPERATIONS_STATE=REQUESTING_TAKEOFF_CLEARANCE) and (((TAKEOFF_REQUEST_RESULT=REJECTED) or (TAKEOFF_REQUEST_RESULT=CANCELLED)) or (TAKEOFF_REQUEST_RESULT=TIMEOUT))",
               "effective_ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -631,56 +450,49 @@
                     }
                   },
                   {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "ON_GROUND"
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_gate_ready",
-                      "moos_variable": "UAV_TAKEOFF_GATE_READY"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_result",
-                      "moos_variable": "UAV_TAKEOFF_RESULT"
-                    },
-                    "operator": "!=",
-                    "right": {
-                      "type": "literal",
-                      "value": "UNKNOWN"
-                    }
+                    "type": "boolean",
+                    "operator": "or",
+                    "operands": [
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "REJECTED"
+                        }
+                      },
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "CANCELLED"
+                        }
+                      },
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "TIMEOUT"
+                        }
+                      }
+                    ]
                   }
                 ]
               },
@@ -847,7 +659,7 @@
               "to": "IDLE"
             },
             "guard": {
-              "expression": "(uav_landed_state==ON_GROUND) && (uav_takeoff_gate_ready==0) && (uav_takeoff_approved==0) && (uav_takeoff_result!=UNKNOWN)",
+              "expression": "(uav_landed_state==ON_GROUND) && ((takeoff_request_result==REJECTED) || (takeoff_request_result==TIMEOUT) || (takeoff_request_result==CANCELLED))",
               "ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -866,47 +678,53 @@
                     }
                   },
                   {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_gate_ready",
-                      "moos_variable": "UAV_TAKEOFF_GATE_READY"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_result",
-                      "moos_variable": "UAV_TAKEOFF_RESULT"
-                    },
-                    "operator": "!=",
-                    "right": {
-                      "type": "literal",
-                      "value": "UNKNOWN"
-                    }
+                    "type": "boolean",
+                    "operator": "or",
+                    "operands": [
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "REJECTED"
+                        }
+                      },
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "TIMEOUT"
+                        }
+                      },
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "CANCELLED"
+                        }
+                      }
+                    ]
                   }
                 ]
               },
-              "moos_expression": "((((UAV_FSM_TAKEOFF_OPERATIONS_STATE=TAKEOFF) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_TAKEOFF_GATE_READY=0)) and (UAV_TAKEOFF_APPROVED=0)) and (UAV_TAKEOFF_RESULT!=UNKNOWN)",
+              "moos_expression": "((UAV_FSM_TAKEOFF_OPERATIONS_STATE=TAKEOFF) and (UAV_LANDED_STATE=ON_GROUND)) and (((TAKEOFF_REQUEST_RESULT=REJECTED) or (TAKEOFF_REQUEST_RESULT=TIMEOUT)) or (TAKEOFF_REQUEST_RESULT=CANCELLED))",
               "effective_ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -940,43 +758,49 @@
                     }
                   },
                   {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_gate_ready",
-                      "moos_variable": "UAV_TAKEOFF_GATE_READY"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_result",
-                      "moos_variable": "UAV_TAKEOFF_RESULT"
-                    },
-                    "operator": "!=",
-                    "right": {
-                      "type": "literal",
-                      "value": "UNKNOWN"
-                    }
+                    "type": "boolean",
+                    "operator": "or",
+                    "operands": [
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "REJECTED"
+                        }
+                      },
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "TIMEOUT"
+                        }
+                      },
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "CANCELLED"
+                        }
+                      }
+                    ]
                   }
                 ]
               },
@@ -1037,7 +861,7 @@
               "to": "IDLE"
             },
             "guard": {
-              "expression": "(uav_rendezvous_phase==COMPLETE) && (uav_landed_state==ON_GROUND) && (uav_is_armed==false)",
+              "expression": "(uav_rendezvous_phase==COMPLETE) && (uav_landed_state==ON_GROUND) && (uav_is_armed==0)",
               "ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -1078,12 +902,12 @@
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": false
+                      "value": 0
                     }
                   }
                 ]
               },
-              "moos_expression": "(((UAV_FSM_LANDING_OPERATIONS_STATE=LANDING) and (UAV_RENDEZVOUS_PHASE=COMPLETE)) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_IS_ARMED=false)",
+              "moos_expression": "(((UAV_FSM_LANDING_OPERATIONS_STATE=LANDING) and (UAV_RENDEZVOUS_PHASE=COMPLETE)) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_IS_ARMED=0)",
               "effective_ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -1139,7 +963,7 @@
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": false
+                      "value": 0
                     }
                   }
                 ]
@@ -1201,7 +1025,7 @@
               "to": "OFFNOMINAL"
             },
             "guard": {
-              "expression": "(uav_secondary_recovery_state==LANDED) && (uav_landed_state==ON_GROUND) && (uav_is_armed==false)",
+              "expression": "(uav_secondary_recovery_state==LANDED) && (uav_landed_state==ON_GROUND) && (uav_is_armed==0)",
               "ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -1242,12 +1066,12 @@
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": false
+                      "value": 0
                     }
                   }
                 ]
               },
-              "moos_expression": "(((UAV_FSM_LANDING_OPERATIONS_STATE=SECONDARY_LANDING) and (UAV_SECONDARY_RECOVERY_STATE=LANDED)) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_IS_ARMED=false)",
+              "moos_expression": "(((UAV_FSM_LANDING_OPERATIONS_STATE=SECONDARY_LANDING) and (UAV_SECONDARY_RECOVERY_STATE=LANDED)) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_IS_ARMED=0)",
               "effective_ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -1303,7 +1127,7 @@
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": false
+                      "value": 0
                     }
                   }
                 ]
@@ -1455,16 +1279,19 @@
         "UAV_FSM_TAKEOFF_OPERATIONS_STATE": {
           "ESTABLISHING_TAKEOFF_READINESS": {
             "d2_id": "establishing_takeoff_readiness",
+            "label": "Establishing takeoff readiness",
             "count_variable": "UAV_FSM_TAKEOFF_OPERATIONS_STATE_ESTABLISHING_TAKEOFF_READINESS_COUNT",
             "selector": ".moos_var_UAV_FSM_TAKEOFF_OPERATIONS_STATE.moos_value_ESTABLISHING_TAKEOFF_READINESS"
           },
           "REQUESTING_TAKEOFF_CLEARANCE": {
             "d2_id": "requesting_takeoff_clearance",
+            "label": "Requesting takeoff clearance",
             "count_variable": "UAV_FSM_TAKEOFF_OPERATIONS_STATE_REQUESTING_TAKEOFF_CLEARANCE_COUNT",
             "selector": ".moos_var_UAV_FSM_TAKEOFF_OPERATIONS_STATE.moos_value_REQUESTING_TAKEOFF_CLEARANCE"
           },
           "TAKEOFF": {
             "d2_id": "takeoff",
+            "label": "Taking off",
             "count_variable": "UAV_FSM_TAKEOFF_OPERATIONS_STATE_TAKEOFF_COUNT",
             "selector": ".moos_var_UAV_FSM_TAKEOFF_OPERATIONS_STATE.moos_value_TAKEOFF"
           }
@@ -1533,161 +1360,35 @@
               "to": "REQUESTING_TAKEOFF_CLEARANCE"
             },
             "guard": {
-              "expression": "((uav_takeoff_gate_ready==1) && (uav_takeoff_approved==1) && (uav_landed_state==ON_GROUND)) || (uav_landed_state==TAKING_OFF) || (uav_landed_state==IN_AIR)",
+              "expression": "check_result(takeoff_prechecks, success)",
               "ast": {
-                "type": "boolean",
-                "operator": "or",
-                "operands": [
-                  {
-                    "type": "boolean",
-                    "operator": "and",
-                    "operands": [
-                      {
-                        "type": "predicate",
-                        "left": {
-                          "type": "fact",
-                          "id": "uav_takeoff_gate_ready",
-                          "moos_variable": "UAV_TAKEOFF_GATE_READY"
-                        },
-                        "operator": "==",
-                        "right": {
-                          "type": "literal",
-                          "value": 1
-                        }
-                      },
-                      {
-                        "type": "predicate",
-                        "left": {
-                          "type": "fact",
-                          "id": "uav_takeoff_approved",
-                          "moos_variable": "UAV_TAKEOFF_APPROVED"
-                        },
-                        "operator": "==",
-                        "right": {
-                          "type": "literal",
-                          "value": 1
-                        }
-                      },
-                      {
-                        "type": "predicate",
-                        "left": {
-                          "type": "fact",
-                          "id": "uav_landed_state",
-                          "moos_variable": "UAV_LANDED_STATE"
-                        },
-                        "operator": "==",
-                        "right": {
-                          "type": "literal",
-                          "value": "ON_GROUND"
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "TAKING_OFF"
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "IN_AIR"
-                    }
-                  }
-                ]
+                "type": "predicate",
+                "left": {
+                  "type": "check_result",
+                  "result_fact": "takeoff_prechecks",
+                  "moos_variable": "TAKEOFF_PRECHECKS",
+                  "snapshot_var": "TAKEOFF_PRECHECKS_SNAPSHOT"
+                },
+                "operator": "==",
+                "right": {
+                  "type": "literal",
+                  "value": "success"
+                }
               },
-              "moos_expression": "((((UAV_TAKEOFF_GATE_READY=1) and (UAV_TAKEOFF_APPROVED=1)) and (UAV_LANDED_STATE=ON_GROUND)) or (UAV_LANDED_STATE=TAKING_OFF)) or (UAV_LANDED_STATE=IN_AIR)",
+              "moos_expression": "TAKEOFF_PRECHECKS=success",
               "effective_ast": {
-                "type": "boolean",
-                "operator": "or",
-                "operands": [
-                  {
-                    "type": "boolean",
-                    "operator": "and",
-                    "operands": [
-                      {
-                        "type": "predicate",
-                        "left": {
-                          "type": "fact",
-                          "id": "uav_takeoff_gate_ready",
-                          "moos_variable": "UAV_TAKEOFF_GATE_READY"
-                        },
-                        "operator": "==",
-                        "right": {
-                          "type": "literal",
-                          "value": 1
-                        }
-                      },
-                      {
-                        "type": "predicate",
-                        "left": {
-                          "type": "fact",
-                          "id": "uav_takeoff_approved",
-                          "moos_variable": "UAV_TAKEOFF_APPROVED"
-                        },
-                        "operator": "==",
-                        "right": {
-                          "type": "literal",
-                          "value": 1
-                        }
-                      },
-                      {
-                        "type": "predicate",
-                        "left": {
-                          "type": "fact",
-                          "id": "uav_landed_state",
-                          "moos_variable": "UAV_LANDED_STATE"
-                        },
-                        "operator": "==",
-                        "right": {
-                          "type": "literal",
-                          "value": "ON_GROUND"
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "TAKING_OFF"
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "IN_AIR"
-                    }
-                  }
-                ]
+                "type": "predicate",
+                "left": {
+                  "type": "check_result",
+                  "result_fact": "takeoff_prechecks",
+                  "moos_variable": "TAKEOFF_PRECHECKS",
+                  "snapshot_var": "TAKEOFF_PRECHECKS_SNAPSHOT"
+                },
+                "operator": "==",
+                "right": {
+                  "type": "literal",
+                  "value": "success"
+                }
               }
             },
             "d2_id": "(establishing_takeoff_readiness -> requesting_takeoff_clearance)[0]",
@@ -1719,97 +1420,33 @@
               "to": "TAKEOFF"
             },
             "guard": {
-              "expression": "(uav_takeoff_approved==1) || (uav_landed_state==TAKING_OFF) || (uav_landed_state==IN_AIR)",
+              "expression": "takeoff_request_result==APPROVED",
               "ast": {
-                "type": "boolean",
-                "operator": "or",
-                "operands": [
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 1
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "TAKING_OFF"
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "IN_AIR"
-                    }
-                  }
-                ]
+                "type": "predicate",
+                "left": {
+                  "type": "fact",
+                  "id": "takeoff_request_result",
+                  "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                },
+                "operator": "==",
+                "right": {
+                  "type": "literal",
+                  "value": "APPROVED"
+                }
               },
-              "moos_expression": "((UAV_TAKEOFF_APPROVED=1) or (UAV_LANDED_STATE=TAKING_OFF)) or (UAV_LANDED_STATE=IN_AIR)",
+              "moos_expression": "TAKEOFF_REQUEST_RESULT=APPROVED",
               "effective_ast": {
-                "type": "boolean",
-                "operator": "or",
-                "operands": [
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 1
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "TAKING_OFF"
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "IN_AIR"
-                    }
-                  }
-                ]
+                "type": "predicate",
+                "left": {
+                  "type": "fact",
+                  "id": "takeoff_request_result",
+                  "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                },
+                "operator": "==",
+                "right": {
+                  "type": "literal",
+                  "value": "APPROVED"
+                }
               }
             },
             "d2_id": "(requesting_takeoff_clearance -> takeoff)[0]",
@@ -1848,66 +1485,22 @@
               "target_state_id": "idle"
             },
             "guard": {
-              "expression": "(uav_landed_state==ON_GROUND) && (uav_takeoff_gate_ready==0) && (uav_takeoff_approved==0) && (uav_takeoff_result!=UNKNOWN)",
+              "expression": "check_result(takeoff_prechecks, fail)",
               "ast": {
-                "type": "boolean",
-                "operator": "and",
-                "operands": [
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "ON_GROUND"
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_gate_ready",
-                      "moos_variable": "UAV_TAKEOFF_GATE_READY"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_result",
-                      "moos_variable": "UAV_TAKEOFF_RESULT"
-                    },
-                    "operator": "!=",
-                    "right": {
-                      "type": "literal",
-                      "value": "UNKNOWN"
-                    }
-                  }
-                ]
+                "type": "predicate",
+                "left": {
+                  "type": "check_result",
+                  "result_fact": "takeoff_prechecks",
+                  "moos_variable": "TAKEOFF_PRECHECKS",
+                  "snapshot_var": "TAKEOFF_PRECHECKS_SNAPSHOT"
+                },
+                "operator": "==",
+                "right": {
+                  "type": "literal",
+                  "value": "fail"
+                }
               },
-              "moos_expression": "((((UAV_FSM_TAKEOFF_OPERATIONS_STATE=ESTABLISHING_TAKEOFF_READINESS) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_TAKEOFF_GATE_READY=0)) and (UAV_TAKEOFF_APPROVED=0)) and (UAV_TAKEOFF_RESULT!=UNKNOWN)",
+              "moos_expression": "(UAV_FSM_TAKEOFF_OPERATIONS_STATE=ESTABLISHING_TAKEOFF_READINESS) and (TAKEOFF_PRECHECKS=fail)",
               "effective_ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -1930,53 +1523,15 @@
                   {
                     "type": "predicate",
                     "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
+                      "type": "check_result",
+                      "result_fact": "takeoff_prechecks",
+                      "moos_variable": "TAKEOFF_PRECHECKS",
+                      "snapshot_var": "TAKEOFF_PRECHECKS_SNAPSHOT"
                     },
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": "ON_GROUND"
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_gate_ready",
-                      "moos_variable": "UAV_TAKEOFF_GATE_READY"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_result",
-                      "moos_variable": "UAV_TAKEOFF_RESULT"
-                    },
-                    "operator": "!=",
-                    "right": {
-                      "type": "literal",
-                      "value": "UNKNOWN"
+                      "value": "fail"
                     }
                   }
                 ]
@@ -2034,66 +1589,53 @@
               "target_state_id": "idle"
             },
             "guard": {
-              "expression": "(uav_landed_state==ON_GROUND) && (uav_takeoff_gate_ready==0) && (uav_takeoff_approved==0) && (uav_takeoff_result!=UNKNOWN)",
+              "expression": "(takeoff_request_result==REJECTED) || (takeoff_request_result==CANCELLED) || (takeoff_request_result==TIMEOUT)",
               "ast": {
                 "type": "boolean",
-                "operator": "and",
+                "operator": "or",
                 "operands": [
                   {
                     "type": "predicate",
                     "left": {
                       "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
+                      "id": "takeoff_request_result",
+                      "moos_variable": "TAKEOFF_REQUEST_RESULT"
                     },
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": "ON_GROUND"
+                      "value": "REJECTED"
                     }
                   },
                   {
                     "type": "predicate",
                     "left": {
                       "type": "fact",
-                      "id": "uav_takeoff_gate_ready",
-                      "moos_variable": "UAV_TAKEOFF_GATE_READY"
+                      "id": "takeoff_request_result",
+                      "moos_variable": "TAKEOFF_REQUEST_RESULT"
                     },
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": 0
+                      "value": "CANCELLED"
                     }
                   },
                   {
                     "type": "predicate",
                     "left": {
                       "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
+                      "id": "takeoff_request_result",
+                      "moos_variable": "TAKEOFF_REQUEST_RESULT"
                     },
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_result",
-                      "moos_variable": "UAV_TAKEOFF_RESULT"
-                    },
-                    "operator": "!=",
-                    "right": {
-                      "type": "literal",
-                      "value": "UNKNOWN"
+                      "value": "TIMEOUT"
                     }
                   }
                 ]
               },
-              "moos_expression": "((((UAV_FSM_TAKEOFF_OPERATIONS_STATE=REQUESTING_TAKEOFF_CLEARANCE) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_TAKEOFF_GATE_READY=0)) and (UAV_TAKEOFF_APPROVED=0)) and (UAV_TAKEOFF_RESULT!=UNKNOWN)",
+              "moos_expression": "(UAV_FSM_TAKEOFF_OPERATIONS_STATE=REQUESTING_TAKEOFF_CLEARANCE) and (((TAKEOFF_REQUEST_RESULT=REJECTED) or (TAKEOFF_REQUEST_RESULT=CANCELLED)) or (TAKEOFF_REQUEST_RESULT=TIMEOUT))",
               "effective_ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -2114,56 +1656,49 @@
                     }
                   },
                   {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_landed_state",
-                      "moos_variable": "UAV_LANDED_STATE"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": "ON_GROUND"
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_gate_ready",
-                      "moos_variable": "UAV_TAKEOFF_GATE_READY"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_result",
-                      "moos_variable": "UAV_TAKEOFF_RESULT"
-                    },
-                    "operator": "!=",
-                    "right": {
-                      "type": "literal",
-                      "value": "UNKNOWN"
-                    }
+                    "type": "boolean",
+                    "operator": "or",
+                    "operands": [
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "REJECTED"
+                        }
+                      },
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "CANCELLED"
+                        }
+                      },
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "TIMEOUT"
+                        }
+                      }
+                    ]
                   }
                 ]
               },
@@ -2322,7 +1857,7 @@
               "target_state_id": "idle"
             },
             "guard": {
-              "expression": "(uav_landed_state==ON_GROUND) && (uav_takeoff_gate_ready==0) && (uav_takeoff_approved==0) && (uav_takeoff_result!=UNKNOWN)",
+              "expression": "(uav_landed_state==ON_GROUND) && ((takeoff_request_result==REJECTED) || (takeoff_request_result==TIMEOUT) || (takeoff_request_result==CANCELLED))",
               "ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -2341,47 +1876,53 @@
                     }
                   },
                   {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_gate_ready",
-                      "moos_variable": "UAV_TAKEOFF_GATE_READY"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_result",
-                      "moos_variable": "UAV_TAKEOFF_RESULT"
-                    },
-                    "operator": "!=",
-                    "right": {
-                      "type": "literal",
-                      "value": "UNKNOWN"
-                    }
+                    "type": "boolean",
+                    "operator": "or",
+                    "operands": [
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "REJECTED"
+                        }
+                      },
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "TIMEOUT"
+                        }
+                      },
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "CANCELLED"
+                        }
+                      }
+                    ]
                   }
                 ]
               },
-              "moos_expression": "((((UAV_FSM_TAKEOFF_OPERATIONS_STATE=TAKEOFF) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_TAKEOFF_GATE_READY=0)) and (UAV_TAKEOFF_APPROVED=0)) and (UAV_TAKEOFF_RESULT!=UNKNOWN)",
+              "moos_expression": "((UAV_FSM_TAKEOFF_OPERATIONS_STATE=TAKEOFF) and (UAV_LANDED_STATE=ON_GROUND)) and (((TAKEOFF_REQUEST_RESULT=REJECTED) or (TAKEOFF_REQUEST_RESULT=TIMEOUT)) or (TAKEOFF_REQUEST_RESULT=CANCELLED))",
               "effective_ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -2415,43 +1956,49 @@
                     }
                   },
                   {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_gate_ready",
-                      "moos_variable": "UAV_TAKEOFF_GATE_READY"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_approved",
-                      "moos_variable": "UAV_TAKEOFF_APPROVED"
-                    },
-                    "operator": "==",
-                    "right": {
-                      "type": "literal",
-                      "value": 0
-                    }
-                  },
-                  {
-                    "type": "predicate",
-                    "left": {
-                      "type": "fact",
-                      "id": "uav_takeoff_result",
-                      "moos_variable": "UAV_TAKEOFF_RESULT"
-                    },
-                    "operator": "!=",
-                    "right": {
-                      "type": "literal",
-                      "value": "UNKNOWN"
-                    }
+                    "type": "boolean",
+                    "operator": "or",
+                    "operands": [
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "REJECTED"
+                        }
+                      },
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "TIMEOUT"
+                        }
+                      },
+                      {
+                        "type": "predicate",
+                        "left": {
+                          "type": "fact",
+                          "id": "takeoff_request_result",
+                          "moos_variable": "TAKEOFF_REQUEST_RESULT"
+                        },
+                        "operator": "==",
+                        "right": {
+                          "type": "literal",
+                          "value": "CANCELLED"
+                        }
+                      }
+                    ]
                   }
                 ]
               },
@@ -2487,61 +2034,73 @@
         "UAV_FSM_LANDING_OPERATIONS_STATE": {
           "ESTABLISHING_LANDING_READINESS": {
             "d2_id": "establishing_landing_readiness",
+            "label": "Establishing landing readiness",
             "count_variable": "UAV_FSM_LANDING_OPERATIONS_STATE_ESTABLISHING_LANDING_READINESS_COUNT",
             "selector": ".moos_var_UAV_FSM_LANDING_OPERATIONS_STATE.moos_value_ESTABLISHING_LANDING_READINESS"
           },
           "REQUESTING_RECOVERY": {
             "d2_id": "requesting_recovery",
+            "label": "Requesting recovery",
             "count_variable": "UAV_FSM_LANDING_OPERATIONS_STATE_REQUESTING_RECOVERY_COUNT",
             "selector": ".moos_var_UAV_FSM_LANDING_OPERATIONS_STATE.moos_value_REQUESTING_RECOVERY"
           },
           "NEGOTIATING_RENDEZVOUS_POINT": {
             "d2_id": "negotiating_rendezvous_point",
+            "label": "Negotiating rendezvous point",
             "count_variable": "UAV_FSM_LANDING_OPERATIONS_STATE_NEGOTIATING_RENDEZVOUS_POINT_COUNT",
             "selector": ".moos_var_UAV_FSM_LANDING_OPERATIONS_STATE.moos_value_NEGOTIATING_RENDEZVOUS_POINT"
           },
           "MOVING_TO_RENDEZVOUS_POINT": {
             "d2_id": "moving_to_rendezvous_point",
+            "label": "Moving to rendezvous point",
             "count_variable": "UAV_FSM_LANDING_OPERATIONS_STATE_MOVING_TO_RENDEZVOUS_POINT_COUNT",
             "selector": ".moos_var_UAV_FSM_LANDING_OPERATIONS_STATE.moos_value_MOVING_TO_RENDEZVOUS_POINT"
           },
           "WAITING_FOR_LANDING_CLEARANCE": {
             "d2_id": "waiting_for_landing_clearance",
+            "label": "Waiting for landing clearance",
             "count_variable": "UAV_FSM_LANDING_OPERATIONS_STATE_WAITING_FOR_LANDING_CLEARANCE_COUNT",
             "selector": ".moos_var_UAV_FSM_LANDING_OPERATIONS_STATE.moos_value_WAITING_FOR_LANDING_CLEARANCE"
           },
           "APPROACHING": {
             "d2_id": "approaching",
+            "label": "Approaching",
             "count_variable": "UAV_FSM_LANDING_OPERATIONS_STATE_APPROACHING_COUNT",
             "selector": ".moos_var_UAV_FSM_LANDING_OPERATIONS_STATE.moos_value_APPROACHING"
           },
           "LANDING": {
             "d2_id": "landing",
+            "label": "Landing",
             "count_variable": "UAV_FSM_LANDING_OPERATIONS_STATE_LANDING_COUNT",
             "selector": ".moos_var_UAV_FSM_LANDING_OPERATIONS_STATE.moos_value_LANDING"
           },
           "RETRYING_LANDING_TARGET": {
             "d2_id": "retrying_landing_target",
+            "label": "Retrying landing target",
             "count_variable": "UAV_FSM_LANDING_OPERATIONS_STATE_RETRYING_LANDING_TARGET_COUNT",
             "selector": ".moos_var_UAV_FSM_LANDING_OPERATIONS_STATE.moos_value_RETRYING_LANDING_TARGET"
           },
           "DEVIATING_TO_SECONDARY_LANDING_POSITION": {
             "d2_id": "deviating_to_secondary_landing_position",
+            "label": "Transiting to rally point",
             "count_variable": "UAV_FSM_LANDING_OPERATIONS_STATE_DEVIATING_TO_SECONDARY_LANDING_POSITION_COUNT",
             "selector": ".moos_var_UAV_FSM_LANDING_OPERATIONS_STATE.moos_value_DEVIATING_TO_SECONDARY_LANDING_POSITION"
           },
           "SECONDARY_LANDING": {
             "d2_id": "secondary_landing",
+            "label": "Secondary landing",
             "count_variable": "UAV_FSM_LANDING_OPERATIONS_STATE_SECONDARY_LANDING_COUNT",
             "selector": ".moos_var_UAV_FSM_LANDING_OPERATIONS_STATE.moos_value_SECONDARY_LANDING"
           },
           "TRANSITING_TO_SECONDARY_LOITER_LOCATION": {
             "d2_id": "transiting_to_secondary_loiter_location",
+            "label": "Transiting to rally point",
             "count_variable": "UAV_FSM_LANDING_OPERATIONS_STATE_TRANSITING_TO_SECONDARY_LOITER_LOCATION_COUNT",
             "selector": ".moos_var_UAV_FSM_LANDING_OPERATIONS_STATE.moos_value_TRANSITING_TO_SECONDARY_LOITER_LOCATION"
           },
           "LOITERING_AT_SECONDARY_ALTITUDE": {
             "d2_id": "loitering_at_secondary_altitude",
+            "label": "Loitering at secondary altitude",
             "count_variable": "UAV_FSM_LANDING_OPERATIONS_STATE_LOITERING_AT_SECONDARY_ALTITUDE_COUNT",
             "selector": ".moos_var_UAV_FSM_LANDING_OPERATIONS_STATE.moos_value_LOITERING_AT_SECONDARY_ALTITUDE"
           }
@@ -2610,7 +2169,7 @@
               "to": "REQUESTING_RECOVERY"
             },
             "guard": {
-              "expression": "((uav_health_all_ok==true) && (uav_gps_available==true) && (uav_is_armed==true) && (uav_landed_state==IN_AIR)) || (uav_rendezvous_phase==REQUESTING) || (uav_rendezvous_phase==RENDEZVOUS) || (uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)",
+              "expression": "((uav_health_all_ok==1) && (uav_gps_available==1) && (uav_is_armed==1) && (uav_landed_state==IN_AIR)) || (uav_rendezvous_phase==REQUESTING) || (uav_rendezvous_phase==RENDEZVOUS) || (uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)",
               "ast": {
                 "type": "boolean",
                 "operator": "or",
@@ -2629,7 +2188,7 @@
                         "operator": "==",
                         "right": {
                           "type": "literal",
-                          "value": true
+                          "value": 1
                         }
                       },
                       {
@@ -2642,7 +2201,7 @@
                         "operator": "==",
                         "right": {
                           "type": "literal",
-                          "value": true
+                          "value": 1
                         }
                       },
                       {
@@ -2655,7 +2214,7 @@
                         "operator": "==",
                         "right": {
                           "type": "literal",
-                          "value": true
+                          "value": 1
                         }
                       },
                       {
@@ -2740,7 +2299,7 @@
                   }
                 ]
               },
-              "moos_expression": "((((((((UAV_HEALTH_ALL_OK=true) and (UAV_GPS_AVAILABLE=true)) and (UAV_IS_ARMED=true)) and (UAV_LANDED_STATE=IN_AIR)) or (UAV_RENDEZVOUS_PHASE=REQUESTING)) or (UAV_RENDEZVOUS_PHASE=RENDEZVOUS)) or (UAV_RENDEZVOUS_PHASE=ACQUIRING_TARGET)) or (UAV_RENDEZVOUS_PHASE=LANDING)) or (UAV_RENDEZVOUS_PHASE=COMPLETE)",
+              "moos_expression": "((((((((UAV_HEALTH_ALL_OK=1) and (UAV_GPS_AVAILABLE=1)) and (UAV_IS_ARMED=1)) and (UAV_LANDED_STATE=IN_AIR)) or (UAV_RENDEZVOUS_PHASE=REQUESTING)) or (UAV_RENDEZVOUS_PHASE=RENDEZVOUS)) or (UAV_RENDEZVOUS_PHASE=ACQUIRING_TARGET)) or (UAV_RENDEZVOUS_PHASE=LANDING)) or (UAV_RENDEZVOUS_PHASE=COMPLETE)",
               "effective_ast": {
                 "type": "boolean",
                 "operator": "or",
@@ -2759,7 +2318,7 @@
                         "operator": "==",
                         "right": {
                           "type": "literal",
-                          "value": true
+                          "value": 1
                         }
                       },
                       {
@@ -2772,7 +2331,7 @@
                         "operator": "==",
                         "right": {
                           "type": "literal",
-                          "value": true
+                          "value": 1
                         }
                       },
                       {
@@ -2785,7 +2344,7 @@
                         "operator": "==",
                         "right": {
                           "type": "literal",
-                          "value": true
+                          "value": 1
                         }
                       },
                       {
@@ -2900,7 +2459,7 @@
               "to": "TRANSITING_TO_SECONDARY_LOITER_LOCATION"
             },
             "guard": {
-              "expression": "(uav_health_all_ok==false) || (uav_gps_available==false)",
+              "expression": "(uav_health_all_ok==0) || (uav_gps_available==0)",
               "ast": {
                 "type": "boolean",
                 "operator": "or",
@@ -2915,7 +2474,7 @@
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": false
+                      "value": 0
                     }
                   },
                   {
@@ -2928,12 +2487,12 @@
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": false
+                      "value": 0
                     }
                   }
                 ]
               },
-              "moos_expression": "(UAV_HEALTH_ALL_OK=false) or (UAV_GPS_AVAILABLE=false)",
+              "moos_expression": "(UAV_HEALTH_ALL_OK=0) or (UAV_GPS_AVAILABLE=0)",
               "effective_ast": {
                 "type": "boolean",
                 "operator": "or",
@@ -2948,7 +2507,7 @@
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": false
+                      "value": 0
                     }
                   },
                   {
@@ -2961,7 +2520,7 @@
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": false
+                      "value": 0
                     }
                   }
                 ]
@@ -4571,7 +4130,7 @@
               "target_state_id": "idle"
             },
             "guard": {
-              "expression": "(uav_rendezvous_phase==COMPLETE) && (uav_landed_state==ON_GROUND) && (uav_is_armed==false)",
+              "expression": "(uav_rendezvous_phase==COMPLETE) && (uav_landed_state==ON_GROUND) && (uav_is_armed==0)",
               "ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -4612,12 +4171,12 @@
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": false
+                      "value": 0
                     }
                   }
                 ]
               },
-              "moos_expression": "(((UAV_FSM_LANDING_OPERATIONS_STATE=LANDING) and (UAV_RENDEZVOUS_PHASE=COMPLETE)) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_IS_ARMED=false)",
+              "moos_expression": "(((UAV_FSM_LANDING_OPERATIONS_STATE=LANDING) and (UAV_RENDEZVOUS_PHASE=COMPLETE)) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_IS_ARMED=0)",
               "effective_ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -4673,7 +4232,7 @@
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": false
+                      "value": 0
                     }
                   }
                 ]
@@ -4731,7 +4290,7 @@
               "target_state_id": "offnominal"
             },
             "guard": {
-              "expression": "(uav_secondary_recovery_state==LANDED) && (uav_landed_state==ON_GROUND) && (uav_is_armed==false)",
+              "expression": "(uav_secondary_recovery_state==LANDED) && (uav_landed_state==ON_GROUND) && (uav_is_armed==0)",
               "ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -4772,12 +4331,12 @@
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": false
+                      "value": 0
                     }
                   }
                 ]
               },
-              "moos_expression": "(((UAV_FSM_LANDING_OPERATIONS_STATE=SECONDARY_LANDING) and (UAV_SECONDARY_RECOVERY_STATE=LANDED)) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_IS_ARMED=false)",
+              "moos_expression": "(((UAV_FSM_LANDING_OPERATIONS_STATE=SECONDARY_LANDING) and (UAV_SECONDARY_RECOVERY_STATE=LANDED)) and (UAV_LANDED_STATE=ON_GROUND)) and (UAV_IS_ARMED=0)",
               "effective_ast": {
                 "type": "boolean",
                 "operator": "and",
@@ -4833,7 +4392,7 @@
                     "operator": "==",
                     "right": {
                       "type": "literal",
-                      "value": false
+                      "value": 0
                     }
                   }
                 ]

@@ -17,7 +17,7 @@ trap on_exit SIGINT
 ME=$(basename "$0")
 MISSION_DIR=$(cd "$(dirname "$0")" && pwd)
 PEARL_ROOT=$(cd "$MISSION_DIR/../../.." && pwd)
-export PATH="$PEARL_ROOT/bin:$PATH"
+export PATH="$PEARL_ROOT/scripts:$PEARL_ROOT/bin:$PATH"
 cd "$MISSION_DIR" || exit 1
 CMD_ARGS=""
 TIME_WARP=1
@@ -133,7 +133,8 @@ fi
 #  Part 6: Launch shoreside.
 #------------------------------------------------------------
 echo "Launching Shoreside MOOS Community. WARP=$TIME_WARP"
-pAntler targ_shoreside.moos >& /dev/null &
+mkdir -p "$MISSION_DIR/LOG_antler"
+pAntler targ_shoreside.moos >"$MISSION_DIR/LOG_antler/antler.log" 2>&1 &
 echo "Done Launching Shoreside Community"
 
 #------------------------------------------------------------

@@ -6,7 +6,6 @@
 /****************************************************************/
 
 #include <cstdlib>
-#include <iostream>
 #include "RouteBuffer_Info.h"
 #include "ColorParse.h"
 #include "ReleaseInfo.h"
@@ -113,6 +112,13 @@ void showInterfaceAndExit()
   blk("    NODE_REPORT = NAME=pearl,X=-90,Y=-65,...                    ");
   blk("  Vehicle role:                                                 ");
   blk("    ROUTE_BUFFER_COMMAND = action=deploy # points={-100,-50}    ");
+  blk("                           # speed=1 # capture_radius=0.5        ");
+  blk("                           # slip_radius=0.5 # route_name=return ");
+  blk("                           # purpose=operator|recovery           ");
+  blk("                           // speed/radii/name are optional      ");
+  blk("    Optional vehicle policy: route_purpose_var,               ");
+  blk("    operation_state_var, recovery_source, repeated            ");
+  blk("    operator_stage_state/recovery_stage_state.                ");
   blk("                                                                ");
   blk("PUBLICATIONS:                                                   ");
   blk("------------------------------------                            ");
@@ -120,7 +126,8 @@ void showInterfaceAndExit()
   blk("    NODE_MESSAGE_LOCAL, VIEW_POINT, VIEW_SEGLIST                ");
   blk("    ROUTE_BUFFER_STATE, ROUTE_BUFFER_COUNT                      ");
   blk("  Vehicle role:                                                 ");
-  blk("    ROUTE_UPDATE, ROUTE_DEPLOY (configurable), ROUTE_CLEAR      ");
+  blk("    ROUTE_UPDATE, route_deploy_var (configurable), ROUTE_CLEAR  ");
+  blk("    route_purpose_var (if configured)                        ");
   blk("    ROUTE_BUFFER_VEHICLE_STATE                                  ");
   exit(0);
 }

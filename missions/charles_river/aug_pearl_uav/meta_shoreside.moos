@@ -27,8 +27,20 @@ ProcessConfig = ANTLER
   Run = pRouteBuffer    @ NewConsole = false
   Run = pEchoVar        @ NewConsole = false ~ uFieldRelay
 #ifdef LAUNCH_GUI yes
-  Run = moos-vnc-session @ NewConsole=false ~ pMarineViewer
+  Run = moos-vnc-session  @ NewConsole=false ~ pMarineViewer
+  Run = moos-ttyd-session @ NewConsole=false ~ mission-terminal
 #endif
+  Run = pWebSocketServer @ NewConsole = false
+}
+
+Run = pWebSocketServer @ NewConsole = false
+
+ProcessConfig = pWebSocketServer
+{
+  AppTick          = 4
+  CommsTick        = 4
+  WSPort           = 9090
+  AllowSubmissions = false
 }
 
 //----------------------------------------------------

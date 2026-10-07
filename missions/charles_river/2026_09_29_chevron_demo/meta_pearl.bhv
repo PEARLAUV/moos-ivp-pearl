@@ -3,23 +3,21 @@
 // NAME: Charles Benjamin
 //-------------------------------------------------
 
-initialize MOOS_MANUAL_OVERRIDE = true
+initialize MOOS_MANUAL_OVERRIDE = false
+initialize PEARL_ALLSTOP        = false
+initialize MAIN_TASK_STATUS         = none
 initialize PEARL_RENDEZVOUS_ACTIVE  = false
 initialize PEARL_RENDEZVOUS_ARRIVED = false
-
-// BHV_FSM fallback (generate with --backend bhv):
-//#include plug_pearl_states.bhv
+initialize PEARL_TAKEOFF_STATIONKEEP_ACTIVE = false
 
 //----------------------------------------------------
 Behavior = BHV_StationKeep
 {
   name      = pearl_station_keep
   pwt       = 100
-  condition = DEPLOY=true
-  condition = RETURN=false
-  condition = STATION_KEEP=true
+  // Retain autonomous station-keeping while ALLSTOP suspends the FSM.
+  condition = (PEARL_FSM_MAIN_ACTIVITY_STATE=IDLE) or (PEARL_ALLSTOP=true)
   condition = MOOS_MANUAL_OVERRIDE=false
-  condition = PEARL_RENDEZVOUS_ACTIVE=false
 
   // Hold tightly enough for the UAV's three-metre landing-separation gate.
   center_activate    = true
@@ -34,16 +32,34 @@ Behavior = BHV_StationKeep
 }
 
 //----------------------------------------------------
+// Independent station-keeping during takeoff support, with a distinct display.
+Behavior = BHV_StationKeep
+{
+  name         = pearl_takeoff_station_keep
+  pwt          = 100
+  condition    = PEARL_FSM_OPERATION_STATE=TAKEOFF_SUPPORT
+  activeflag   = PEARL_TAKEOFF_STATIONKEEP_ACTIVE=true
+  inactiveflag = PEARL_TAKEOFF_STATIONKEEP_ACTIVE=false
+
+  center_activate    = true
+  inner_radius       = 0.25
+  outer_radius       = 0.5
+  hibernation_radius = 0.75
+  outer_speed        = $(SPEED)
+  transit_speed      = $(SPEED)
+  swing_time         = 3
+
+  visual_hints = vertex_size=0, edge_color=red, edge_size=2
+}
+
+//----------------------------------------------------
 Behavior = BHV_Waypoint
 {
-  name      = pearl_waypoints
+  name      = pearl_main_task
   pwt       = 100
-  condition = DEPLOY=true
-  condition = RETURN=false
-  condition = STATION_KEEP=false
-  condition = MOOS_MANUAL_OVERRIDE=false
-  condition = PEARL_RENDEZVOUS_ACTIVE=false
-  endflag   = RETURN=true
+  condition = PEARL_FSM_MAIN_ACTIVITY_STATE=EXECUTING_MISSION
+  perpetual = true
+  endflag   = MAIN_TASK_STATUS=completed
   updates   = PEARL_WPT_UPDATE
 
   lead           = 2
@@ -68,19 +84,14 @@ Behavior = BHV_Waypoint
 {
   name      = pearl_return
   pwt       = 100
-  condition = DEPLOY=true
-  condition = RETURN=true
-  condition = STATION_KEEP=false
-  condition = MOOS_MANUAL_OVERRIDE=false
-  condition = PEARL_RENDEZVOUS_ACTIVE=false
+  condition = PEARL_FSM_MAIN_ACTIVITY_STATE=RETURNING_TO_BASE
+  endflag   = MAIN_TASK_STATUS=returned
   perpetual = true
-  endflag   = RETURN=false
-  endflag   = STATION_KEEP=true
 
   speed          = $(SPEED)
   capture_radius = 2
   slip_radius    = 8
-  points         = 10,9
+  points         = 10.6,4.8
 }
 
 //----------------------------------------------------

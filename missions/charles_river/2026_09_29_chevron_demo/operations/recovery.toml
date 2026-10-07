@@ -1,0 +1,68 @@
+# Shared recovery operation graph. The phases represent authority-held platform
+# reservation plus UAV physical progress. COMMITTED_TO_ARDUPILOT is an
+# irreversible boundary: protocol cancellation is no longer permitted there.
+
+[operation]
+name = "recovery"
+version = 5
+initial = "REQUESTED"
+
+[wire]
+request_variable = "RECOVERY_OPERATION_REQUEST"
+status_variable = "RECOVERY_OPERATION_COMMIT"
+
+[states]
+pending = [
+  "REQUESTED", "DEFERRED", "ACCEPTED", "RENDEZVOUS",
+  "ACQUIRING_TARGET", "CLEARED_TO_LAND", "COMMITTED_TO_ARDUPILOT",
+  "LANDED", "ABORTING", "SETTLING_FAILURE",
+]
+success = ["COMPLETED"]
+failure = ["REJECTED", "FAILED", "CANCELLED", "EXPIRED"]
+
+[transitions.authority]
+REQUESTED = ["DEFERRED", "ACCEPTED", "REJECTED"]
+DEFERRED = ["ACCEPTED", "REJECTED"]
+ACCEPTED = ["SETTLING_FAILURE"]
+RENDEZVOUS = ["SETTLING_FAILURE"]
+ACQUIRING_TARGET = ["CLEARED_TO_LAND", "SETTLING_FAILURE"]
+CLEARED_TO_LAND = ["SETTLING_FAILURE"]
+COMMITTED_TO_ARDUPILOT = ["SETTLING_FAILURE"]
+LANDED = ["COMPLETED", "SETTLING_FAILURE"]
+ABORTING = ["CANCELLED", "SETTLING_FAILURE"]
+SETTLING_FAILURE = ["FAILED"]
+
+# Skips support snapshot reconciliation after loss without replaying physical
+# entry actions. The adapter must derive these proposals from session-matched
+# pRendezvous and vehicle evidence, never from an uncorrelated scalar command.
+[transitions.requester]
+REQUESTED = ["ABORTING"]
+DEFERRED = ["ABORTING"]
+ACCEPTED = ["RENDEZVOUS", "ACQUIRING_TARGET", "ABORTING"]
+RENDEZVOUS = ["ACQUIRING_TARGET", "ABORTING"]
+ACQUIRING_TARGET = ["ABORTING"]
+CLEARED_TO_LAND = ["COMMITTED_TO_ARDUPILOT", "LANDED", "ABORTING"]
+COMMITTED_TO_ARDUPILOT = ["LANDED"]
+
+[transitions.protocol]
+REQUESTED = ["EXPIRED"]
+DEFERRED = ["EXPIRED"]
+
+[admission]
+when_unready = "defer"
+when_busy = "reject"
+max_defer_time = 30
+
+[protocol]
+replay_cache_size = 256
+event_queue_size = 32
+require_correlated_commands = true
+
+[timing]
+request_ttl = 60
+request_republish_interval = 1
+status_republish_interval = 1
+lease_timeout = 3
+readiness_max_age = 3
+max_clock_skew = 2
+terminal_republish_time = 120

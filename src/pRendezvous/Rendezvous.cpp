@@ -8,7 +8,6 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
-#include <iterator>
 #include "MBUtils.h"
 #include "ACTable.h"
 #include "NodeMessage.h"
@@ -46,6 +45,13 @@ Rendezvous::Rendezvous()
   m_landing_target_max_angle = 0.20;
   m_reacquire_update_interval = 2.0;
   m_reacquire_update_distance = 1.0;
+  m_recovery_route_speed = 1.5;
+  m_recovery_capture_radius = 0.5;
+  m_secondary_landing_x = 10.0;
+  m_secondary_landing_y = 15.0;
+  m_secondary_arrival_radius = 2.0;
+  m_secondary_arrival_dwell = 2.0;
+  m_secondary_landing_delay = 3.0;
   m_expected_target_num = 0;
   m_state_post_interval = 1.0;
   m_require_health      = true;
@@ -54,9 +60,12 @@ Rendezvous::Rendezvous()
   m_require_landing_target = true;
   m_require_platform_ready = false;
   m_require_platform_health = true;
+  m_secondary_landing_enabled = false;
 
   m_state                = "IDLE";
   m_reason               = "startup";
+  m_remote_uav_phase     = "IDLE";
+  m_remote_uav_session   = "";
   m_state_enter_time     = 0.0;
   m_last_state_post_time = 0.0;
   m_route_command_time   = 0.0;
@@ -100,6 +109,9 @@ Rendezvous::Rendezvous()
   m_landing_target_angle_time = 0.0;
   m_pearl_activation_time = 0.0;
   m_arrival_start_time   = 0.0;
+  m_secondary_state_enter_time = 0.0;
+  m_secondary_arrival_start_time = 0.0;
+  m_secondary_recovery_state = "IDLE";
   m_nav_x_set            = false;
   m_nav_y_set            = false;
   m_battery_set          = false;
@@ -123,6 +135,19 @@ Rendezvous::Rendezvous()
   m_pearl_activation_pending = false;
   m_pearl_arrived        = false;
   m_uav_arrived          = false;
+  m_pearl_deploy         = false;
+  m_pearl_return         = false;
+  m_pearl_station_keep   = false;
+  m_pearl_manual_override = true;
+  m_pearl_deploy_set     = false;
+  m_pearl_return_set     = false;
+  m_pearl_station_keep_set = false;
+  m_pearl_manual_override_set = false;
+  m_pearl_control_saved  = false;
+  m_saved_pearl_deploy   = false;
+  m_saved_pearl_return   = false;
+  m_saved_pearl_station_keep = false;
+  m_saved_pearl_manual_override = true;
   m_clearance_received   = false;
   m_landing_target_available = false;
   m_landing_target_gate_ready = false;
@@ -151,7 +176,25 @@ bool Rendezvous::OnNewMail(MOOSMSG_LIST &NewMail)
     string key = msg.GetKey();
     bool handled = false;
 
-    if((m_role == "uav") && (key == "RENDEZVOUS_START"))
+    map<string, RequiredCheck>::iterator check = m_required_checks.find(key);
+    if(check != m_required_checks.end()) {
+      if(msg.IsString()) {
+        check->second.result = tolower(stripBlankEnds(msg.GetString()));
+        handled = true;
+      }
+    }
+    else if(strEnds(key, "_STATE") &&
+            ((check = m_required_checks.find(key.substr(0, key.size() - 6))) !=
+             m_required_checks.end())) {
+      if(msg.IsString()) {
+        check->second.state_result = tolower(tokStringParse(
+          msg.GetString(), "status", ',', '='));
+        check->second.session = tokStringParse(
+          msg.GetString(), "session", ',', '=');
+        handled = true;
+      }
+    }
+    else if((m_role == "uav") && (key == "RENDEZVOUS_START"))
       handled = handleMailStart(msg);
     else if(key == "RENDEZVOUS_ABORT")
       handled = handleMailAbort(msg);
@@ -254,6 +297,26 @@ bool Rendezvous::OnNewMail(MOOSMSG_LIST &NewMail)
       m_pearl_arrived = mailIsTrue(msg);
       handled = true;
     }
+    else if((m_role == "pearl") && (key == "UAV_RENDEZVOUS_PHASE") &&
+            msg.IsString()) {
+      m_remote_uav_phase = toupper(stripBlankEnds(msg.GetString()));
+      handled = true;
+    }
+    else if((m_role == "pearl") && (key == "UAV_RENDEZVOUS_SESSION") &&
+            msg.IsString()) {
+      m_remote_uav_session = stripBlankEnds(msg.GetString());
+      handled = true;
+    }
+    else if((m_role == "pearl") && (key == "DEPLOY"))
+      handled = handleMailBool(msg, m_pearl_deploy, m_pearl_deploy_set);
+    else if((m_role == "pearl") && (key == "RETURN"))
+      handled = handleMailBool(msg, m_pearl_return, m_pearl_return_set);
+    else if((m_role == "pearl") && (key == "STATION_KEEP"))
+      handled = handleMailBool(msg, m_pearl_station_keep,
+                               m_pearl_station_keep_set);
+    else if((m_role == "pearl") && (key == "MOOS_MANUAL_OVERRIDE"))
+      handled = handleMailBool(msg, m_pearl_manual_override,
+                               m_pearl_manual_override_set);
     else if(key == "APPCAST_REQ")
       handled = true;
 
@@ -368,6 +431,20 @@ bool Rendezvous::OnStartUp()
       handled = setPosDoubleOnString(m_reacquire_update_interval, value);
     else if(param == "reacquire_update_distance")
       handled = setPosDoubleOnString(m_reacquire_update_distance, value);
+    else if(param == "recovery_route_speed")
+      handled = setPosDoubleOnString(m_recovery_route_speed, value);
+    else if(param == "recovery_capture_radius")
+      handled = setPosDoubleOnString(m_recovery_capture_radius, value);
+    else if(param == "secondary_landing_x")
+      handled = setDoubleOnString(m_secondary_landing_x, value);
+    else if(param == "secondary_landing_y")
+      handled = setDoubleOnString(m_secondary_landing_y, value);
+    else if(param == "secondary_arrival_radius")
+      handled = setPosDoubleOnString(m_secondary_arrival_radius, value);
+    else if(param == "secondary_arrival_dwell")
+      handled = setNonNegDoubleOnString(m_secondary_arrival_dwell, value);
+    else if(param == "secondary_landing_delay")
+      handled = setNonNegDoubleOnString(m_secondary_landing_delay, value);
     else if(param == "expected_target_num") {
       double expected = 0;
       handled = setNonNegDoubleOnString(expected, value) &&
@@ -389,6 +466,24 @@ bool Rendezvous::OnStartUp()
       handled = setBooleanOnString(m_require_platform_ready, value);
     else if(param == "require_platform_health")
       handled = setBooleanOnString(m_require_platform_health, value);
+    else if(param == "require_check") {
+      string variable;
+      // A result variable may itself end in _STATE (for example,
+      // RECOVERY_PRECHECKS_STATE). Its diagnostic is then <VAR>_STATE,
+      // yielding RECOVERY_PRECHECKS_STATE_STATE. Direct result lookup runs
+      // before diagnostic-suffix lookup in OnNewMail, so this is unambiguous.
+      handled = setNonWhiteVarOnString(variable, value) &&
+                (m_required_checks.count(variable) == 0);
+      if(handled)
+        m_required_checks[variable] = RequiredCheck();
+      else {
+        reportConfigWarning("Invalid or duplicate require_check: " + value);
+        m_config_valid = false;
+        handled = true;
+      }
+    }
+    else if(param == "secondary_landing_enabled")
+      handled = setBooleanOnString(m_secondary_landing_enabled, value);
 
     if(!handled)
       reportUnhandledConfigWarning(orig);
@@ -409,6 +504,10 @@ bool Rendezvous::OnStartUp()
     reportConfigWarning("critical_battery must not exceed min_battery");
     m_config_valid = false;
   }
+  if(!m_required_checks.empty() && (m_role != "pearl")) {
+    reportConfigWarning("require_check is supported only in the pearl role");
+    m_config_valid = false;
+  }
 
   registerVariables();
   return(true);
@@ -427,6 +526,10 @@ void Rendezvous::registerVariables()
   Register("PEARL_BATTERY_DATA_VALID", 0);
   Register("PEARL_WIND_SPEED", 0);
   Register("PEARL_WIND_DATA_VALID", 0);
+  for(const auto& check : m_required_checks) {
+    Register(check.first, 0);
+    Register(check.first + "_STATE", 0);
+  }
 
   if(m_role == "uav") {
     Register("RENDEZVOUS_START", 0);
@@ -455,6 +558,12 @@ void Rendezvous::registerVariables()
     Register("RENDEZVOUS_REQUEST", 0);
     Register("RENDEZVOUS_RESPONSE", 0);
     Register("PEARL_RENDEZVOUS_ARRIVED", 0);
+    Register("UAV_RENDEZVOUS_PHASE", 0);
+    Register("UAV_RENDEZVOUS_SESSION", 0);
+    Register("DEPLOY", 0);
+    Register("RETURN", 0);
+    Register("STATION_KEEP", 0);
+    Register("MOOS_MANUAL_OVERRIDE", 0);
     Register("PROC_WATCH_ALL_OK", 0);
     Register("NODE_REPORT", 0);
   }
@@ -505,11 +614,20 @@ bool Rendezvous::handleMailRequest(const CMOOSMsg& msg)
 
   if((m_state == "REQUESTING") || (m_state == "RENDEZVOUS") ||
      (m_state == "ACQUIRING_TARGET") || (m_state == "LANDING")) {
+    // Network retries for the request currently waiting on checks are
+    // idempotent. A different request remains fail-closed as busy.
+    if((m_state == "REQUESTING") && !m_pending_request.empty() &&
+       (id == m_session_id))
+      return(true);
     string response = "id=" + id + "#status=rejected#reason=busy";
     sendMessage(m_peer_node, "RENDEZVOUS_RESPONSE", response);
     return(true);
   }
 
+  if(!m_required_checks.empty()) {
+    beginRequiredChecks(request, id);
+    return(true);
+  }
   return(proposeRendezvous(request));
 }
 
@@ -658,6 +776,48 @@ bool Rendezvous::handleMailTimedBool(const CMOOSMsg& msg, bool& value,
   return(true);
 }
 
+// Return -1 for a terminal check failure, 0 while checks are pending, and 1
+// only when every scalar result and its session diagnostic agree on success.
+int Rendezvous::requiredChecksStatus(string& reason) const
+{
+  // A confirmed failure wins even if another required check has not yet
+  // published for this session.
+  for(const auto& entry : m_required_checks) {
+    const RequiredCheck& check = entry.second;
+    if(check.session != m_session_id)
+      continue;
+    if((check.result == "fail") || (check.result == "expired")) {
+      reason = "required_check_" + check.result + ":" + entry.first;
+      return(-1);
+    }
+    if((check.state_result == "fail") ||
+       (check.state_result == "expired")) {
+      reason = "required_check_" + check.state_result + ":" + entry.first;
+      return(-1);
+    }
+  }
+
+  for(const auto& entry : m_required_checks) {
+    const RequiredCheck& check = entry.second;
+    if((check.session != m_session_id) ||
+       (check.result != "success") ||
+       (check.state_result != "success"))
+      return(0);
+  }
+  return(1);
+}
+
+void Rendezvous::beginRequiredChecks(const string& request, const string& id)
+{
+  m_session_id = id;
+  m_pending_request = request;
+  m_target_set = false;
+  m_arrival_start_time = 0;
+  for(auto& entry : m_required_checks)
+    entry.second = RequiredCheck();
+  transitionTo("REQUESTING", "required_checks_pending");
+}
+
 //---------------------------------------------------------
 // Role logic
 
@@ -701,6 +861,20 @@ void Rendezvous::iterateUAV()
       return;
     }
     checkUAVArrival();
+
+    // Both vehicles may satisfy the rendezvous-point radius yet stop on
+    // opposite sides of it. Close directly on PEARL until the actual
+    // separation gate can be held, rather than waiting indefinitely at the
+    // nominal point.
+    if(m_uav_arrived && peerReportIsFresh()) {
+      double separation = hypot(m_nav_x - m_peer_report_x,
+                                m_nav_y - m_peer_report_y);
+      Notify("UAV_PEER_DISTANCE", separation);
+      if((separation > m_max_peer_separation) &&
+         ((m_curr_time - m_last_reacquire_route_time) >=
+          m_reacquire_update_interval))
+        routeToPearl(true);
+    }
   }
   else if(m_state == "ACQUIRING_TARGET")
     updateTargetAcquisition();
@@ -711,11 +885,42 @@ void Rendezvous::iterateUAV()
     m_completion_sent = true;
     transitionTo("COMPLETE", "landed");
   }
+
+  if(m_secondary_recovery_state != "IDLE")
+    updateSecondaryRecovery();
 }
 
 void Rendezvous::iteratePearl()
 {
+  reconcilePearlWithUAV();
   double elapsed = m_curr_time - m_state_enter_time;
+
+  if((m_state == "REQUESTING") && !m_pending_request.empty()) {
+    string check_reason;
+    int check_status = requiredChecksStatus(check_reason);
+    if(check_status < 0) {
+      string response = "id=" + m_session_id;
+      response += "#status=rejected#reason=" + check_reason;
+      sendMessage(m_peer_node, "RENDEZVOUS_RESPONSE", response);
+      m_pending_request.clear();
+      abortMission(check_reason, false);
+      return;
+    }
+    if(check_status > 0) {
+      string request = m_pending_request;
+      m_pending_request.clear();
+      proposeRendezvous(request);
+      return;
+    }
+    if(elapsed > m_request_timeout) {
+      string response = "id=" + m_session_id;
+      response += "#status=rejected#reason=required_check_timeout";
+      sendMessage(m_peer_node, "RENDEZVOUS_RESPONSE", response);
+      m_pending_request.clear();
+      abortMission("required_check_timeout", false);
+    }
+    return;
+  }
 
   if(m_pearl_activation_pending &&
      (m_curr_time >= m_pearl_activation_time)) {
@@ -867,6 +1072,8 @@ bool Rendezvous::proposeRendezvous(const string& request)
     return(true);
   }
 
+  savePearlControlState();
+
   double uav_x = atof(sx.c_str());
   double uav_y = atof(sy.c_str());
   double request_speed = atof(sspeed.c_str());
@@ -896,6 +1103,7 @@ bool Rendezvous::proposeRendezvous(const string& request)
   if(!sendMessage(m_peer_node, "RENDEZVOUS_PROPOSAL", proposal))
     return(false);
 
+  m_pending_request.clear();
   m_proposals_sent++;
   publishPoint(true);
   transitionTo("REQUESTING", "proposal_sent");
@@ -933,9 +1141,15 @@ bool Rendezvous::acceptProposal(const string& proposal)
   m_uav_arrived = false;
   m_arrival_start_time = 0;
 
-  string command = "action=deploy # points={";
+  string command = "action=deploy # purpose=recovery # route_name=recovery_" + m_session_id;
+  command += " # points={";
   command += doubleToStringX(m_target_x, 2) + ",";
   command += doubleToStringX(m_target_y, 2) + "}";
+  command += " # speed=" + doubleToStringX(m_recovery_route_speed, 2);
+  command += " # capture_radius=" +
+             doubleToStringX(m_recovery_capture_radius, 2);
+  command += " # slip_radius=" +
+             doubleToStringX(m_recovery_capture_radius, 2);
   Notify("ROUTE_BUFFER_COMMAND", command);
   m_route_command_time = m_curr_time;
   m_reason = "staging_route";
@@ -945,7 +1159,11 @@ bool Rendezvous::acceptProposal(const string& proposal)
 
 void Rendezvous::activatePearlTransit()
 {
-  string update = "points=" + doubleToStringX(m_target_x, 2) + ",";
+  // A templating=spawn behavior only treats an update as a spawn request
+  // when it contains name=. The session ID also guarantees a fresh waypoint
+  // instance for each rendezvous.
+  string update = "name=" + m_session_id;
+  update += " # points=" + doubleToStringX(m_target_x, 2) + ",";
   update += doubleToStringX(m_target_y, 2);
   update += " # repeat=0 # order=normal";
 
@@ -953,10 +1171,10 @@ void Rendezvous::activatePearlTransit()
   // prevents it from completing on activation before it sees its first point.
   Notify("PEARL_RENDEZVOUS_UPDATE", update);
   Notify("PEARL_RENDEZVOUS_ARRIVED", "false");
-  Notify("PEARL_DEPLOY", "true");
-  Notify("PEARL_RETURN", "false");
-  Notify("PEARL_STATION_KEEP", "false");
-  Notify("PEARL_MANUAL_OVERRIDE", "false");
+  Notify("DEPLOY", "true");
+  Notify("RETURN", "false");
+  Notify("STATION_KEEP", "false");
+  Notify("MOOS_MANUAL_OVERRIDE", "false");
 
   // Give the Helm one iteration to apply the update before activating an
   // initially-empty waypoint behavior.
@@ -998,10 +1216,10 @@ void Rendezvous::checkUAVArrival()
 void Rendezvous::grantLandingClearance()
 {
   Notify("PEARL_RENDEZVOUS_ACTIVE", "false");
-  Notify("PEARL_DEPLOY", "true");
-  Notify("PEARL_RETURN", "false");
-  Notify("PEARL_STATION_KEEP", "true");
-  Notify("PEARL_MANUAL_OVERRIDE", "false");
+  Notify("DEPLOY", "true");
+  Notify("RETURN", "false");
+  Notify("STATION_KEEP", "true");
+  Notify("MOOS_MANUAL_OVERRIDE", "false");
 
   string clearance = "id=" + m_session_id + "#status=cleared";
   clearance += "#x=" + doubleToStringX(m_nav_x, 2);
@@ -1103,9 +1321,15 @@ void Rendezvous::routeToPearl(bool force)
   if(!force && (!interval_ok || (moved < m_reacquire_update_distance)))
     return;
 
-  string command = "action=deploy # points={";
+  string command = "action=deploy # purpose=recovery # route_name=recovery_" + m_session_id;
+  command += " # points={";
   command += doubleToStringX(m_peer_report_x, 2) + ",";
   command += doubleToStringX(m_peer_report_y, 2) + "}";
+  command += " # speed=" + doubleToStringX(m_recovery_route_speed, 2);
+  command += " # capture_radius=" +
+             doubleToStringX(m_recovery_capture_radius, 2);
+  command += " # slip_radius=" +
+             doubleToStringX(m_recovery_capture_radius, 2);
   Notify("ROUTE_BUFFER_COMMAND", command);
   m_route_command_time = m_curr_time;
   m_last_reacquire_route_time = m_curr_time;
@@ -1127,6 +1351,141 @@ void Rendezvous::beginPrecisionLanding()
   transitionTo("LANDING", "landing_gate_ready");
 }
 
+void Rendezvous::savePearlControlState()
+{
+  if((m_role != "pearl") || m_pearl_control_saved)
+    return;
+
+  if(!m_pearl_deploy_set || !m_pearl_return_set ||
+     !m_pearl_station_keep_set || !m_pearl_manual_override_set)
+    reportRunWarning("Saving incomplete PEARL control state");
+
+  m_saved_pearl_deploy = m_pearl_deploy;
+  m_saved_pearl_return = m_pearl_return;
+  m_saved_pearl_station_keep = m_pearl_station_keep;
+  m_saved_pearl_manual_override = m_pearl_manual_override;
+  m_pearl_control_saved = true;
+
+  Notify("PEARL_CONTROL_RESTORED", "false");
+  Notify("PEARL_CONTROL_HISTORY",
+         "deploy=" + boolToString(m_saved_pearl_deploy) +
+         ",return=" + boolToString(m_saved_pearl_return) +
+         ",station_keep=" + boolToString(m_saved_pearl_station_keep) +
+         ",manual_override=" + boolToString(m_saved_pearl_manual_override));
+}
+
+void Rendezvous::restorePearlControlState()
+{
+  if((m_role != "pearl") || !m_pearl_control_saved)
+    return;
+
+  Notify("PEARL_RENDEZVOUS_ACTIVE", "false");
+  Notify("DEPLOY", boolToString(m_saved_pearl_deploy));
+  Notify("RETURN", boolToString(m_saved_pearl_return));
+  Notify("STATION_KEEP", boolToString(m_saved_pearl_station_keep));
+  Notify("MOOS_MANUAL_OVERRIDE", boolToString(m_saved_pearl_manual_override));
+  Notify("PEARL_CONTROL_RESTORED", "true");
+  m_pearl_control_saved = false;
+  reportEvent("Restored pre-rendezvous PEARL control state");
+}
+
+void Rendezvous::reconcilePearlWithUAV()
+{
+  if((m_role != "pearl") || (m_session_id == "") ||
+     (m_remote_uav_session != m_session_id))
+    return;
+
+  if((m_remote_uav_phase == "LANDING") &&
+     ((m_state == "RENDEZVOUS") || (m_state == "ACQUIRING_TARGET")))
+    transitionTo("LANDING", "reconciled_from_uav_phase");
+  else if((m_remote_uav_phase == "COMPLETE") &&
+          ((m_state == "REQUESTING") || (m_state == "RENDEZVOUS") ||
+           (m_state == "ACQUIRING_TARGET") || (m_state == "LANDING"))) {
+    transitionTo("COMPLETE", "reconciled_from_uav_phase");
+    publishPoint(false);
+  }
+  else if((m_remote_uav_phase == "ABORT") &&
+          ((m_state == "REQUESTING") || (m_state == "RENDEZVOUS") ||
+           (m_state == "ACQUIRING_TARGET")))
+    abortMission("reconciled_uav_abort", false);
+}
+
+void Rendezvous::beginSecondaryRecovery()
+{
+  if(!m_secondary_landing_enabled ||
+     (m_secondary_recovery_state != "IDLE") ||
+     !m_uav_landed_set || !m_uav_in_air)
+    return;
+
+  string command = "action=deploy # purpose=recovery # route_name=secondary_" + m_session_id;
+  command += " # points={";
+  command += doubleToStringX(m_secondary_landing_x, 2) + ",";
+  command += doubleToStringX(m_secondary_landing_y, 2) + "}";
+  command += " # speed=" + doubleToStringX(m_recovery_route_speed, 2);
+  command += " # capture_radius=" +
+             doubleToStringX(m_recovery_capture_radius, 2);
+  command += " # slip_radius=" +
+             doubleToStringX(m_recovery_capture_radius, 2);
+  Notify("ROUTE_BUFFER_COMMAND", command);
+
+  string point = "x=" + doubleToStringX(m_secondary_landing_x, 2);
+  point += ",y=" + doubleToStringX(m_secondary_landing_y, 2);
+  point += ",label=secondary_landing";
+  point += ",vertex_color=orange,label_color=orange,vertex_size=10";
+  Notify("VIEW_POINT", point);
+  Notify("UAV_SECONDARY_RECOVERY_POINT",
+         pointString(m_secondary_landing_x, m_secondary_landing_y));
+
+  m_secondary_arrival_start_time = 0.0;
+  publishSecondaryRecoveryState("TRANSITING");
+}
+
+void Rendezvous::updateSecondaryRecovery()
+{
+  if(m_secondary_recovery_state == "TRANSITING") {
+    if(!navIsFresh()) {
+      m_secondary_arrival_start_time = 0.0;
+      return;
+    }
+
+    double distance = hypot(m_nav_x - m_secondary_landing_x,
+                            m_nav_y - m_secondary_landing_y);
+    Notify("UAV_SECONDARY_RECOVERY_DISTANCE", distance);
+    if(distance <= m_secondary_arrival_radius) {
+      if(m_secondary_arrival_start_time <= 0)
+        m_secondary_arrival_start_time = m_curr_time;
+      if((m_curr_time - m_secondary_arrival_start_time) >=
+         m_secondary_arrival_dwell) {
+        Notify("ROUTE_BUFFER_COMMAND", "action=clear");
+        publishSecondaryRecoveryState("ARRIVED");
+      }
+    }
+    else
+      m_secondary_arrival_start_time = 0.0;
+  }
+  else if((m_secondary_recovery_state == "ARRIVED") &&
+          ((m_curr_time - m_secondary_state_enter_time) >=
+           m_secondary_landing_delay)) {
+    publishSecondaryRecoveryState("LANDING");
+    Notify("UAV_PREC_LAND_RESULT",
+           "status=committed#reason=secondary_recovery");
+    Notify("UAV_PREC_LAND_COMMIT", "true");
+  }
+  else if((m_secondary_recovery_state == "LANDING") &&
+          m_uav_landed_set && !m_uav_in_air &&
+          m_uav_armed_set && !m_uav_armed) {
+    publishSecondaryRecoveryState("LANDED");
+  }
+}
+
+void Rendezvous::publishSecondaryRecoveryState(const string& state)
+{
+  m_secondary_recovery_state = state;
+  m_secondary_state_enter_time = m_curr_time;
+  Notify("UAV_SECONDARY_RECOVERY_STATE", state);
+  reportEvent("Secondary recovery state: " + state);
+}
+
 void Rendezvous::abortMission(const string& reason, bool notify_peer)
 {
   if(m_state == "ABORT")
@@ -1142,10 +1501,10 @@ void Rendezvous::abortMission(const string& reason, bool notify_peer)
   else if(m_role == "pearl") {
     m_pearl_activation_pending = false;
     Notify("PEARL_RENDEZVOUS_ACTIVE", "false");
-    Notify("PEARL_DEPLOY", "true");
-    Notify("PEARL_RETURN", "false");
-    Notify("PEARL_STATION_KEEP", "true");
-    Notify("PEARL_MANUAL_OVERRIDE", "false");
+    Notify("DEPLOY", "true");
+    Notify("RETURN", "false");
+    Notify("STATION_KEEP", "true");
+    Notify("MOOS_MANUAL_OVERRIDE", "false");
     Notify("PEARL_LANDING_GATE_READY", 0.0);
     Notify("PEARL_LANDING_GATE_REASON", reason);
     publishPoint(false);
@@ -1157,8 +1516,11 @@ void Rendezvous::abortMission(const string& reason, bool notify_peer)
     sendMessage(m_peer_node, "RENDEZVOUS_RESPONSE", response);
   }
 
+  m_pending_request.clear();
   m_aborts++;
   transitionTo("ABORT", reason);
+  if(m_role == "uav")
+    beginSecondaryRecovery();
 }
 
 //---------------------------------------------------------
@@ -1168,6 +1530,8 @@ void Rendezvous::transitionTo(const string& state, const string& reason)
 {
   m_state = state;
   m_reason = reason;
+  if((m_role == "pearl") && ((state == "COMPLETE") || (state == "ABORT")))
+    restorePearlControlState();
   m_state_enter_time = m_curr_time;
   publishState(true);
   reportEvent("Rendezvous state: " + state + " (" + reason + ")");
@@ -1194,8 +1558,13 @@ void Rendezvous::publishState(bool force)
                                             "PEARL_RENDEZVOUS_SESSION";
   Notify(phase_var, m_state);
   Notify(session_var, m_session_id);
-  if(m_role == "uav")
+  if(m_role == "uav") {
     Notify("UAV_RECOVERY_PRIORITY", recoveryPriority());
+    Notify("UAV_RENDEZVOUS_ARRIVED", m_uav_arrived ? 1.0 : 0.0);
+    Notify("UAV_SECONDARY_RECOVERY_STATE", m_secondary_recovery_state);
+    Notify("UAV_SECONDARY_RECOVERY_POINT",
+           pointString(m_secondary_landing_x, m_secondary_landing_y));
+  }
   m_last_state_post_time = m_curr_time;
 }
 
@@ -1441,6 +1810,14 @@ bool Rendezvous::buildReport()
     bool target_ready = landingTargetIsReady(target_reason);
     m_msgs << "Landing target:     " << boolToString(target_ready)
            << " (" << target_reason << ")" << endl;
+    m_msgs << "Recovery speed:     "
+           << doubleToStringX(m_recovery_route_speed, 2) << endl;
+    m_msgs << "Recovery capture:   "
+           << doubleToStringX(m_recovery_capture_radius, 2) << endl;
+    m_msgs << "Secondary recovery: " << m_secondary_recovery_state << endl;
+    m_msgs << "Secondary point:    "
+           << doubleToStringX(m_secondary_landing_x, 2) << " / "
+           << doubleToStringX(m_secondary_landing_y, 2) << endl;
   }
   else {
     m_msgs << "PEARL arrived:      " << boolToString(m_pearl_arrived) << endl;

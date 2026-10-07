@@ -459,7 +459,7 @@ layers: {
         stroke: "#12344D"
       }
     }
-    post_interruption_checks -> awaiting_drone_departure: "Takeoff clearance granted" {
+    post_interruption_checks -> awaiting_drone_departure: "Post-interruption checks passed" {
       class: [transition; moos_transition; moos_var_PEARL_FSM_TAKEOFF_SUPPORT_TRANSITION; moos_id_POST_INTERRUPTION_CHECKS_TO_AWAITING_DRONE_DEPARTURE]
       style: {
         stroke: "#12344D"
@@ -495,7 +495,7 @@ layers: {
         stroke: "#12344D"
       }
     }
-    takeoff_in_progress -> sink: "Drone departe" {
+    takeoff_in_progress -> sink: "Drone departed" {
       class: [transition; sink_transition]
       style: {
         stroke: "#12344D"

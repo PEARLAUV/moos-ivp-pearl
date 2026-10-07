@@ -29,15 +29,14 @@ ProcessConfig = ANTLER
   Run = pMediator      @ NewConsole = false
   Run = uTimerScript   @ NewConsole = false ~ uMediatorPrime
   Run = pRouteBuffer   @ NewConsole = false
-  Run = pTakeoffGate   @ NewConsole = false
+  Run = pTakeoffCoordinator @ NewConsole = false
   Run = pRendezvous    @ NewConsole = false
   Run = pFSMRuntime    @ NewConsole = false
+  Run = uChecks        @ NewConsole = false ~ uPretakeoffChecks
   Run = pHelmIvP       @ NewConsole = false
   Run = uTimerScript   @ NewConsole = false ~ uRouteClear
   Run = uTimerScript   @ NewConsole = false ~ uDeployGuard
-  Run = uTimerScript   @ NewConsole = false ~ uOperatorArm
   Run = uTimerScript   @ NewConsole = false ~ uOperatorDisarm
-  Run = uTimerScript   @ NewConsole = false ~ uOperatorTakeoff
   Run = uTimerScript   @ NewConsole = false ~ uOperatorPrecLand
   Run = uTimerScript   @ NewConsole = false ~ uTaskingStart
   Run = uTimerScript   @ NewConsole = false ~ uTaskingTakeoff
@@ -46,7 +45,16 @@ ProcessConfig = ANTLER
   Run = uTimerScript   @ NewConsole = false ~ uTaskingCancel
   Run = uTimerScript   @ NewConsole = false ~ uTaskingRejectOffnominal
 #ifdef XMODE SIM
-  Run = uTimerScript   @ NewConsole = false ~ uSimUavBattery
+  // Observe the separately routed Landmark MAVLink stream. Passive mode does
+  // not register command inputs or issue MAVLink commands/rate requests.
+  Run = pArduBridge    @ NewConsole = false ~ pLandmarkBridge
+  Run = uTimerScript   @ NewConsole = false ~ uSimArmCommand
+Run = uTimerScript   @ NewConsole = false ~ uSimTakeoffCommand
+Run = uTimerScript   @ NewConsole = false ~ uSimPrecLandCommand
+Run = uTimerScript   @ NewConsole = false ~ uSimAttachmentCommand
+Run = uTimerScript   @ NewConsole = false ~ uSimUavBattery
+  Run = uTimerScript   @ NewConsole = false ~ uSimUavInitialArmed
+  Run = uTimerScript   @ NewConsole = false ~ uSimUavGroundTelemetry
   Run = uSimAttachment @ NewConsole = false
   Run = uSimMarineV22  @ NewConsole = false
   Run = pMarinePIDV22  @ NewConsole = false
@@ -54,8 +62,8 @@ ProcessConfig = ANTLER
 #else
   Run = pArduBridge    @ NewConsole = false
   Run = pDeadManPost   @ NewConsole = false
-  Run = uTimerScript   @ NewConsole = false ~ uRouteSequence
 #endif
+  Run = uTimerScript   @ NewConsole = false ~ uRouteSequence
 }
 
 //----------------------------------------------------
@@ -68,6 +76,41 @@ ProcessConfig = pFSMRuntime
   min_state_time = $(MIN_STATE_TIME)
 
 #include plug_uav_fsm_runtime.moos
+}
+
+//----------------------------------------------------
+ProcessConfig = uPretakeoffChecks
+{
+  AppTick = 4
+  CommsTick = 4
+  condition = (UAV_FSM_TAKEOFF_OPERATIONS_STATE=ESTABLISHING_TAKEOFF_READINESS) or (UAV_FSM_TAKEOFF_OPERATIONS_STATE=REQUESTING_TAKEOFF_CLEARANCE)
+  result_var = TAKEOFF_PRECHECKS
+  result_prefix = TAKEOFF_PRECHECK_
+  session_var = UAV_FSM_OPERATION_STATE_TAKEOFF_OPERATIONS_EPOCH
+
+  check = name=GPS,timeout=60,max_age=3,success_hold=5
+  require = check=GPS,var=UAV_GPS_AVAILABLE,type=double,equals=1,on_mismatch=wait
+  require = check=GPS,var=UAV_GPS_FIX_TYPE,type=double,min=3,on_mismatch=wait
+  require = check=GPS,var=UAV_GPS_AGE,type=double,min=0,max=3,on_mismatch=wait
+
+  check = name=FLIGHT_PLAN,timeout=60
+  require = check=FLIGHT_PLAN,var=ROUTE_READY,type=string,equals=true,on_mismatch=wait
+
+  check = name=BATTERY,timeout=5,max_age=3
+  require = check=BATTERY,var=UAV_BATTERY_DATA_VALID,type=double,equals=1,on_mismatch=fail
+  require = check=BATTERY,var=UAV_BATTERY_SOC,type=double,min=30,on_mismatch=fail
+
+  check = name=ARMABLE,timeout=10,max_age=3,success_hold=5
+  require = check=ARMABLE,var=UAV_IS_ARMABLE,type=double,equals=1,on_mismatch=wait
+  require = check=ARMABLE,var=UAV_IS_ARMED,type=double,equals=0,on_mismatch=fail
+
+  check = name=LANDED,timeout=10,max_age=3,success_hold=5
+  require = check=LANDED,var=UAV_LANDED_STATE,type=string,equals=ON_GROUND,on_mismatch=fail
+  require = check=LANDED,var=UAV_LANDED_STATE_AGE,type=double,min=0,max=3,on_mismatch=wait
+
+  check = name=HEALTHY,timeout=10,max_age=3,success_hold=5
+  require = check=HEALTHY,var=UAV_HEALTH_AVAILABLE,type=double,equals=1,on_mismatch=wait
+  require = check=HEALTHY,var=UAV_HEALTH_AGE,type=double,min=0,max=3,on_mismatch=wait
 }
 
 //----------------------------------------------------
@@ -129,19 +172,20 @@ ProcessConfig = uLoadWatch
   term_report_interval = 2
 
 #ifdef XMODE SIM
+  thresh = app=pLandmarkBridge, gapthresh=3
   thresh = app=uSimUavBattery, gapthresh=3
   thresh = app=uSimAttachment, gapthresh=3
-  thresh = app=uSimMarineV22, gapthresh=3
-  thresh = app=pMarinePIDV22, gapthresh=3
-  thresh = app=pThrustMixer,  gapthresh=3
+  thresh = app=uSimMarineV22,  gapthresh=3
+  thresh = app=pMarinePIDV22,  gapthresh=3
+  thresh = app=pThrustMixer,   gapthresh=3
 #else
-  thresh = app=pArduBridge,   gapthresh=3
+  thresh = app=pArduBridge,    gapthresh=3
 #endif
-  thresh = app=pHelmIvP,      gapthresh=3
-  thresh = app=pTakeoffGate,  gapthresh=3
-  thresh = app=pNodeReporter, gapthresh=4
-  thresh = app=pHostInfo,     gapthresh=5
-  thresh = app=any,           gapthresh=2.0
+  thresh = app=pHelmIvP,       gapthresh=3
+  thresh = app=pTakeoffCoordinator, gapthresh=3
+  thresh = app=pNodeReporter,  gapthresh=4
+  thresh = app=pHostInfo,      gapthresh=5
+  thresh = app=any,            gapthresh=2
 
   breach_trigger = 5
 }
@@ -218,24 +262,6 @@ ProcessConfig = uFldMessageHandler
 }
 
 //----------------------------------------------------
-ProcessConfig = pRouteBuffer
-{
-  AppTick   = 4
-  CommsTick = 4
-  term_report_interval = 2
-
-  role = vehicle
-  // Allow a cleared Helm behavior to publish its end flags before releasing
-  // a replacement route (notably rendezvous -> secondary recovery).
-  deploy_delay = 2
-#ifdef XMODE SIM
-  route_deploy_var = ROUTE_DEPLOY
-#else
-  route_deploy_var = ROUTE_EXECUTE
-#endif
-}
-
-//----------------------------------------------------
 ProcessConfig = uFldNodeBroker
 {
   AppTick   = 1
@@ -258,23 +284,52 @@ ProcessConfig = uFldNodeBroker
   bridge = src=UAV_BATTERY_VOLTAGE
   bridge = src=UAV_BATTERY_DATA_VALID
   bridge = src=UAV_BATTERY_DATA_AGE
-  bridge = src=UAV_TAKEOFF_GATE_READY
-  bridge = src=UAV_TAKEOFF_GATE_REASON
-  bridge = src=UAV_TAKEOFF_RESULT
+  // Local uChecks results are unprefixed; preserve their UAV names on shore.
+  bridge = src=TAKEOFF_PRECHECK_GPS, alias=UAV_TAKEOFF_PRECHECK_GPS
+  bridge = src=TAKEOFF_PRECHECK_GPS_STATE, alias=UAV_TAKEOFF_PRECHECK_GPS_STATE
+  bridge = src=TAKEOFF_PRECHECK_FLIGHT_PLAN, alias=UAV_TAKEOFF_PRECHECK_FLIGHT_PLAN
+  bridge = src=TAKEOFF_PRECHECK_FLIGHT_PLAN_STATE, alias=UAV_TAKEOFF_PRECHECK_FLIGHT_PLAN_STATE
+  bridge = src=TAKEOFF_PRECHECKS, alias=UAV_TAKEOFF_PRECHECKS
+  bridge = src=TAKEOFF_PRECHECKS_STATE, alias=UAV_TAKEOFF_PRECHECKS_STATE
+  bridge = src=TAKEOFF_PRECHECKS_SNAPSHOT, alias=UAV_TAKEOFF_PRECHECKS_SNAPSHOT
+  bridge = src=TAKEOFF_PRECHECK_BATTERY, alias=UAV_TAKEOFF_PRECHECK_BATTERY
+  bridge = src=TAKEOFF_PRECHECK_BATTERY_STATE, alias=UAV_TAKEOFF_PRECHECK_BATTERY_STATE
+  bridge = src=TAKEOFF_PRECHECK_ARMABLE, alias=UAV_TAKEOFF_PRECHECK_ARMABLE
+  bridge = src=TAKEOFF_PRECHECK_ARMABLE_STATE, alias=UAV_TAKEOFF_PRECHECK_ARMABLE_STATE
+  // Addressed aliases avoid colliding with PEARL's TAKEOFF_REQUEST_STATE.
+  bridge = src=TAKEOFF_REQUEST_RESULT, alias=UAV_TAKEOFF_REQUEST_RESULT
+  bridge = src=TAKEOFF_REQUEST_STATE,  alias=UAV_TAKEOFF_REQUEST_STATE
+  bridge = src=TAKEOFF_REQUEST_REASON, alias=UAV_TAKEOFF_REQUEST_REASON
   bridge = src=UAV_IS_ARMED
   bridge = src=UAV_LANDED_STATE
   bridge = src=UAV_TASK_ACTIVE
   bridge = src=UAV_TASK_TAKEOFF_REQUESTED
   bridge = src=UAV_TASK_ROUTE_STARTED
   bridge = src=UAV_TASK_REJECTION
-  bridge = src=UAV_LANDING_TARGET_AVAILABLE
-  bridge = src=UAV_LANDING_TARGET_AGE
-  bridge = src=UAV_LANDING_TARGET_TARGET_NUM
-  bridge = src=UAV_LANDING_TARGET_POSITION_VALID
-  bridge = src=UAV_LANDING_TARGET_ANGLE_X
-  bridge = src=UAV_LANDING_TARGET_ANGLE_Y
-  bridge = src=UAV_LANDING_TARGET_X
-  bridge = src=UAV_LANDING_TARGET_Y
+  bridge = src=LANDMARK_LANDING_TARGET_AVAILABLE,       alias=UAV_LANDING_TARGET_AVAILABLE
+  bridge = src=LANDMARK_LANDING_TARGET_AGE,             alias=UAV_LANDING_TARGET_AGE
+  bridge = src=LANDMARK_LANDING_TARGET_TIME_USEC,       alias=UAV_LANDING_TARGET_TIME_USEC
+  bridge = src=LANDMARK_LANDING_TARGET_SYSTEM_ID,       alias=UAV_LANDING_TARGET_SYSTEM_ID
+  bridge = src=LANDMARK_LANDING_TARGET_COMPONENT_ID,    alias=UAV_LANDING_TARGET_COMPONENT_ID
+  bridge = src=LANDMARK_LANDING_TARGET_TARGET_NUM,      alias=UAV_LANDING_TARGET_TARGET_NUM
+  bridge = src=LANDMARK_LANDING_TARGET_FRAME,           alias=UAV_LANDING_TARGET_FRAME
+  bridge = src=LANDMARK_LANDING_TARGET_TYPE,            alias=UAV_LANDING_TARGET_TYPE
+  bridge = src=LANDMARK_LANDING_TARGET_POSITION_VALID,  alias=UAV_LANDING_TARGET_POSITION_VALID
+  bridge = src=LANDMARK_LANDING_TARGET_ANGLE_X,         alias=UAV_LANDING_TARGET_ANGLE_X
+  bridge = src=LANDMARK_LANDING_TARGET_ANGLE_Y,         alias=UAV_LANDING_TARGET_ANGLE_Y
+  bridge = src=LANDMARK_LANDING_TARGET_DISTANCE,        alias=UAV_LANDING_TARGET_DISTANCE
+  bridge = src=LANDMARK_LANDING_TARGET_SIZE_X,          alias=UAV_LANDING_TARGET_SIZE_X
+  bridge = src=LANDMARK_LANDING_TARGET_SIZE_Y,          alias=UAV_LANDING_TARGET_SIZE_Y
+  bridge = src=LANDMARK_LANDING_TARGET_X,               alias=UAV_LANDING_TARGET_X
+  bridge = src=LANDMARK_LANDING_TARGET_Y,               alias=UAV_LANDING_TARGET_Y
+  bridge = src=LANDMARK_LANDING_TARGET_Z,               alias=UAV_LANDING_TARGET_Z
+  bridge = src=LANDMARK_LANDING_TARGET_Q_W,             alias=UAV_LANDING_TARGET_Q_W
+  bridge = src=LANDMARK_LANDING_TARGET_Q_X,             alias=UAV_LANDING_TARGET_Q_X
+  bridge = src=LANDMARK_LANDING_TARGET_Q_Y,             alias=UAV_LANDING_TARGET_Q_Y
+  bridge = src=LANDMARK_LANDING_TARGET_Q_Z,             alias=UAV_LANDING_TARGET_Q_Z
+  bridge = src=LANDMARK_HEALTH_AGE,                     alias=UAV_LANDING_TARGET_HEALTH_AGE
+  bridge = src=PARDUBRIDGE_PASSIVE_STATE
+  bridge = src=PARDUBRIDGE_PASSIVE_CONNECTED
   bridge = src=UAV_LANDING_GATE_READY
   bridge = src=UAV_LANDING_GATE_REASON
   bridge = src=UAV_LANDING_TARGET_LOCK_AGE
@@ -311,72 +366,12 @@ ProcessConfig = uFldNodeBroker
 
 //----------------------------------------------------
 #ifdef XMODE SIM
-ProcessConfig = uSimMarineV22
-{
-  AppTick   = 10
-  CommsTick = 10
-  term_report_interval = 2
-
-  start_pos = $(START_POS=-173,-128,90)
-  prefix    = NAV
-
-  max_speed        = 5
-  max_deceleration = 2
-
-  // A multirotor can generate yaw torque at zero translational speed. Use
-  // opposed virtual motor groups rather than the marine rudder model.
-  thrust_mode_diff = true
-
-  post_des_thrust = DESIRED_THRUSTX
-  post_des_rudder = DESIRED_RUDDERX
-}
-
-//----------------------------------------------------
-ProcessConfig = pMarinePIDV22
-{
-  AppTick   = 10
-  CommsTick = 10
-  term_report_interval = 2
-
-  verbose       = false
-  depth_control = false
-  active_start  = true
-
-  yaw_pid_kp             = 1.2
-  yaw_pid_kd             = 0.1
-  yaw_pid_ki             = 0.3
-  yaw_pid_integral_limit = 0.07
-
-  speed_pid_kp             = 1.0
-  speed_pid_kd             = 0.0
-  speed_pid_ki             = 0.0
-  speed_pid_integral_limit = 0.07
-
-  maxrudder   = 100
-  maxthrust   = 100
-  speed_factor = 20
-}
-
-//----------------------------------------------------
-// Convert the PID's forward-thrust/yaw demand into virtual left/right motor
-// groups. Opposed outputs permit an in-place yaw while their average controls
-// horizontal speed.
-ProcessConfig = pThrustMixer
-{
-  AppTick   = 10
-  CommsTick = 10
-  term_report_interval = 2
-
-  input_thrust_var = DESIRED_THRUST
-  input_rudder_var = DESIRED_RUDDER
-  output_left_var  = DESIRED_THRUST_L
-  output_right_var = DESIRED_THRUST_R
-  state_var        = UAV_THRUST_MIXER_STATE
-  max_thrust       = 100
-  max_rudder       = 100
-  stale_timeout    = 1
-}
+#include plug_uav_sim.moos
+#else
+#include plug_uav_real.moos
 #endif
+
+
 
 //----------------------------------------------------
 ProcessConfig = pHelmIvP
@@ -403,6 +398,31 @@ ProcessConfig = pHelmIvP
   Domain    = altitude:0:30:61
 #endif
 }
+
+
+//----------------------------------------------------
+ProcessConfig = pRouteBuffer
+{
+  AppTick   = 4
+  CommsTick = 4
+  term_report_interval = 2
+
+  role = vehicle
+  // Allow a cleared Helm behavior to publish its end flags before releasing
+  // a replacement route (notably rendezvous -> secondary recovery).
+  deploy_delay = 2
+  route_deploy_var = ROUTE_EXECUTE
+  route_purpose_var = ROUTE_EXECUTE_PURPOSE
+  operation_state_var = UAV_FSM_OPERATION_STATE
+  recovery_source = pRendezvous
+
+  // Operator routes may be staged before takeoff, but not over recovery.
+  operator_stage_state = IDLE
+  operator_stage_state = TAKEOFF_OPERATIONS
+  operator_stage_state = MISSION_EXECUTION
+  recovery_stage_state = LANDING_OPERATIONS
+}
+
 
 //----------------------------------------------------
 // pMediator sequence zero is acknowledged but intentionally not delivered.
@@ -438,10 +458,7 @@ ProcessConfig = uRouteClear
 
   event = var=UAV_TASK_CANCEL, val=true,  time=0
   event = var=ROUTE_DEPLOY,    val=false, time=0
-#ifdef XMODE SIM
-#else
-  event = var=ROUTE_EXECUTE, val=false, time=0
-#endif
+  event = var=ROUTE_EXECUTE,   val=false, time=0
   // pRouteBuffer terminates the currently active session-named behavior.
   event = var=ROUTE_CLEAR,  val=false, time=0.75
 }
@@ -455,11 +472,7 @@ ProcessConfig = uDeployGuard
   CommsTick = 10
   term_report_interval = 2
 
-#ifdef XMODE SIM
-  condition = ROUTE_DEPLOY = true
-#else
-  condition = ROUTE_EXECUTE = true
-#endif
+  condition     = ROUTE_EXECUTE = true
   condition     = ROUTE_READY = false
   upon_awake    = restart
   script_atomic = true
@@ -467,93 +480,41 @@ ProcessConfig = uDeployGuard
   paused        = false
   script_name   = ROUTE_DEPLOY_GUARD
 
-#ifdef XMODE SIM
-  event = var=ROUTE_DEPLOY,  val=false, time=0
-#else
   event = var=ROUTE_EXECUTE, val=false, time=0
-#endif
 }
 
 //----------------------------------------------------
-#ifdef XMODE SIM
-ProcessConfig = uSimUavBattery
+ProcessConfig = pTakeoffCoordinator
 {
   AppTick   = 4
   CommsTick = 4
   term_report_interval = 2
 
-  paused     = false
-  reset_max  = unlimited
-  reset_time = 1
-  script_name = SIM_UAV_BATTERY
+  ownship = $(VNAME)
+  authority = pearl
+  timeout = 100
+  request_interval = 5
+  completion_retry_time = 60
 
-  event = var=UAV_BATTERY_SOC,        val=80,   time=0
-  event = var=UAV_BATTERY_DATA_VALID, val=true, time=0
-  event = var=UAV_HEALTH_ALL_OK,       val=true, time=0
-  event = var=UAV_GPS_AVAILABLE,       val=true, time=0
-}
-#endif
+  result_var = TAKEOFF_REQUEST_RESULT
+  state_var = TAKEOFF_REQUEST_STATE
+  reason_var = TAKEOFF_REQUEST_REASON
+  receipt_var = UAV_TAKEOFF_REQUEST_ID
+  checks_result_var = TAKEOFF_PRECHECKS
+  checks_session_var = UAV_FSM_OPERATION_STATE_TAKEOFF_OPERATIONS_EPOCH
 
-//----------------------------------------------------
-#ifdef XMODE SIM
-ProcessConfig = uSimAttachment
-{
-  AppTick   = 10
-  CommsTick = 10
-  term_report_interval = 2
+  armed_var = UAV_IS_ARMED
+  landed_var = UAV_LANDED_STATE
+  arming_flag = ARM_UAV=true
+  takeoff_flag = ARDU_COMMAND=DO_TAKEOFF
 
-  input_max_age      = 2
-  initially_attached = true
-}
-#endif
-
-//----------------------------------------------------
-ProcessConfig = pTakeoffGate
-{
-  AppTick   = 4
-  CommsTick = 4
-  term_report_interval = 2
-
-  role            = uav
-  ownship         = $(VNAME)
-  peer_node       = pearl
-  request_timeout = 100
-
-  min_uav_soc    = 30
-  min_pearl_soc  = 15
-  max_wind_speed = 4
-  input_max_age  = 3
+  request_condition = UAV_FSM_TAKEOFF_OPERATIONS_STATE=REQUESTING_TAKEOFF_CLEARANCE
+  request_condition = UAV_LANDED_STATE=ON_GROUND
 }
 
 //----------------------------------------------------
 // Expand each acknowledged operator request inside the vehicle community.
-// Distinct request variables prevent one command type from superseding another
-// in pMediator's per-variable ordering cache.
-ProcessConfig = uOperatorArm
-{
-  AppTick   = 10
-  CommsTick = 10
-  term_report_interval = 2
-
-  condition     = UAV_ARM_REQUEST = true
-  upon_awake    = restart
-  script_atomic = true
-  reset_max     = unlimited
-  paused        = false
-  script_name   = OPERATOR_ARM
-
-#ifdef XMODE SIM
-  event = var=UAV_IS_ARMED,       val=true,      time=0
-  event = var=UAV_LANDED_STATE,   val=ON_GROUND, time=0
-  event = var=AUTOPILOT_MODE,     val=SIM_ARMED, time=0
-  event = var=UAV_COMMAND_RESULT, val="id=sim,command=ARM,status=ACCEPTED,detail=SIMULATED", time=0
-#else
-  event = var=ARM_UAV, val=true, time=0
-#endif
-  event = var=UAV_ARM_REQUEST, val=false, time=0.10
-}
-
-//----------------------------------------------------
+// Remote disarm remains available as a safety control; remote arm does not.
 ProcessConfig = uOperatorDisarm
 {
   AppTick   = 10
@@ -569,9 +530,10 @@ ProcessConfig = uOperatorDisarm
 
   event = var=UAV_TASK_CANCEL, val=true,  time=0
   event = var=ROUTE_DEPLOY,    val=false, time=0
+  event = var=ROUTE_EXECUTE,   val=false, time=0
 #ifdef XMODE SIM
   event = var=STATION_KEEP,    val=false,        time=0
-  event = var=UAV_IS_ARMED,    val=false,        time=0
+  event = var=UAV_IS_ARMED,    val=0,            time=0
   event = var=UAV_LANDED_STATE, val=ON_GROUND,   time=0
   event = var=NAV_ALTITUDE,    val=0,            time=0
   event = var=AUTOPILOT_MODE,  val=SIM_DISARMED, time=0
@@ -581,35 +543,6 @@ ProcessConfig = uOperatorDisarm
   event = var=ARM_UAV,              val=false, time=0
 #endif
   event = var=UAV_DISARM_REQUEST, val=false, time=0.10
-}
-
-//----------------------------------------------------
-ProcessConfig = uOperatorTakeoff
-{
-  AppTick   = 10
-  CommsTick = 10
-  term_report_interval = 2
-
-  condition     = UAV_TAKEOFF_APPROVED = 1
-  upon_awake    = restart
-  script_atomic = true
-  reset_max     = unlimited
-  paused        = false
-  script_name   = OPERATOR_TAKEOFF
-
-  event = var=MOOS_MANUAL_OVERRIDE, val=false, time=0
-#ifdef XMODE SIM
-  event = var=SIM_ATTACHMENT_REQUEST, val=false,       time=1
-  event = var=ROUTE_DEPLOY,       val=false,       time=3
-  event = var=STATION_KEEP,       val=false,       time=3
-  event = var=UAV_LANDED_STATE,   val=IN_AIR,      time=3
-  event = var=NAV_ALTITUDE,       val=$(TAKEOFF_ALTITUDE), time=3
-  event = var=AUTOPILOT_MODE,     val=SIM_HOLD,    time=3
-  event = var=UAV_COMMAND_RESULT, val="id=sim,command=TAKEOFF,status=COMPLETED,detail=TARGET_ALTITUDE_REACHED", time=3
-#else
-  event = var=ARDU_COMMAND, val=DO_TAKEOFF, time=2
-#endif
-  event = var=UAV_TAKEOFF_APPROVED, val=0, time=3.10
 }
 
 //----------------------------------------------------
@@ -626,19 +559,9 @@ ProcessConfig = uOperatorPrecLand
   paused        = false
   script_name   = OPERATOR_PREC_LAND
 
-  event = var=ROUTE_DEPLOY, val=false, time=0
-#ifdef XMODE SIM
-  event = var=STATION_KEEP,     val=false,      time=3
-  event = var=NAV_ALTITUDE,     val=0,          time=3
-  event = var=UAV_LANDED_STATE, val=ON_GROUND,  time=3
-  event = var=UAV_IS_ARMED,     val=false,      time=3
-  event = var=AUTOPILOT_MODE,   val=SIM_LANDED, time=3
-  event = var=UAV_COMMAND_RESULT, val="id=sim,command=LAND,status=COMPLETED,detail=SIMULATED", time=3
-  event = var=SIM_ATTACHMENT_REQUEST, val=true,     time=3
-#else
-  event = var=ROUTE_EXECUTE, val=false,    time=0
-  event = var=ARDU_COMMAND,  val=AUTOLAND, time=3
-#endif
+  event = var=ROUTE_DEPLOY,       val=false,    time=0
+  event = var=ROUTE_EXECUTE,      val=false,    time=0
+  event = var=ARDU_COMMAND,       val=AUTOLAND, time=3
   event = var=UAV_PREC_LAND_COMMIT, val=false, time=3.10
 }
 
@@ -653,9 +576,11 @@ ProcessConfig = uTaskingStart
 
   condition     = UAV_TASK_REQUEST = true
   condition     = ROUTE_READY = true
-  condition     = UAV_FSM_OPERATION_STATE = IDLE
+  // Stage the task after readiness, then wait for local pilot arming.
+  condition     = UAV_FSM_TAKEOFF_OPERATIONS_STATE = REQUESTING_TAKEOFF_CLEARANCE
   upon_awake    = restart
-  script_atomic = true
+  // An aborted or suspended clearance phase must cancel this task stage.
+  script_atomic = false
   reset_max     = unlimited
   paused        = false
   script_name   = TASKING_START
@@ -664,8 +589,7 @@ ProcessConfig = uTaskingStart
   event = var=UAV_TASK_TAKEOFF_REQUESTED, val=false, time=0
   event = var=UAV_TASK_ROUTE_STARTED,     val=false, time=0
   event = var=UAV_TASK_CANCEL,            val=false, time=0
-  event = var=UAV_ARM_REQUEST,            val=true,  time=2
-  event = var=UAV_TASK_REQUEST,           val=false, time=2.10
+  event = var=UAV_TASK_REQUEST,           val=false, time=0.10
 }
 
 //----------------------------------------------------
@@ -677,17 +601,16 @@ ProcessConfig = uTaskingTakeoff
 
   condition     = UAV_TASK_ACTIVE = true
   condition     = UAV_TASK_TAKEOFF_REQUESTED = false
-  condition     = UAV_IS_ARMED = true
+  condition     = UAV_FSM_TAKEOFF_OPERATIONS_STATE = REQUESTING_TAKEOFF_CLEARANCE
   condition     = UAV_LANDED_STATE = ON_GROUND
-  condition     = UAV_TAKEOFF_GATE_READY = 1
   upon_awake    = restart
-  script_atomic = true
+  script_atomic = false
   reset_max     = unlimited
   paused        = false
   script_name   = TASKING_TAKEOFF
 
-  event = var=UAV_TAKEOFF_REQUEST,         val=true, time=2
-  event = var=UAV_TASK_TAKEOFF_REQUESTED,  val=true, time=2
+  // The coordinator retries clearance independently while still on deck.
+  event = var=UAV_TASK_TAKEOFF_REQUESTED, val=true, time=0
 }
 
 //----------------------------------------------------
@@ -700,22 +623,13 @@ ProcessConfig = uTaskingRouteStarted
   condition     = UAV_TASK_ACTIVE = true
   condition     = UAV_TASK_ROUTE_STARTED = false
   condition     = UAV_LANDED_STATE = IN_AIR
-#ifdef XMODE SIM
-  condition     = ROUTE_READY = true
-#else
   condition     = ROUTE_DEPLOY = true
-#endif
   upon_awake    = restart
   script_atomic = true
   reset_max     = unlimited
   paused        = false
   script_name   = TASKING_ROUTE_STARTED
 
-#ifdef XMODE SIM
-  // OPERATOR_TAKEOFF clears ROUTE_DEPLOY during detachment. Release the route
-  // only after IN_AIR feedback while retaining the staged route update.
-  event = var=ROUTE_DEPLOY,           val=true, time=2
-#endif
   event = var=UAV_TASK_ROUTE_STARTED, val=true, time=2.10
 }
 
@@ -761,6 +675,7 @@ ProcessConfig = uTaskingCancel
   event = var=UAV_TASK_REQUEST,           val=false, time=0
   event = var=UAV_TASK_TAKEOFF_REQUESTED, val=false, time=0
   event = var=UAV_TASK_ROUTE_STARTED,     val=false, time=0
+  event = var=ROUTE_EXECUTE,              val=false, time=0
   event = var=UAV_TASK_CANCEL,            val=false, time=0.10
 }
 
@@ -788,74 +703,6 @@ ProcessConfig = uTaskingRejectOffnominal
   event = var=UAV_TASK_REJECTION,         val=OFFNOMINAL_LOCKOUT,  time=0
 }
 
-#ifdef XMODE SIM
-#else
-//----------------------------------------------------
-// Order the Copter control handoff behind one route execution request. Route
-// state remains mission-owned; pArduBridge receives only generic commands.
-ProcessConfig = uRouteSequence
-{
-  AppTick   = 10
-  CommsTick = 10
-  term_report_interval = 2
-
-  condition     = ROUTE_EXECUTE = true
-  condition     = ROUTE_READY = true
-  condition     = UAV_IS_ARMED = true
-  condition     = UAV_LANDED_STATE = IN_AIR
-  upon_awake    = restart
-  // CLEAR locally sets ROUTE_EXECUTE=false, which must be allowed to pause
-  // this handoff before a pending FLY_WAYPOINT post.
-  script_atomic = false
-  reset_max     = unlimited
-  paused        = false
-  script_name   = COPTER_ROUTE_SEQUENCE
-  status_var    = ROUTE_SEQUENCE_STATUS
-  event = var=HELM_STATUS,   val=true,         time=0
-  event = var=ROUTE_DEPLOY,  val=true,         time=0.20
-  event = var=ARDU_COMMAND,  val=FLY_WAYPOINT, time=0.80
-  event = var=ROUTE_EXECUTE, val=false,        time=0.90
-}
-
-//----------------------------------------------------
-ProcessConfig = pDeadManPost
-{
-  AppTick   = 4
-  CommsTick = 4
-  term_report_interval = 2
-
-  // Arm only after the first viewer heartbeat. Twenty continuous seconds
-  // without another heartbeat requests RTL through pArduBridge.
-  heartbeat_var   = HEARTBEAT
-  max_noheart     = 20
-  post_policy     = reset
-  active_at_start = false
-  deadflag        = DEAD_MAN_POST_INTERRUPT = true
-}
-
-//----------------------------------------------------
-ProcessConfig = pArduBridge
-{
-  AppTick   = 10
-  CommsTick = 10
-  term_report_interval = 2
-
-  url          = $(AP_URL)
-  url_protocol = $(AP_PROTOCOL)
-  vehicle_type = copter
-
-  vname  = $(VNAME)
-  vcolor = $(COLOR)
-  prefix = NAV
-
-  takeoff_altitude              = $(TAKEOFF_ALTITUDE)
-  helm_setpoint_timeout         = 2
-  command_groundspeed           = true
-  is_sim                        = $(IS_SIM)
-  logger                        = false
-}
-#endif
-
 //----------------------------------------------------
 // Validate PEARL's proposal and route the accepted meeting point through the
 // existing vehicle-local route buffer. Low UAV battery raises recovery
@@ -870,7 +717,7 @@ ProcessConfig = pRendezvous
   ownship   = $(VNAME)
   peer_node = pearl
 
-  uav_speed       = 3
+  uav_speed       = 1.5
   pearl_speed     = 0.5
   min_battery     = 25
   critical_battery = 15

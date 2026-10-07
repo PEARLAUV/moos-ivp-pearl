@@ -11,3 +11,6 @@
 /tmp_*
 /*.moosx
 /*.bhvx
+/plug_*_states.bhv
+/plug_*_fsm_runtime.moos
+/pearl_fsm/*

@@ -6,7 +6,6 @@
 /****************************************************************/
 
 #include <cstdlib>
-#include <iostream>
 #include "Rendezvous_Info.h"
 #include "ColorParse.h"
 #include "ReleaseInfo.h"
@@ -75,6 +74,8 @@ void showExampleConfigAndExit()
   blk("  max_peer_separation = 3                                       ");
   blk("  require_platform_ready = true                                 ");
   blk("  require_platform_health = true                                ");
+  blk("  // PEARL role; may repeat. Requires matching <VAR>_STATE ID.  ");
+  blk("  require_check = RECOVERY_PRECHECKS_STATE                      ");
   blk("  min_pearl_battery = 15                                        ");
   blk("  max_landing_wind_speed = 4                                    ");
   blk("  platform_data_max_age = 3                                     ");
@@ -87,6 +88,14 @@ void showExampleConfigAndExit()
   blk("  expected_target_num = 0                                      ");
   blk("  reacquire_update_interval = 2                                 ");
   blk("  reacquire_update_distance = 1                                 ");
+  blk("  recovery_route_speed = 1.5                                    ");
+  blk("  recovery_capture_radius = 0.5                                 ");
+  blk("  secondary_landing_enabled = true                              ");
+  blk("  secondary_landing_x = 10                                      ");
+  blk("  secondary_landing_y = 15                                      ");
+  blk("  secondary_arrival_radius = 2                                  ");
+  blk("  secondary_arrival_dwell = 2                                   ");
+  blk("  secondary_landing_delay = 3                                   ");
   blk("}                                                               ");
   blk("                                                                ");
   exit(0);
@@ -117,6 +126,7 @@ void showInterfaceAndExit()
   blk("PEARL SUBSCRIPTIONS:                                            ");
   blk("  RENDEZVOUS_REQUEST, RENDEZVOUS_RESPONSE                      ");
   blk("  PEARL_RENDEZVOUS_ARRIVED, PROC_WATCH_ALL_OK                  ");
+  blk("  Each configured require_check and its <VAR>_STATE diagnostic ");
   blk("                                                                ");
   blk("PUBLICATIONS:                                                   ");
   blk("  NODE_MESSAGE_LOCAL, UAV_RENDEZVOUS_STATE or                   ");
@@ -124,7 +134,8 @@ void showInterfaceAndExit()
   blk("  UAV/PEARL_RENDEZVOUS_PHASE and _SESSION                      ");
   blk("  UAV role: ROUTE_BUFFER_COMMAND, UAV_PREC_LAND_COMMIT,         ");
   blk("            UAV_LANDING_GATE_*, UAV_PEER_DISTANCE,             ");
-  blk("            UAV_RECOVERY_PRIORITY                              ");
+  blk("            UAV_RECOVERY_PRIORITY, UAV_RENDEZVOUS_ARRIVED,     ");
+  blk("            UAV_SECONDARY_RECOVERY_STATE/POINT/DISTANCE         ");
   blk("  PEARL role: PEARL_RENDEZVOUS_UPDATE, PEARL_* controls,        ");
   blk("              PEARL_LANDING_GATE_*, RENDEZVOUS_POINT           ");
   blk("                                                                ");

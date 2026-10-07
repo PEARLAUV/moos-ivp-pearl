@@ -31,6 +31,7 @@ Behavior = BHV_Waypoint
 
 #ifdef XMODE SIM
   condition = (ROUTE_CLEAR=true) or (ROUTE_DEPLOY=true)
+  condition = UAV_LANDED_STATE=IN_AIR
 #else
   // Form the Helm decision before pArduBridge transfers control authority.
   condition = (ROUTE_CLEAR=true) or (ROUTE_DEPLOY=true)
@@ -76,12 +77,14 @@ Behavior = BHV_StationKeep
   condition = STATION_KEEP=true
   condition = ROUTE_DEPLOY=false
 
+  // Recovery routes terminate close to safety-gated points. Brake promptly
+  // instead of allowing the generic hold to drift several metres past them.
   center_activate    = true
-  inner_radius       = 1
-  outer_radius       = 3
-  hibernation_radius = 5
-  outer_speed        = 1.5
-  transit_speed      = 3
+  inner_radius       = 0.25
+  outer_radius       = 0.5
+  hibernation_radius = 0.75
+  outer_speed        = 1
+  transit_speed      = 1.5
   swing_time         = 2
 }
 #endif

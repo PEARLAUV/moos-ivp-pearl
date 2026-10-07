@@ -8,6 +8,7 @@
 #ifndef Rendezvous_HEADER
 #define Rendezvous_HEADER
 
+#include <map>
 #include <string>
 #include "MOOS/libMOOS/Thirdparty/AppCasting/AppCastingMOOSApp.h"
 
@@ -43,6 +44,9 @@ class Rendezvous : public AppCastingMOOSApp
                       bool& value_set);
   bool handleMailTimedBool(const CMOOSMsg& msg, bool& value,
                            bool& value_set, double& value_time);
+  int requiredChecksStatus(std::string& reason) const;
+  void beginRequiredChecks(const std::string& request,
+                           const std::string& id);
 
   void iterateUAV();
   void iteratePearl();
@@ -57,6 +61,12 @@ class Rendezvous : public AppCastingMOOSApp
   void updateTargetAcquisition();
   void routeToPearl(bool force=false);
   void beginPrecisionLanding();
+  void savePearlControlState();
+  void restorePearlControlState();
+  void reconcilePearlWithUAV();
+  void beginSecondaryRecovery();
+  void updateSecondaryRecovery();
+  void publishSecondaryRecoveryState(const std::string& state);
   void abortMission(const std::string& reason, bool notify_peer=true);
   void transitionTo(const std::string& state, const std::string& reason);
   void publishState(bool force=false);
@@ -74,6 +84,13 @@ class Rendezvous : public AppCastingMOOSApp
   bool mailIsTrue(const CMOOSMsg& msg) const;
   std::string makeSessionID() const;
   std::string pointString(double x, double y) const;
+
+ private:
+  struct RequiredCheck {
+    std::string result;
+    std::string state_result;
+    std::string session;
+  };
 
  private: // Configuration variables
   std::string m_role;
@@ -101,6 +118,13 @@ class Rendezvous : public AppCastingMOOSApp
   double m_landing_target_max_angle;
   double m_reacquire_update_interval;
   double m_reacquire_update_distance;
+  double m_recovery_route_speed;
+  double m_recovery_capture_radius;
+  double m_secondary_landing_x;
+  double m_secondary_landing_y;
+  double m_secondary_arrival_radius;
+  double m_secondary_arrival_dwell;
+  double m_secondary_landing_delay;
   unsigned int m_expected_target_num;
   double m_state_post_interval;
   bool m_require_health;
@@ -109,12 +133,17 @@ class Rendezvous : public AppCastingMOOSApp
   bool m_require_landing_target;
   bool m_require_platform_ready;
   bool m_require_platform_health;
+  bool m_secondary_landing_enabled;
+  std::map<std::string, RequiredCheck> m_required_checks;
 
  private: // State variables
   std::string m_state;
   std::string m_reason;
   std::string m_session_id;
   std::string m_route_state;
+  std::string m_remote_uav_phase;
+  std::string m_remote_uav_session;
+  std::string m_pending_request;
   double m_state_enter_time;
   double m_last_state_post_time;
   double m_route_command_time;
@@ -158,6 +187,9 @@ class Rendezvous : public AppCastingMOOSApp
   double m_landing_target_angle_time;
   double m_pearl_activation_time;
   double m_arrival_start_time;
+  double m_secondary_state_enter_time;
+  double m_secondary_arrival_start_time;
+  std::string m_secondary_recovery_state;
   bool m_nav_x_set;
   bool m_nav_y_set;
   bool m_battery_set;
@@ -181,6 +213,19 @@ class Rendezvous : public AppCastingMOOSApp
   bool m_pearl_activation_pending;
   bool m_pearl_arrived;
   bool m_uav_arrived;
+  bool m_pearl_deploy;
+  bool m_pearl_return;
+  bool m_pearl_station_keep;
+  bool m_pearl_manual_override;
+  bool m_pearl_deploy_set;
+  bool m_pearl_return_set;
+  bool m_pearl_station_keep_set;
+  bool m_pearl_manual_override_set;
+  bool m_pearl_control_saved;
+  bool m_saved_pearl_deploy;
+  bool m_saved_pearl_return;
+  bool m_saved_pearl_station_keep;
+  bool m_saved_pearl_manual_override;
   bool m_clearance_received;
   bool m_landing_target_available;
   bool m_landing_target_gate_ready;
