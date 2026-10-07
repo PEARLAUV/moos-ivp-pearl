@@ -1,0 +1,129 @@
+//-------------------------------------------------
+// FILE: meta_pearl.bhv
+// NAME: Charles Benjamin
+//-------------------------------------------------
+
+initialize MOOS_MANUAL_OVERRIDE = false
+initialize PEARL_ALLSTOP        = false
+initialize MAIN_TASK_STATUS         = none
+initialize PEARL_RENDEZVOUS_ACTIVE  = false
+initialize PEARL_RENDEZVOUS_ARRIVED = false
+initialize PEARL_TAKEOFF_STATIONKEEP_ACTIVE = false
+
+//----------------------------------------------------
+Behavior = BHV_StationKeep
+{
+  name      = pearl_station_keep
+  pwt       = 100
+  // Retain autonomous station-keeping while ALLSTOP suspends the FSM.
+  condition = (PEARL_FSM_MAIN_ACTIVITY_STATE=IDLE) or (PEARL_ALLSTOP=true)
+  condition = MOOS_MANUAL_OVERRIDE=false
+
+  // Hold tightly enough for the UAV's three-metre landing-separation gate.
+  center_activate    = true
+  inner_radius       = 0.25
+  outer_radius       = 0.5
+  hibernation_radius = 0.75
+  outer_speed        = $(SPEED)
+  transit_speed      = $(SPEED)
+  swing_time         = 3
+
+  visual_hints = vertex_size=0, edge_color=blue
+}
+
+//----------------------------------------------------
+// Independent station-keeping during takeoff support, with a distinct display.
+Behavior = BHV_StationKeep
+{
+  name         = pearl_takeoff_station_keep
+  pwt          = 100
+  condition    = PEARL_FSM_OPERATION_STATE=TAKEOFF_SUPPORT
+  activeflag   = PEARL_TAKEOFF_STATIONKEEP_ACTIVE=true
+  inactiveflag = PEARL_TAKEOFF_STATIONKEEP_ACTIVE=false
+
+  center_activate    = true
+  inner_radius       = 0.25
+  outer_radius       = 0.5
+  hibernation_radius = 0.75
+  outer_speed        = $(SPEED)
+  transit_speed      = $(SPEED)
+  swing_time         = 3
+
+  visual_hints = vertex_size=0, edge_color=red, edge_size=2
+}
+
+//----------------------------------------------------
+Behavior = BHV_Waypoint
+{
+  name      = pearl_main_task
+  pwt       = 100
+  condition = PEARL_FSM_MAIN_ACTIVITY_STATE=EXECUTING_MISSION
+  perpetual = true
+  endflag   = MAIN_TASK_STATUS=completed
+  updates   = PEARL_WPT_UPDATE
+
+  lead           = 2
+  lead_damper    = 1
+  speed          = $(SPEED)
+  capture_line   = true
+  capture_radius = 3
+  slip_radius    = 10
+  points         = 22,-9:32,-35:14,-44
+  repeat         = 2
+  order          = normal
+
+  visual_hints = nextpt_color=yellow
+  visual_hints = nextpt_vertex_size=8
+  visual_hints = nextpt_lcolor=gray70
+  visual_hints = vertex_color=dodger_blue, edge_color=white
+  visual_hints = vertex_size=5, edge_size=1
+}
+
+//----------------------------------------------------
+Behavior = BHV_Waypoint
+{
+  name      = pearl_return
+  pwt       = 100
+  condition = PEARL_FSM_MAIN_ACTIVITY_STATE=RETURNING_TO_BASE
+  endflag   = MAIN_TASK_STATUS=returned
+  perpetual = true
+
+  speed          = $(SPEED)
+  capture_radius = 2
+  slip_radius    = 8
+  points         = 10.6,4.8
+}
+
+//----------------------------------------------------
+// A dedicated waypoint instance prevents a rendezvous update from changing
+// PEARL's fixed route. Completion hands PEARL to its existing StationKeep.
+Behavior = BHV_Waypoint
+{
+  name       = pearl_rendezvous_
+  pwt        = 110
+  templating = spawn
+  condition = DEPLOY=true
+  condition = MOOS_MANUAL_OVERRIDE=false
+  condition = PEARL_RENDEZVOUS_ACTIVE=true
+  updates   = PEARL_RENDEZVOUS_UPDATE
+
+  endflag = PEARL_RENDEZVOUS_ACTIVE=false
+  endflag = PEARL_RENDEZVOUS_ARRIVED=true
+  endflag = RETURN=false
+  endflag = STATION_KEEP=true
+
+  speed          = $(SPEED)
+  capture_radius = 1
+  // Disable non-monotonic/slip completion for this one-point maneuver.
+  // When PEARL starts close but is still moving away, a larger slip radius
+  // can otherwise declare success before she has actually reached the point.
+  slip_radius    = 1
+  capture_line   = false
+  points         = empty
+  repeat         = 0
+  order          = normal
+
+  visual_hints = nextpt_color=magenta
+  visual_hints = nextpt_vertex_size=8
+  visual_hints = vertex_color=magenta, edge_color=white
+}

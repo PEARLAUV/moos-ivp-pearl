@@ -1,0 +1,103 @@
+//-------------------------------------------------
+// FILE: meta_uav.bhv
+// NAME: Charles Benjamin
+//-------------------------------------------------
+
+initialize ROUTE_DEPLOY          = false
+initialize ROUTE_EXECUTE         = false
+initialize ROUTE_READY          = false
+initialize ROUTE_CLEAR          = false
+
+#ifdef XMODE SIM
+initialize STATION_KEEP          = false
+initialize MOOS_MANUAL_OVERRIDE  = false
+#else
+initialize DESIRED_ALTITUDE      = $(TAKEOFF_ALTITUDE)
+#endif
+
+//----------------------------------------------------
+// Each mediated DEPLOY supplies one complete, ordered route snapshot.
+// Completing or clearing the route removes the spawned behavior.
+Behavior = BHV_Waypoint
+{
+  templating = spawn
+  name       = operator_route_
+  pwt        = 100
+  updates    = ROUTE_UPDATE
+  spawnflag  = ROUTE_READY=true
+  spawnflag  = ROUTE_CLEAR=false
+
+#ifdef XMODE SIM
+  condition = (ROUTE_CLEAR=true) or (ROUTE_DEPLOY=true)
+  condition = UAV_LANDED_STATE=IN_AIR
+#else
+  // Form the Helm decision before pArduBridge transfers control authority.
+  condition = (ROUTE_CLEAR=true) or (ROUTE_DEPLOY=true)
+#endif
+
+  endflag = ROUTE_DEPLOY=false
+  endflag = ROUTE_READY=false
+  endflag = ROUTE_CLEAR=false
+#ifdef XMODE SIM
+  endflag = STATION_KEEP=true
+  endflag = AUTOPILOT_MODE=SIM_STATION_KEEP
+#else
+  endflag = ARDU_COMMAND=HOLD_POSITION
+#endif
+
+  speed          = 3
+#ifdef XMODE SIM
+#else
+  // pArduBridge may publish speed=0 before the first Copter leg. Keep this
+  // operator mission's effective travel speed fixed while accepting points.
+  speed_alt      = 3
+  use_alt_speed  = true
+#endif
+  capture_radius = 1.5
+  slip_radius    = 4
+  order           = normal
+  points         = empty
+
+  visual_hints = nextpt_color=yellow
+  visual_hints = nextpt_vertex_size=8
+  visual_hints = vertex_color=dodger_blue, edge_color=white
+}
+
+//----------------------------------------------------
+// Allow passive drift inside the hibernation radius, then use Helm guidance
+// to return to the captured endpoint.
+#ifdef XMODE SIM
+Behavior = BHV_StationKeep
+{
+  name      = operator_station_keep
+  pwt       = 100
+  condition = MOOS_MANUAL_OVERRIDE=false
+  condition = STATION_KEEP=true
+  condition = ROUTE_DEPLOY=false
+
+  // Recovery routes terminate close to safety-gated points. Brake promptly
+  // instead of allowing the generic hold to drift several metres past them.
+  center_activate    = true
+  inner_radius       = 0.25
+  outer_radius       = 0.5
+  hibernation_radius = 0.75
+  outer_speed        = 1
+  transit_speed      = 1.5
+  swing_time         = 2
+}
+#endif
+
+#ifdef XMODE SIM
+#else
+//----------------------------------------------------
+// Form vertical guidance with the route before control transfers to the Helm.
+Behavior = BHV_ConstantAltitude
+{
+  name      = operator_altitude
+  pwt       = 100
+  condition = ROUTE_DEPLOY=true
+  perpetual = true
+  altitude  = $(TAKEOFF_ALTITUDE)
+  duration  = -1
+}
+#endif

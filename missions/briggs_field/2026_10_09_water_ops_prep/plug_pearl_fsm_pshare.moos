@@ -1,0 +1,6 @@
+  // GENERATED FILE - source: pearl_fsm.toml
+  // Include inside ProcessConfig = pShare.
+  output = src_name=PEARL_FSM_RUNTIME_STATE,     route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=PEARL_FSM_RUNTIME_HEARTBEAT, route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=PEARL_FSM_RUNTIME_EPOCH,     route=$(SHORE_IP):$(SHORE_PSHARE)
+  output = src_name=FSM_TRANSITION, dest_name=PEARL_FSM_TRANSITION, route=$(SHORE_IP):$(SHORE_PSHARE)

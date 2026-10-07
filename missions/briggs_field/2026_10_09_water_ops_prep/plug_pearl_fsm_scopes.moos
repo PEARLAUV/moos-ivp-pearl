@@ -1,0 +1,6 @@
+  // GENERATED FILE - source: pearl_fsm.toml
+  // Include inside the shoreside viewer ProcessConfig section.
+  scope = PEARL_FSM_RUNTIME_STATE
+  scope = PEARL_FSM_RUNTIME_HEARTBEAT
+  scope = PEARL_FSM_RUNTIME_EPOCH
+  scope = PEARL_FSM_TRANSITION

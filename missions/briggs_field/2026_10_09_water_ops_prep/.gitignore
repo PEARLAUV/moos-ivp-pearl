@@ -1,0 +1,16 @@
+/LOG_*/
+/MOOSLog_*/
+/XLOG_*/
+/SITL_aug_pearl_uav/
+/field_logs/
+/.LastOpenedMOOSLogDirectory
+/.checkvars
+/.mem_info*
+/targ_*.moos
+/targ_*.bhv
+/tmp_*
+/*.moosx
+/*.bhvx
+/plug_*_states.bhv
+/plug_*_fsm_runtime.moos
+/pearl_fsm/*

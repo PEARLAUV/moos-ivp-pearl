@@ -1,0 +1,6 @@
+  // GENERATED FILE - source: uav_fsm.toml
+  // Include inside the shoreside viewer ProcessConfig section.
+  scope = UAV_FSM_RUNTIME_STATE
+  scope = UAV_FSM_RUNTIME_HEARTBEAT
+  scope = UAV_FSM_RUNTIME_EPOCH
+  scope = UAV_FSM_TRANSITION
