@@ -62,6 +62,10 @@ class BridgeTest(unittest.TestCase):
   event = var=UAV_NAV_HEADING, val=0, time=0
   event = var=UAV_NAV_ALTITUDE_MSL, val=13, time=0
   event = var=SHIP_POSE_ENABLED, val=true, time=0
+  event = var=NAV_LAT, val=0, time=0
+  event = var=NAV_LONG, val=0, time=0
+  event = var=NAV_HEADING, val=180, time=0
+  event = var=NAV_SPEED, val=5, time=0
 }
 """ if warped else ""
         self.mission.write_text(f"""MOOSTimeWarp = {5 if warped else 1}
@@ -216,6 +220,16 @@ ProcessConfig = pMavlinkShipBridge
         self.assertGreaterEqual(len(targets), 25)
         self.assertEqual(struct.unpack("<IiiiihhhH", poses[-1])[1:4],
                          (423584360, -710874480, 5000))
+        # Native UAV NAV_* must not remain subscribed as a default ship prefix.
+        self.poke(APPCAST_REQ="node=all,app=pMavlinkShipBridge,duration=10,key=test")
+        subprocess.run(
+            [str(MOOS_BIN / "uQueryDB"), str(self.mission), "--wait=5",
+             "--condition=APPCAST!=missing", "--check_var=APPCAST"],
+            cwd=self.temp.name, capture_output=True, timeout=10, check=True,
+        )
+        appcast = (Path(self.temp.name) / ".checkvars").read_text()
+        self.assertIn("pMavlinkShipBridge", appcast)
+        self.assertNotIn("Unhandled Mail: NAV_", appcast)
 
     def test_numeric_pose_condition(self):
         # MOOSDB fixes a variable\'s type at its first publication, so numeric

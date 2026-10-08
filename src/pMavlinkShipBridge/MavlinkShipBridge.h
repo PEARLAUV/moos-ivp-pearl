@@ -5,6 +5,7 @@
 #ifndef MAVLINK_SHIP_BRIDGE_HEADER
 #define MAVLINK_SHIP_BRIDGE_HEADER
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -48,6 +49,7 @@ private:
   static void appendFloat(std::vector<uint8_t> &payload, float value);
 
 private: // Configuration
+  std::atomic<bool> m_configuration_loaded{false};
   std::string m_ship_nav_prefix = "NAV";
   std::string m_mavlink_host;
   unsigned int m_mavlink_port;

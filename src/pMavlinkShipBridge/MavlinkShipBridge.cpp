@@ -306,12 +306,17 @@ bool MavlinkShipBridge::OnStartUp()
       reportUnhandledConfigWarning(original);
   }
 
+  m_configuration_loaded.store(true);
   registerVariables();
   return true;
 }
 
 void MavlinkShipBridge::registerVariables()
 {
+  // OnConnectToServer can run before OnStartUp reads configured variable names.
+  // Do not leave default NAV_* subscriptions behind in a prefixed community.
+  if(!m_configuration_loaded.load())
+    return;
   AppCastingMOOSApp::RegisterVariables();
   Register(m_ship_pose_enable_var, 0);
   if(!m_ship_altitude_var.empty())
