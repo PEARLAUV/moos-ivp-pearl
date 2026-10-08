@@ -11,7 +11,8 @@ ProcessConfig = uRouteSequence
   condition     = ROUTE_EXECUTE = true
   condition     = ((ROUTE_EXECUTE_PURPOSE = operator) and (UAV_FSM_OPERATION_STATE = MISSION_EXECUTION)) or ((ROUTE_EXECUTE_PURPOSE = recovery) and (UAV_FSM_OPERATION_STATE = LANDING_OPERATIONS))
   condition     = ROUTE_READY = true
-  condition     = UAV_IS_ARMED = true
+  // pArduBridge publishes native arming telemetry as numeric 0/1.
+  condition     = UAV_IS_ARMED = 1
   condition     = UAV_LANDED_STATE = IN_AIR
   upon_awake    = restart
   // CLEAR locally sets ROUTE_EXECUTE=false, which must be allowed to pause
