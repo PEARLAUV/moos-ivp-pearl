@@ -380,6 +380,13 @@ Before first
 activation statuses are `inactive`; age-limited checks retain their last
 result after deactivation until a required input expires. Flight-plan input
 has no age limit: the Helm's `ROUTE_READY` spawnflag remains valid until changed.
+On each entry to TAKEOFF_OPERATIONS, the FSM posts `MOOS_MANUAL_OVERRIDE=false`
+to wake the Helm's planning loop after landing parks it. This is an entry effect
+in `uav_fsm.toml`, not a separate timer or a continuously asserted condition.
+It lets successive routes spawn and publish `ROUTE_READY` without activating
+`pArduBridge`: `HELM_STATUS` and flight-control handoff remain gated by
+`uRouteSequence` until takeoff completes. A subsequent manual override is not
+cleared again unless a new TAKEOFF_OPERATIONS entry occurs.
 GPS requires a fresh 3D fix within 60 seconds and a continuous 5-second hold;
 flight-plan receipt has 60 seconds; low or invalid battery fails immediately
 (missing data gets 5 seconds). The armability check requires fresh flight-controller health telemetry,

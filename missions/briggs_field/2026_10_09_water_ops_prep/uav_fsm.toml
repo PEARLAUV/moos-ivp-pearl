@@ -28,6 +28,9 @@ uav_gps_available = { initial = "UNKNOWN", initialize = false }
 uav_is_armed = { initial = "UNKNOWN", initialize = false }
 # Shoreside triggers each UAV task; the runtime consumes the request on entry.
 task_execute = { initial = false, initialize = false }
+# Wake Helm planning on takeoff entry without changing ArduBridge authority.
+# Do not reset an operator/flight-controller override when this runtime starts.
+moos_manual_override = { initial = true, initialize = false }
 # One local uChecks process owns the aggregate and all named check results.
 takeoff_prechecks = { initial = "inactive", initialize = false }
 # The FSM publishes a new token on each entry to TAKEOFF_OPERATIONS.
@@ -65,7 +68,7 @@ layout = { left = 400, top = 280, width = 250 }
 initial = "establishing_takeoff_readiness"
 diagram = true
 entry_epoch = true
-entry_effects = { task_execute = false }
+entry_effects = { task_execute = false, moos_manual_override = false }
 
 [states.takeoff_operations.sinks.completed_successfully]
 label = "Completed"
@@ -249,6 +252,7 @@ label = "Approach failed"
 [states.landing_operations.states.landing]
 label = "Landing"
 layout = { left = 150, top = 980, width = 300 }
+exit_effects = { moos_manual_override = false }
 
 [states.landing_operations.states.landing.transitions.landing_completed]
 to = "sink.nominal"
