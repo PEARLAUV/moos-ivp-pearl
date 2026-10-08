@@ -404,8 +404,8 @@ ProcessConfig = pMarineViewer
   button_2 = TASK-UAV # TASK_EXECUTE_UAV=true # ROUTE_BUFFER_DEPLOY=true # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_TASK_REQUEST,string_val=true"
   button_3 = LOCK-DRONEPORT # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=pearl,var_name=PEARL_DRONEPORT_BAY_COVER_STATE,string_val=closed" # color=yellow
 
-  #button_4 = UAV DISARM # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_DISARM_REQUEST,string_val=true" # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_TASK_CANCEL,string_val=true" # color=red
-  #button_8 = PEARL RETURN # DEPLOY_PEARL=true # RETURN_PEARL=true # STATION_KEEP_PEARL=false # PEARL_ALLSTOP_PEARL=false # MOOS_MANUAL_OVERRIDE_PEARL=false
-  #button_9 = PEARL STATION # DEPLOY_PEARL=true # RETURN_PEARL=false # STATION_KEEP_PEARL=true # PEARL_ALLSTOP_PEARL=false # MOOS_MANUAL_OVERRIDE_PEARL=false
-  #button_10 = PEARL ALLSTOP # PEARL_ALLSTOP_PEARL=true # color=red
+  // button_4 = UAV DISARM # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_DISARM_REQUEST,string_val=true" # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_TASK_CANCEL,string_val=true" # color=red
+  // button_8 = PEARL RETURN # DEPLOY_PEARL=true # RETURN_PEARL=true # STATION_KEEP_PEARL=false # PEARL_ALLSTOP_PEARL=false # MOOS_MANUAL_OVERRIDE_PEARL=false
+  // button_9 = PEARL STATION # DEPLOY_PEARL=true # RETURN_PEARL=false # STATION_KEEP_PEARL=true # PEARL_ALLSTOP_PEARL=false # MOOS_MANUAL_OVERRIDE_PEARL=false
+  // button_10 = PEARL ALLSTOP # PEARL_ALLSTOP_PEARL=true # color=red
 }
