@@ -31,6 +31,8 @@ task_execute = { initial = false, initialize = false }
 # Wake Helm planning on takeoff entry without changing ArduBridge authority.
 # Do not reset an operator/flight-controller override when this runtime starts.
 moos_manual_override = { initial = true, initialize = false }
+# Attachment intent is latched by state entry; only the SITL bridge consumes it.
+sim_uav_on_ship = { initial = true, initialize = true }
 # One local uChecks process owns the aggregate and all named check results.
 takeoff_prechecks = { initial = "inactive", initialize = false }
 # The FSM publishes a new token on each entry to TAKEOFF_OPERATIONS.
@@ -56,6 +58,7 @@ initial_layout = { left = 0, top = 514 }
 [states.idle]
 label = "Idle on deck"
 layout = { left = 120, top = 500, width = 200 }
+entry_effects = { sim_uav_on_ship = true }
 
 [states.idle.transitions.begin_takeoff_operations]
 to = "takeoff_operations"
@@ -107,6 +110,7 @@ label = "Denied"
 [states.takeoff_operations.states.takeoff]
 label = "Taking off"
 layout = { top = 510, left = 0, width = 250}
+exit_effects = { sim_uav_on_ship = false }
 
 [states.takeoff_operations.states.takeoff.transitions.takeoff_completed]
 to = "sink.completed_successfully"
