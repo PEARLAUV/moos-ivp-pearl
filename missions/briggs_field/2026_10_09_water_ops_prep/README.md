@@ -613,15 +613,15 @@ above SITL home). For live height/heave input, set `ship_altitude_var` in that
 block and refresh it within `input_timeout`. Landmark geometry uses the same
 deck height. Deck roll/pitch are not modeled.
 
-Time warp above 1 is supported when **SITL speedup matches MOOS time warp**:
+Time warp above 1 is supported. In SITL mode, `launch_uav.sh`
+automatically passes the mission warp to the simulator as **SITL speedup**:
 
 ```bash
-./launch_sitl.sh 5
 ./launch.sh --mode=SITL 5
 ```
 
-Use the same factor for split community launches. `SITL_SPEEDUP=5
-./launch_sitl.sh` is equivalent. Freshness and publish periods are in simulated
+Use the same factor for split community launches, for example
+`./launch_uav.sh --mode=SITL 5`. Freshness and publish periods are in simulated
 seconds; CPU/network capacity must sustain the accelerated update rates.
 
 `pMavlinkShipBridge` also emulates the landmark camera: it sends
@@ -675,13 +675,32 @@ Generate targets without launching:
 ./launch.sh --mode=SITL --just_make --nogui 5
 ```
 
-For SITL, start the configured ArduPilot service first and then start the
-mission:
+For SITL, launch the mission normally; no separate simulator terminal is needed:
 
 ```bash
-./launch_sitl.sh
 ./launch.sh --mode=SITL
 ```
+
+In SITL mode, `launch_uav.sh` starts the simulator through `launch_sitl.sh`
+with the mission time warp, waits for its owned container and controller TCP
+endpoint, then launches the UAV community with `pAntler`. `meta_uav.moos`
+launches `pArduBridge` normally in both modes; no bridge wrapper or simulator
+entry is present in ANTLER. REAL never starts Docker. `--just_make` only
+generates configuration; it does not start the simulator.
+
+Startup readiness has a 60-second wall-clock deadline (`SITL_STARTUP_TIMEOUT`
+may override it). An autopilot heartbeat must still arrive within three seconds
+of the bridge connecting. Startup failures are reported in `LOG_sitl/*.log`;
+fix the error and relaunch. A startup failure or timeout prevents the UAV
+community from launching. A background cleanup watcher survives `--auto` and
+removes the private Compose project on normal mission shutdown or UAV ANTLER
+exit. Simulator logs are collected before removal; bridge output is handled
+normally by ANTLER. SIGKILL cannot run this cleanup.
+
+Do not also launch a manual simulator on the same ports: the launcher creates
+its own isolated Compose project, and port conflicts fail rather than adopting
+or stopping another simulator. `launch_sitl.sh` remains available for standalone
+simulator diagnostics, but is no longer a prerequisite for mission launch.
 
 `launch_sitl.sh` delegates to
 `~/workspace/mit/pearl/ardupilot-sitl/bin/ardupilot-sitl`, passing `sitl.parm`

@@ -207,14 +207,81 @@ if [ "$JUST_MAKE" = "yes" ]; then
 fi
 
 #------------------------------------------------------------
-#  Part 6: Launch the UAV community.
+#  Part 6: Start SITL and wait before launching any UAV MOOS processes.
+#------------------------------------------------------------
+cleanup_sitl() {
+  trap - EXIT INT TERM
+  if [ -n "$ANTLER_PID" ]; then
+    kill -TERM "$ANTLER_PID" 2>/dev/null || true
+  fi
+  timeout 5 "$MISSION_DIR/launch_sitl.sh" "$TIME_WARP" logs --no-color \
+    >> "$SITL_LOG_FILE" 2>&1 || true
+  timeout 15 "$MISSION_DIR/launch_sitl.sh" "$TIME_WARP" down --timeout 5 \
+    >> "$SITL_LOG_FILE" 2>&1 || true
+}
+
+if [ "$MODE" = "SITL" ]; then
+  STARTUP_TIMEOUT="${SITL_STARTUP_TIMEOUT:-60}"
+  CONTROLLER_PORT="${SITL_PORT:-5760}"
+  if [[ ! "$STARTUP_TIMEOUT" =~ ^[1-9][0-9]*$ || ! "$CONTROLLER_PORT" =~ ^[0-9]{1,5}$ ]] ||
+     (( 10#$CONTROLLER_PORT < 1 || 10#$CONTROLLER_PORT > 65535 )); then
+    echo "$ME: invalid SITL_STARTUP_TIMEOUT or SITL_PORT" >&2
+    exit 1
+  fi
+  CONTROLLER_PORT="$((10#$CONTROLLER_PORT))"
+  # Never adopt or stop a manually launched simulator on the same ports.
+  COMPOSE_PROJECT_NAME="moos-sitl-$(id -u)-$$"
+  export COMPOSE_PROJECT_NAME
+  SITL_LOG_DIR="${SITL_LOG_DIR:-$MISSION_DIR/LOG_sitl}"
+  mkdir -p -- "$SITL_LOG_DIR" || exit 1
+  SITL_LOG_FILE="$SITL_LOG_DIR/$COMPOSE_PROJECT_NAME.log"
+  ANTLER_PID=""
+  trap cleanup_sitl EXIT
+  trap 'exit 143' TERM
+  DEADLINE=$((SECONDS + STARTUP_TIMEOUT))
+  echo "$ME: Starting SITL with speedup $TIME_WARP; log: $SITL_LOG_FILE"
+  if ! timeout "$STARTUP_TIMEOUT" "$MISSION_DIR/launch_sitl.sh" "$TIME_WARP" \
+      up -d --no-build > "$SITL_LOG_FILE" 2>&1; then
+    echo "$ME: SITL startup failed; see $SITL_LOG_FILE" >&2
+    exit 1
+  fi
+  while true; do
+    # Ownership matters: an unrelated listener must not release this launcher.
+    RUNNING_ID="$(timeout 2 "$MISSION_DIR/launch_sitl.sh" "$TIME_WARP" \
+      ps --status running --quiet 2>> "$SITL_LOG_FILE" || true)"
+    if [[ -n "$RUNNING_ID" ]] &&
+       timeout 1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/"$1"' _ "$CONTROLLER_PORT" 2>/dev/null; then
+      break
+    fi
+    if (( SECONDS >= DEADLINE )); then
+      echo "$ME: SITL controller startup timed out; see $SITL_LOG_FILE" >&2
+      exit 1
+    fi
+    sleep 0.2
+  done
+  echo "$ME: SITL controller ready."
+fi
+
+#------------------------------------------------------------
+#  Part 7: Launch the UAV community normally.
 #------------------------------------------------------------
 echo "Launching $VNAME MOOS Community. MODE=$MODE WARP=$TIME_WARP"
 pAntler "targ_${VNAME}.moos" >& /dev/null &
+ANTLER_PID=$!
+if [ "$MODE" = "SITL" ]; then
+  # --auto returns to launch.sh. Keep a cleanup watcher in its process group
+  # so normal mission shutdown (or ANTLER exit) also removes the owned simulator.
+  (
+    trap cleanup_sitl EXIT
+    trap 'exit 0' INT TERM
+    while kill -0 "$ANTLER_PID" 2>/dev/null; do sleep 0.5; done
+  ) </dev/null >/dev/null 2>&1 &
+  trap - EXIT TERM
+fi
 echo "Done Launching $VNAME MOOS Community"
 
 #------------------------------------------------------------
-#  Part 7: Return to a calling launcher or open uMAC.
+#  Part 8: Return to a calling launcher or open uMAC.
 #------------------------------------------------------------
 if [ "$AUTO_LAUNCHED" = "yes" ]; then
   exit 0
