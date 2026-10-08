@@ -602,12 +602,13 @@ surface (including ground-facing sensor readings) and carry an already grounded 
 External pose loss for more than one simulated second disables this coupling.
 
 The bridge sends ship poses only while the MOOS fact `SIM_UAV_ON_SHIP=true`.
-The mission seeds it true for its on-deck start, sets it false during secondary
-landing/loiter diversion states, and re-enables it on primary approach/landing
-(including target retries). It stays latched after those states, so a completed
-Rally landing remains detached. `uSimShipStart`, `uSimShipDetach`, and
-`uSimShipAttach` in `meta_uav.moos` own this policy; change the startup seed for an off-deck start.
-Outside those active recovery states, an operator can also set the fact with
+FSM entry/exit effects in `uav_fsm.toml` own this policy: entering Idle on deck
+sets it true, leaving Taking off sets it false, and entering the primary
+approach sets it true again (remaining latched through landing and target retries).
+Secondary landing/loiter diversion and recovery entries set it false, so a
+completed Rally landing remains detached. There are no ship-coupling timers;
+only the SITL bridge consumes this intent. Change the Idle entry effect for an
+off-deck start. Between state entries, an operator can also set the fact with
 `uPokeDB targ_uav.moos SIM_UAV_ON_SHIP=false`. Stop poses before off-deck
 landing, allowing the one-second SITL expiry window. If the fact is incorrectly
 left true, **any** grounded UAV will intentionally be moved to the ship.

@@ -46,61 +46,11 @@ ProcessConfig = ANTLER
   Run = uTimerScript   @ NewConsole = false ~ uTaskingRejectOffnominal
 #ifdef XMODE SITL
   Run = pMavlinkShipBridge @ NewConsole = false
-  Run = uTimerScript @ NewConsole = false ~ uSimShipStart
-  Run = uTimerScript @ NewConsole = false ~ uSimShipDetach
-  Run = uTimerScript @ NewConsole = false ~ uSimShipAttach
 #endif
   Run = pArduBridge    @ NewConsole = false
   Run = pEchoVar       @ NewConsole = false
   Run = pDeadManPost   @ NewConsole = false
   Run = uTimerScript   @ NewConsole = false ~ uRouteSequence
-}
-
-//----------------------------------------------------
-ProcessConfig = pFSMRuntime
-{
-  AppTick   = 4
-  CommsTick = 4
-
-  // Debug/visualization aid. Set by --min_state_time in launch.sh.
-  min_state_time = $(MIN_STATE_TIME)
-
-#include plug_uav_fsm_runtime.moos
-}
-
-//----------------------------------------------------
-ProcessConfig = uPretakeoffChecks
-{
-  AppTick = 4
-  CommsTick = 4
-  condition = (UAV_FSM_TAKEOFF_OPERATIONS_STATE=ESTABLISHING_TAKEOFF_READINESS) or (UAV_FSM_TAKEOFF_OPERATIONS_STATE=REQUESTING_TAKEOFF_CLEARANCE)
-  result_var = TAKEOFF_PRECHECKS
-  result_prefix = TAKEOFF_PRECHECK_
-  session_var = UAV_FSM_OPERATION_STATE_TAKEOFF_OPERATIONS_EPOCH
-
-  check = name=GPS,timeout=60,max_age=3,success_hold=5
-  require = check=GPS,var=UAV_GPS_AVAILABLE,type=double,equals=1,on_mismatch=wait
-  require = check=GPS,var=UAV_GPS_FIX_TYPE,type=double,min=3,on_mismatch=wait
-  require = check=GPS,var=UAV_GPS_AGE,type=double,min=0,max=3,on_mismatch=wait
-
-  check = name=FLIGHT_PLAN,timeout=60
-  require = check=FLIGHT_PLAN,var=ROUTE_READY,type=string,equals=true,on_mismatch=wait
-
-  check = name=BATTERY,timeout=5,max_age=3
-  require = check=BATTERY,var=UAV_BATTERY_DATA_VALID,type=double,equals=1,on_mismatch=fail
-  require = check=BATTERY,var=UAV_BATTERY_SOC,type=double,min=30,on_mismatch=fail
-
-  check = name=ARMABLE,timeout=10,max_age=3,success_hold=5
-  require = check=ARMABLE,var=UAV_IS_ARMABLE,type=double,equals=1,on_mismatch=wait
-  require = check=ARMABLE,var=UAV_IS_ARMED,type=double,equals=0,on_mismatch=fail
-
-  check = name=LANDED,timeout=10,max_age=3,success_hold=5
-  require = check=LANDED,var=UAV_LANDED_STATE,type=string,equals=ON_GROUND,on_mismatch=fail
-  require = check=LANDED,var=UAV_LANDED_STATE_AGE,type=double,min=0,max=3,on_mismatch=wait
-
-  check = name=HEALTHY,timeout=10,max_age=3,success_hold=5
-  require = check=HEALTHY,var=UAV_HEALTH_AVAILABLE,type=double,equals=1,on_mismatch=wait
-  require = check=HEALTHY,var=UAV_HEALTH_AGE,type=double,min=0,max=3,on_mismatch=wait
 }
 
 //----------------------------------------------------
@@ -244,6 +194,26 @@ ProcessConfig = uFldMessageHandler
 }
 
 //----------------------------------------------------
+ProcessConfig = pHelmIvP
+{
+  AppTick   = 4
+  CommsTick = 4
+  term_report_interval = 2
+
+  ok_skew   = any
+  behaviors = targ_$(VNAME).bhv
+
+  // Load the shared supervisory behavior used by the UAV companion FSM.
+  ivp_behavior_dir = $(PEARL_LIB_DIR)
+
+  start_in_drive   = true
+  park_on_allstop  = false
+  Domain    = course:0:359:360
+  Domain    = speed:0:5:51
+  Domain    = altitude:0:30:61
+}
+
+//----------------------------------------------------
 ProcessConfig = uFldNodeBroker
 {
   AppTick   = 1
@@ -350,42 +320,57 @@ ProcessConfig = uFldNodeBroker
 }
 
 //----------------------------------------------------
+ProcessConfig = pFSMRuntime
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  // Debug/visualization aid. Set by --min_state_time in launch.sh.
+  min_state_time = $(MIN_STATE_TIME)
+
+#include plug_uav_fsm_runtime.moos
+}
+
+//----------------------------------------------------
+ProcessConfig = uPretakeoffChecks
+{
+  AppTick = 4
+  CommsTick = 4
+  condition = (UAV_FSM_TAKEOFF_OPERATIONS_STATE=ESTABLISHING_TAKEOFF_READINESS) or (UAV_FSM_TAKEOFF_OPERATIONS_STATE=REQUESTING_TAKEOFF_CLEARANCE)
+  result_var = TAKEOFF_PRECHECKS
+  result_prefix = TAKEOFF_PRECHECK_
+  session_var = UAV_FSM_OPERATION_STATE_TAKEOFF_OPERATIONS_EPOCH
+
+  check = name=GPS,timeout=60,max_age=3,success_hold=5
+  require = check=GPS,var=UAV_GPS_AVAILABLE,type=double,equals=1,on_mismatch=wait
+  require = check=GPS,var=UAV_GPS_FIX_TYPE,type=double,min=3,on_mismatch=wait
+  require = check=GPS,var=UAV_GPS_AGE,type=double,min=0,max=3,on_mismatch=wait
+
+  check = name=FLIGHT_PLAN,timeout=60
+  require = check=FLIGHT_PLAN,var=ROUTE_READY,type=string,equals=true,on_mismatch=wait
+
+  check = name=BATTERY,timeout=5,max_age=3
+  require = check=BATTERY,var=UAV_BATTERY_DATA_VALID,type=double,equals=1,on_mismatch=fail
+  require = check=BATTERY,var=UAV_BATTERY_SOC,type=double,min=30,on_mismatch=fail
+
+  check = name=ARMABLE,timeout=30,max_age=3,success_hold=5
+  require = check=ARMABLE,var=UAV_IS_ARMABLE,type=double,equals=1,on_mismatch=wait
+  require = check=ARMABLE,var=UAV_IS_ARMED,type=double,equals=0,on_mismatch=fail
+
+  check = name=LANDED,timeout=10,max_age=3,success_hold=5
+  require = check=LANDED,var=UAV_LANDED_STATE,type=string,equals=ON_GROUND,on_mismatch=fail
+  require = check=LANDED,var=UAV_LANDED_STATE_AGE,type=double,min=0,max=3,on_mismatch=wait
+
+  check = name=HEALTHY,timeout=10,max_age=3,success_hold=5
+  require = check=HEALTHY,var=UAV_HEALTH_AVAILABLE,type=double,equals=1,on_mismatch=wait
+  require = check=HEALTHY,var=UAV_HEALTH_AGE,type=double,min=0,max=3,on_mismatch=wait
+}
+
+
+//----------------------------------------------------
 #include plug_uav_ardupilot.moos
 
 #ifdef XMODE SITL
-ProcessConfig = uSimShipStart
-{
-  AppTick = 4
-  CommsTick = 4
-  paused = false
-  reset_max = 0
-  event = var=SIM_UAV_ON_SHIP, val=true, time=0
-}
-
-ProcessConfig = uSimShipDetach
-{
-  AppTick = 4
-  CommsTick = 4
-  condition = (UAV_FSM_LANDING_OPERATIONS_STATE = DEVIATING_TO_SECONDARY_LANDING_POSITION) or (UAV_FSM_LANDING_OPERATIONS_STATE = SECONDARY_LANDING) or (UAV_FSM_LANDING_OPERATIONS_STATE = TRANSITING_TO_SECONDARY_LOITER_LOCATION) or (UAV_FSM_LANDING_OPERATIONS_STATE = LOITERING_AT_SECONDARY_ALTITUDE)
-  upon_awake = restart
-  paused = false
-  reset_max = unlimited
-  reset_time = 1
-  event = var=SIM_UAV_ON_SHIP, val=false, time=0
-}
-
-ProcessConfig = uSimShipAttach
-{
-  AppTick = 4
-  CommsTick = 4
-  condition = (UAV_FSM_LANDING_OPERATIONS_STATE = APPROACHING) or (UAV_FSM_LANDING_OPERATIONS_STATE = LANDING) or (UAV_FSM_LANDING_OPERATIONS_STATE = RETRYING_LANDING_TARGET)
-  upon_awake = restart
-  paused = false
-  reset_max = unlimited
-  reset_time = 1
-  event = var=SIM_UAV_ON_SHIP, val=true, time=0
-}
-
 ProcessConfig = pMavlinkShipBridge
 {
   AppTick   = 20
@@ -433,30 +418,6 @@ ProcessConfig = pEchoVar
   Echo = UAV_ALTITUDE -> NAV_ALTITUDE
   Echo = UAV_DEPTH    -> NAV_DEPTH
 }
-
-//----------------------------------------------------
-ProcessConfig = pHelmIvP
-{
-  AppTick   = 4
-  CommsTick = 4
-  term_report_interval = 2
-
-  ok_skew   = any
-  behaviors = targ_$(VNAME).bhv
-
-  // Load the shared supervisory behavior used by the UAV companion FSM.
-  ivp_behavior_dir = $(PEARL_LIB_DIR)
-
-  // Route points may be staged before DEPLOY. DRIVE is safe here because all
-  // horizontal behaviors remain idle until their explicit conditions are met.
-  // Keep DRIVE during NothingToDo so templated route updates can still spawn.
-  start_in_drive   = true
-  park_on_allstop  = false
-  Domain    = course:0:359:360
-  Domain    = speed:0:5:51
-  Domain    = altitude:0:30:61
-}
-
 
 //----------------------------------------------------
 ProcessConfig = pRouteBuffer
