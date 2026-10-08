@@ -1,70 +1,32 @@
-#!/bin/bash
-#------------------------------------------------------------
-#   Script: launch_sitl.sh
-#  Mission: aug_pearl_uav
-#------------------------------------------------------------
+#!/usr/bin/env bash
+# Launch the containerized ArduPilot SITL with mission parameter defaults.
 set -euo pipefail
 
-ME=$(basename "$0")
-MISSION_DIR=$(cd "$(dirname "$0")" && pwd)
-ARDUPILOT_SITL_ROOT="${ARDUPILOT_SITL_ROOT:-$HOME/workspace/mit/pearl/ardupilot-sitl}"
-SITL_LAUNCHER="$ARDUPILOT_SITL_ROOT/bin/ardupilot-sitl"
-STATE_DIR=""
-LANDING_TARGET="yes"
-COMPOSE_ARGS=()
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+SITL_WRAPPER="${SITL_WRAPPER:-$HOME/workspace/mit/pearl/ardupilot-sitl/bin/ardupilot-sitl}"
 
-for ARGI; do
-  if [[ "$ARGI" = "--help" || "$ARGI" = "-h" ]]; then
-    echo "$ME [OPTIONS] [COMPOSE_COMMAND ...]"
-    echo "  --help, -h                    Show this help message"
-    echo "  --sitl_root=<path>            ardupilot-sitl checkout"
-    echo "  --state_dir=<path>            Persist SITL state in this directory"
-    echo "  --no_landing_target           Do not run the vision-target producer"
-    echo
-    echo "With no Compose command, starts 'up --no-build' in the foreground."
-    echo "Other commands (down, logs, ps, etc.) pass through to ardupilot-sitl."
-    exit 0
-  elif [[ "$ARGI" == --sitl_root=* ]]; then
-    ARDUPILOT_SITL_ROOT="${ARGI#*=}"
-    SITL_LAUNCHER="$ARDUPILOT_SITL_ROOT/bin/ardupilot-sitl"
-  elif [[ "$ARGI" == --state_dir=* ]]; then
-    STATE_DIR="${ARGI#*=}"
-  elif [[ "$ARGI" = "--no_landing_target" ]]; then
-    LANDING_TARGET="no"
-  else
-    COMPOSE_ARGS+=("$ARGI")
-  fi
-done
+if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
+  echo "Usage: $0 [time_warp] [STATE_DIRECTORY] [COMPOSE_COMMAND ...]"
+  echo "Use the same time_warp as launch.sh; default is SITL_SPEEDUP or 1."
+  exit 0
+fi
 
-if [[ ! -x "$SITL_LAUNCHER" ]]; then
-  echo "$ME: ardupilot-sitl launcher not found at: $SITL_LAUNCHER" >&2
+if [[ ! -x "$SITL_WRAPPER" ]]; then
+  echo "launch_sitl.sh: wrapper not found or not executable: $SITL_WRAPPER" >&2
   exit 1
 fi
 
-COMMAND="${COMPOSE_ARGS[0]:-up}"
-STARTING="no"
-case "$COMMAND" in
-  up) STARTING="yes" ;;
-esac
-
-LANDING_TARGET_PID=""
-cleanup() {
-  if [[ -n "$LANDING_TARGET_PID" ]]; then
-    kill "$LANDING_TARGET_PID" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT INT TERM
-
-if [[ "$STARTING" = "yes" && "$LANDING_TARGET" = "yes" ]]; then
-  PYTHONPATH="$ARDUPILOT_SITL_ROOT/ardupilot/modules/mavlink${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 "$MISSION_DIR/sitl_landing_target.py" &
-  LANDING_TARGET_PID=$!
+# Use the same factor as ./launch.sh [time_warp]. Remaining arguments retain
+# the wrapper's state-directory/Compose semantics.
+TIME_WARP="${SITL_SPEEDUP:-1}"
+if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
+  TIME_WARP="$1"
+  shift
 fi
-
-LAUNCH_ARGS=()
-if [[ -n "$STATE_DIR" ]]; then
-  LAUNCH_ARGS+=("$STATE_DIR")
+if [[ ! "$TIME_WARP" =~ ^[1-9][0-9]*$ ]]; then
+  echo "launch_sitl.sh: time warp / SITL_SPEEDUP must be a positive integer." >&2
+  exit 1
 fi
-LAUNCH_ARGS+=("${COMPOSE_ARGS[@]}")
-
-"$SITL_LAUNCHER" "${LAUNCH_ARGS[@]}"
+export SITL_SPEEDUP="$TIME_WARP"
+export SITL_PARAM_FILE="$SCRIPT_DIR/sitl.parm"
+exec "$SITL_WRAPPER" "$@"

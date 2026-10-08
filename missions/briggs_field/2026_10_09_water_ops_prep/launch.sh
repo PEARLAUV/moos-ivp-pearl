@@ -28,7 +28,6 @@ NOGUI="no"
 
 MODE="SITL"
 PEARL_START="-4,-22,0"
-TAKEOFF_ALTITUDE="8"
 SECONDARY_LANDING="10,15"
 MIN_STATE_TIME="0"
 AP_URL=""
@@ -59,9 +58,8 @@ for ARGI; do
     echo "  --log_clean, -lc              Run clean.sh before launch"
     echo "  --xlaunched, -x               Launched by automation"
     echo "  --nogui, -ng                  No pMarineViewer"
-    echo "  --pearl_start=<X,Y,H>         PEARL simulator start position (SITL mode)"
-    echo "  --takeoff_altitude=<8>        UAV altitude, m AGL"
-    echo "  --secondary_landing=<X,Y>     Fixed contingency landing point"
+    echo "  --pearl_start=<X,Y,H>         PEARL simulator start position"
+    echo "  --secondary_landing=<X,Y>     Contingency landing point (default: 10,15)"
     echo "  --min_state_time=<0>          Minimum FSM state dwell, seconds"
     echo "  --ap_url=<endpoint>           UAV ArduPilot endpoint"
     echo "  --ap_protocol=<proto>         UAV udp, tcp, or serial"
@@ -94,8 +92,6 @@ for ARGI; do
     MODE="${ARGI#*=}"
   elif [[ "${ARGI}" == --pearl_start=* ]]; then
     PEARL_START="${ARGI#*=}"
-  elif [[ "${ARGI}" == --takeoff_altitude=* ]]; then
-    TAKEOFF_ALTITUDE="${ARGI#*=}"
   elif [[ "${ARGI}" == --secondary_landing=* ]]; then
     SECONDARY_LANDING="${ARGI#*=}"
   elif [[ "${ARGI}" == --min_state_time=* ]]; then
@@ -132,6 +128,11 @@ if [[ ! "$MIN_STATE_TIME" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   exit 1
 fi
 
+if [[ ! "$SECONDARY_LANDING" =~ ^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+),[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)$ ]]; then
+  echo "$ME: --secondary_landing must be numeric X,Y. Exit Code 1."
+  exit 1
+fi
+
 UAV_MODE="$MODE"
 PEARL_MODE="$MODE"
 if [ "$MODE" = "SITL" ]; then
@@ -152,13 +153,13 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "UAV_MODE =          [${UAV_MODE}]"
   echo "PEARL_MODE =        [${PEARL_MODE}]"
   echo "PEARL_START =       [${PEARL_START}]"
+  echo "SECONDARY_LANDING = [${SECONDARY_LANDING}]"
   echo "SHORE_MPORT =       [${SHORE_MPORT}]"
   echo "UAV_MPORT =         [${UAV_MPORT}]"
   echo "PEARL_MPORT =       [${PEARL_MPORT}]"
   echo "SHORE_PSHARE =      [${SHORE_PSHARE}]"
   echo "UAV_PSHARE =        [${UAV_PSHARE}]"
   echo "PEARL_PSHARE =      [${PEARL_PSHARE}]"
-  echo "SECONDARY_LANDING = [${SECONDARY_LANDING}]"
   echo "MIN_STATE_TIME =    [${MIN_STATE_TIME}]"
   echo -n "Hit any key to continue launch "
   read -r _
@@ -178,7 +179,6 @@ UARGS=(--auto "$TIME_WARP" --mode="$UAV_MODE")
 UARGS+=(--mport="$UAV_MPORT" --pshare="$UAV_PSHARE")
 UARGS+=(--shore_pshare="$SHORE_PSHARE")
 UARGS+=(--pearl_ip=localhost --pearl_pshare="$PEARL_PSHARE")
-UARGS+=(--takeoff_altitude="$TAKEOFF_ALTITUDE")
 UARGS+=(--secondary_landing="$SECONDARY_LANDING")
 UARGS+=(--min_state_time="$MIN_STATE_TIME")
 [ -n "$AP_URL" ] && UARGS+=(--ap_url="$AP_URL")
@@ -188,7 +188,8 @@ UARGS+=(--min_state_time="$MIN_STATE_TIME")
 
 PARGS=(--auto "$TIME_WARP" --mode="$PEARL_MODE")
 PARGS+=(--mport="$PEARL_MPORT" --pshare="$PEARL_PSHARE")
-PARGS+=(--shore_pshare="$SHORE_PSHARE" --start_pos="$PEARL_START")
+PARGS+=(--shore_pshare="$SHORE_PSHARE")
+PARGS+=(--start_pos="$PEARL_START")
 PARGS+=(--uav_ip=localhost --uav_pshare="$UAV_PSHARE")
 PARGS+=(--min_state_time="$MIN_STATE_TIME")
 [ "$JUST_MAKE" = "yes" ] && PARGS+=(--just_make)

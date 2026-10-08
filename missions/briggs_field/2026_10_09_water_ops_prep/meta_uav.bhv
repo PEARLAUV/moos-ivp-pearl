@@ -8,7 +8,7 @@ initialize ROUTE_EXECUTE         = false
 initialize ROUTE_READY          = false
 initialize ROUTE_CLEAR          = false
 
-initialize DESIRED_ALTITUDE      = $(TAKEOFF_ALTITUDE)
+initialize DESIRED_ALTITUDE      = 8
 
 //----------------------------------------------------
 // Each mediated DEPLOY supplies one complete, ordered route snapshot.
@@ -53,6 +53,6 @@ Behavior = BHV_ConstantAltitude
   pwt       = 100
   condition = ROUTE_DEPLOY=true
   perpetual = true
-  altitude  = $(TAKEOFF_ALTITUDE)
+  altitude  = 8
   duration  = -1
 }

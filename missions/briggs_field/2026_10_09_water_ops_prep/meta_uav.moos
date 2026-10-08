@@ -44,7 +44,14 @@ ProcessConfig = ANTLER
   Run = uTimerScript   @ NewConsole = false ~ uTaskingRendezvous
   Run = uTimerScript   @ NewConsole = false ~ uTaskingCancel
   Run = uTimerScript   @ NewConsole = false ~ uTaskingRejectOffnominal
+#ifdef XMODE SITL
+  Run = pMavlinkShipBridge @ NewConsole = false
+  Run = uTimerScript @ NewConsole = false ~ uSimShipStart
+  Run = uTimerScript @ NewConsole = false ~ uSimShipDetach
+  Run = uTimerScript @ NewConsole = false ~ uSimShipAttach
+#endif
   Run = pArduBridge    @ NewConsole = false
+  Run = pEchoVar       @ NewConsole = false
   Run = pDeadManPost   @ NewConsole = false
   Run = uTimerScript   @ NewConsole = false ~ uRouteSequence
 }
@@ -117,6 +124,8 @@ ProcessConfig = pShare
   // landing status is delayed or lost.
   output = src_name=UAV_RENDEZVOUS_PHASE,             route=$(PEARL_IP):$(PEARL_PSHARE)
   output = src_name=UAV_RENDEZVOUS_SESSION,           route=$(PEARL_IP):$(PEARL_PSHARE)
+
+
 #endif
 }
 
@@ -154,6 +163,9 @@ ProcessConfig = uLoadWatch
   CommsTick = 1
   term_report_interval = 2
 
+#ifdef XMODE SITL
+  thresh = app=pMavlinkShipBridge, gapthresh=3
+#endif
   thresh = app=pArduBridge,    gapthresh=3
   thresh = app=pHelmIvP,       gapthresh=3
   thresh = app=pTakeoffCoordinator, gapthresh=3
@@ -316,6 +328,21 @@ ProcessConfig = uFldNodeBroker
   bridge = src=UAV_SECONDARY_RECOVERY_STATE
   bridge = src=UAV_SECONDARY_RECOVERY_POINT
   bridge = src=UAV_SECONDARY_RECOVERY_DISTANCE
+#ifdef XMODE SITL
+  bridge = src=MAVLINK_SHIP_BRIDGE_CONNECTED
+  bridge = src=MAVLINK_SHIP_POSE_ACTIVE
+  bridge = src=LANDMARK_EMULATOR_ACTIVE
+  bridge = src=LANDMARK_EMULATOR_DISTANCE
+  bridge = src=SIM_UAV_ON_SHIP
+#endif
+  bridge = src=SITL_SHIP_AVAILABLE
+  bridge = src=SITL_SHIP_AGE
+  bridge = src=SITL_SHIP_LAT
+  bridge = src=SITL_SHIP_LONG
+  bridge = src=SITL_SHIP_X
+  bridge = src=SITL_SHIP_Y
+  bridge = src=SITL_SHIP_HEADING
+  bridge = src=SITL_SHIP_SPEED
   bridge = src=NAV_ALTITUDE
   bridge = src=DESIRED_HEADING
   bridge = src=DESIRED_SPEED
@@ -325,7 +352,87 @@ ProcessConfig = uFldNodeBroker
 //----------------------------------------------------
 #include plug_uav_ardupilot.moos
 
+#ifdef XMODE SITL
+ProcessConfig = uSimShipStart
+{
+  AppTick = 4
+  CommsTick = 4
+  paused = false
+  reset_max = 0
+  event = var=SIM_UAV_ON_SHIP, val=true, time=0
+}
 
+ProcessConfig = uSimShipDetach
+{
+  AppTick = 4
+  CommsTick = 4
+  condition = (UAV_FSM_LANDING_OPERATIONS_STATE = DEVIATING_TO_SECONDARY_LANDING_POSITION) or (UAV_FSM_LANDING_OPERATIONS_STATE = SECONDARY_LANDING) or (UAV_FSM_LANDING_OPERATIONS_STATE = TRANSITING_TO_SECONDARY_LOITER_LOCATION) or (UAV_FSM_LANDING_OPERATIONS_STATE = LOITERING_AT_SECONDARY_ALTITUDE)
+  upon_awake = restart
+  paused = false
+  reset_max = unlimited
+  reset_time = 1
+  event = var=SIM_UAV_ON_SHIP, val=false, time=0
+}
+
+ProcessConfig = uSimShipAttach
+{
+  AppTick = 4
+  CommsTick = 4
+  condition = (UAV_FSM_LANDING_OPERATIONS_STATE = APPROACHING) or (UAV_FSM_LANDING_OPERATIONS_STATE = LANDING) or (UAV_FSM_LANDING_OPERATIONS_STATE = RETRYING_LANDING_TARGET)
+  upon_awake = restart
+  paused = false
+  reset_max = unlimited
+  reset_time = 1
+  event = var=SIM_UAV_ON_SHIP, val=true, time=0
+}
+
+ProcessConfig = pMavlinkShipBridge
+{
+  AppTick   = 20
+  CommsTick = 20
+  term_report_interval = 2
+
+  mavlink_host        = 127.0.0.1
+  mavlink_port        = 5763
+  ship_system_id      = 17
+  source_component_id = 191
+  target_system_id    = 1
+  target_number       = 0
+  publish_rate_hz     = 10
+  input_timeout       = 1
+  // Only ship-pose forcing is gated by this mission-owned fact. The landmark
+  // emulator keeps its independent, proximity-based detection behavior.
+  ship_nav_prefix     = PEARL_NAV
+  ship_pose_enable_var = SIM_UAV_ON_SHIP
+  detection_range     = 12
+  ship_altitude_msl   = 0
+}
+#endif
+
+//----------------------------------------------------
+ProcessConfig = pEchoVar
+{
+  AppTick   = 10
+  CommsTick = 10
+
+  // Keep native UAV_* health and landing-target telemetry intact while mapping
+  // only ArduPilot navigation into the Helm's NAV_* interface.
+#ifdef XMODE SITL
+  // Local native flight telemetry for the ship/landmark producer.
+  Echo = UAV_LAT          -> UAV_NAV_LAT
+  Echo = UAV_LON          -> UAV_NAV_LONG
+  Echo = UAV_YAW          -> UAV_NAV_HEADING
+  Echo = UAV_ALTITUDE_MSL -> UAV_NAV_ALTITUDE_MSL
+#endif
+  Echo = UAV_X        -> NAV_X
+  Echo = UAV_Y        -> NAV_Y
+  Echo = UAV_LAT      -> NAV_LAT
+  Echo = UAV_LON      -> NAV_LONG
+  Echo = UAV_SPEED    -> NAV_SPEED
+  Echo = UAV_HEADING  -> NAV_HEADING
+  Echo = UAV_ALTITUDE -> NAV_ALTITUDE
+  Echo = UAV_DEPTH    -> NAV_DEPTH
+}
 
 //----------------------------------------------------
 ProcessConfig = pHelmIvP

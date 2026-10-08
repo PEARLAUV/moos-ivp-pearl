@@ -56,9 +56,12 @@ ProcessConfig = pArduBridge
 
   vname  = $(VNAME)
   vcolor = $(COLOR)
-  prefix = NAV
+  // Native health/landing telemetry uses UAV_*. pEchoVar maps navigation to NAV_*.
+  prefix = UAV
+  // Zero disables peer-ship telemetry in REAL mode.
+  ship_system_id = $(SHIP_SYSTEM_ID)
 
-  takeoff_altitude              = $(TAKEOFF_ALTITUDE)
+  takeoff_altitude              = 8
   helm_setpoint_timeout         = 2
   command_groundspeed           = true
   is_sim                        = $(IS_SIM)

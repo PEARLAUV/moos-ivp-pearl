@@ -1,12 +1,19 @@
 # ArduCopter SITL parameters for the default Charles River rendezvous.
+# The moving target is supplied over MAVLink by pMavlinkShipBridge.
 PLND_ENABLED      1
-PLND_TYPE         4
-SIM_PLD_ENABLE    1
-SIM_PLD_LAT       42.3582663
-SIM_PLD_LON      -71.0874897
-SIM_PLD_HEIGHT    0
-SIM_PLD_ALT_LMT  15
-SIM_PLD_DIST_LMT 12
+PLND_TYPE         1
+PLND_OPTIONS      1
+PLND_STRICT       2
+SIM_PLD_ENABLE    0
+
+# PEARL publishes system 17 GLOBAL_POSITION_INT through SERIAL2. The external
+# ship mode consumes that pose while ArduPilot remains authoritative for
+# landed-aircraft position/height forcing and takeoff detachment. MOOS owns
+# coupling intent through SIM_UAV_ON_SHIP; no external-mode distance gate.
+SIM_SHIP_ENABLE   1
+SIM_SHIP_EXT      1
+SIM_SHIP_SYSID    17
+SIM_SHIP_SPEED    0
 
 # Center yaw without overriding the default low throttle.
 FS_THR_ENABLE     0

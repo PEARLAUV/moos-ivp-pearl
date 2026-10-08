@@ -49,10 +49,10 @@ ProcessConfig = ANTLER
   Run = iBlueRoboticsPing  @ NewConsole = false
   Run = iSherlockTelemetry @ NewConsole = false
 #else
-  Run = uTimerScript       @ NewConsole = false ~ uSimTakeoffInputs
-  Run = uSimMarineV22      @ NewConsole = false
-  Run = pMarinePIDV22      @ NewConsole = false
-  Run = pThrustMixer       @ NewConsole = false
+  Run = uTimerScript          @ NewConsole = false ~ uSimTakeoffInputs
+  Run = uSimMarineV22         @ NewConsole = false
+  Run = pMarinePIDV22         @ NewConsole = false
+  Run = pThrustMixer          @ NewConsole = false
 #endif
 }
 
@@ -224,6 +224,14 @@ ProcessConfig = pShare
   output = src_name=PEARL_CONTROL_HISTORY,     route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=PEARL_CONTROL_RESTORED,    route=$(SHORE_IP):$(SHORE_PSHARE)
 #ifdef DIRECT_PEER true
+// Ship navigation goes to the UAV-owned SITL integration, never to UAV NAV_*.
+#ifdef XMODE REAL
+#else
+  output = src_name=NAV_LAT,     dest_name=PEARL_NAV_LAT,     route=$(UAV_IP):$(UAV_PSHARE)
+  output = src_name=NAV_LONG,    dest_name=PEARL_NAV_LONG,    route=$(UAV_IP):$(UAV_PSHARE)
+  output = src_name=NAV_HEADING, dest_name=PEARL_NAV_HEADING, route=$(UAV_IP):$(UAV_PSHARE)
+  output = src_name=NAV_SPEED,   dest_name=PEARL_NAV_SPEED,   route=$(UAV_IP):$(UAV_PSHARE)
+#endif
   output = src_name=MEDIATED_MESSAGE_LOCAL, dest_name=MEDIATED_MESSAGE, route=$(UAV_IP):$(UAV_PSHARE)
   output = src_name=ACK_MESSAGE_LOCAL, dest_name=ACK_MESSAGE, route=$(UAV_IP):$(UAV_PSHARE)
   output = src_name=PEARL_BATTERY_SOC, route=$(UAV_IP):$(UAV_PSHARE)
@@ -289,10 +297,10 @@ ProcessConfig = uLoadWatch
   thresh = app=pPearlPID,      gapthresh=3
   thresh = app=iSherlockTelemetry, gapthresh=8
 #else
-  thresh = app=uSimTakeoffInputs, gapthresh=3
-  thresh = app=uSimMarineV22,  gapthresh=3
-  thresh = app=pMarinePIDV22,  gapthresh=3
-  thresh = app=pThrustMixer,   gapthresh=3
+  thresh = app=uSimTakeoffInputs,  gapthresh=3
+  thresh = app=uSimMarineV22,      gapthresh=3
+  thresh = app=pMarinePIDV22,      gapthresh=3
+  thresh = app=pThrustMixer,       gapthresh=3
 #endif
   thresh = app=pHelmIvP,       gapthresh=3
   thresh = app=pTakeoffProcessor, gapthresh=3
@@ -666,17 +674,12 @@ ProcessConfig = uSimMarineV22
   term_report_interval = 2
 
   start_pos = $(START_POS)
-  // uSimMarine always prefixes navigation publications; NAV is the canonical
-  // Helm interface and avoids a second translation layer from its USM default.
   prefix = NAV
 
   max_speed        = 1
   max_deceleration = 0.5
   turn_rate        = 100
   turn_spd_loss    = 0.6
-
-  // PEARL is a differential-drive vehicle. Opposed motor commands allow
-  // rotation in place instead of the normal rudder model's wide turns.
   thrust_mode_diff = true
 
   post_des_thrust = DESIRED_THRUSTX
@@ -704,8 +707,8 @@ ProcessConfig = pMarinePIDV22
   speed_pid_ki             = 0.0
   speed_pid_integral_limit = 0.07
 
-  maxrudder   = 100
-  maxthrust   = 100
+  maxrudder    = 100
+  maxthrust    = 100
   speed_factor = 20
 }
 
@@ -722,9 +725,11 @@ ProcessConfig = pThrustMixer
   output_right_var = DESIRED_THRUST_R
   state_var        = THRUST_MIXER_STATE
 
-  // Match the limits used by iPEARL's real thrust/rudder mixer.
   max_thrust    = 100
   max_rudder    = 50
   stale_timeout = 1
 }
+
+//----------------------------------------------------
+
 #endif

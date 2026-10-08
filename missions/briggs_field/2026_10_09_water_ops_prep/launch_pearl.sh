@@ -121,7 +121,6 @@ if [[ ! "$MIN_STATE_TIME" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   echo "$ME: --min_state_time must be a non-negative number. Exit Code 1."
   exit 1
 fi
-
 if [[ "$START_POS" != *,* ]]; then
   echo "$ME: Bad --start_pos format: $START_POS. Exit Code 1."
   exit 1
@@ -169,8 +168,8 @@ if ! nsplug meta_pearl.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
   PSHARE_PORT="$PSHARE_PORT" SHORE_IP="$SHORE_IP" \
   SHORE_PSHARE="$SHORE_PSHARE" DIRECT_PEER="$DIRECT_PEER" \
   UAV_IP="$UAV_IP" UAV_PSHARE="$UAV_PSHARE" \
-  VNAME="$VNAME" COLOR="$COLOR" \
-  START_POS="$START_POS" SPEED="$CRUISE_SPEED" XMODE="$MODE" \
+  VNAME="$VNAME" COLOR="$COLOR" START_POS="$START_POS" \
+  SPEED="$CRUISE_SPEED" XMODE="$MODE" \
   MIN_STATE_TIME="$MIN_STATE_TIME" PEARL_LIB_DIR="$PEARL_ROOT/lib" \
   SHERLOCK_METRICS_HOST="$SHERLOCK_METRICS_HOST" \
   SHERLOCK_METRICS_PORT="$SHERLOCK_METRICS_PORT"; then

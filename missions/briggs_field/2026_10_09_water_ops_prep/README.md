@@ -233,8 +233,8 @@ The cross-community contract has one writer per coordination fact:
   `UAV_RENDEZVOUS_PHASE` and `UAV_RENDEZVOUS_ARRIVED`; the landing-target retry
   controller owns `UAV_LANDING_TARGET_STATE`. `pRendezvous` owns
   `UAV_SECONDARY_RECOVERY_STATE` and drives primary-landing failures to the
-  fixed secondary landing point `(10,15)`, overridable with
-  `--secondary_landing=X,Y`. The FSM consumes
+  secondary landing point (default `(10,15)`), overridable with
+  `--secondary_landing=X,Y` on `launch.sh` or `launch_uav.sh`. The FSM consumes
   `UAV_LANDING_TARGET_STATE=TRACKED|LOST|RETRIES_EXHAUSTED` and
   `UAV_SECONDARY_RECOVERY_STATE=ARRIVED|LANDING|LANDED|LOITERING`. The companion
   FSM observes these facts but never rewrites them. The landing-target retry
@@ -576,20 +576,78 @@ and [MAVLink `LANDING_TARGET`](https://mavlink.io/en/messages/common.html#LANDIN
 
 ## SITL deck attachment
 
-SITL and REAL both keep ArduPilot navigation authoritative; the MOOS mission no
-longer substitutes a planar UAV position. ArduPilot's native ship simulator is
-the preferred way to model a landed aircraft moving with PEARL. With
-`SIM_SHIP_ENABLE=1`, SITL applies the simulated deck's translation and yaw to an
-on-ground aircraft inside `SIM_SHIP_DSIZE`.
+SITL and REAL keep ArduPilot authoritative for UAV navigation. In SITL,
+PEARL's `uSimMarineV22` remains authoritative for PEARL's Helm-driven trajectory.
+The UAV community runs `pMavlinkShipBridge`, taking `PEARL_NAV_*` from
+PEARL's navigation-only pShare routes and native UAV telemetry via `pEchoVar`.
+The C++ MOOS app sends that trajectory as MAVLink 2
+`GLOBAL_POSITION_INT` (system 17) to TCP `127.0.0.1:5763`.
 
-The remaining integration is to make the simulated PEARL and ArduPilot's ship
-model share one pose source. The recommended design is to consume the ship
-model's MAVLink `GLOBAL_POSITION_INT` report (system ID `SIM_SHIP_SYSID`) as
-PEARL's SITL navigation rather than running an independent PEARL trajectory.
-That preserves one authoritative deck pose and lets ArduPilot own attachment
-physics. Until that adapter exists, keep PEARL stationary whenever the UAV is
-on deck; copying PEARL coordinates into UAV `NAV_*` would only change the MOOS
-icon and would leave ArduPilot at the wrong takeoff location.
+The ArduPilot Docker build applies `patches/external-ship.patch` to its pinned,
+clean upstream submodule. With `SIM_SHIP_ENABLE=1` and `SIM_SHIP_EXT=1`,
+`SIM_Ship` uses incoming system-17 position, velocity, and heading rather than
+its circular trajectory. While grounded, ArduPilot forces the UAV to the ship
+center at deck height plus frame clearance and applies ship velocity/yaw.
+There is **no external-mode distance filter**; `SIM_SHIP_DSIZE` applies only to
+the internal ship model. Airborne XY and takeoff detachment remain ArduPilot
+physics, not MOOS `NAV_*` overrides. Fresh poses establish the deck landing
+surface (including ground-facing sensor readings) and carry an already grounded UAV with upward/downward height changes.
+External pose loss for more than one simulated second disables this coupling.
+
+The bridge sends ship poses only while the MOOS fact `SIM_UAV_ON_SHIP=true`.
+The mission seeds it true for its on-deck start, sets it false during secondary
+landing/loiter diversion states, and re-enables it on primary approach/landing
+(including target retries). It stays latched after those states, so a completed
+Rally landing remains detached. `uSimShipStart`, `uSimShipDetach`, and
+`uSimShipAttach` in `meta_uav.moos` own this policy; change the startup seed for an off-deck start.
+Outside those active recovery states, an operator can also set the fact with
+`uPokeDB targ_uav.moos SIM_UAV_ON_SHIP=false`. Stop poses before off-deck
+landing, allowing the one-second SITL expiry window. If the fact is incorrectly
+left true, **any** grounded UAV will intentionally be moved to the ship.
+
+PEARL defaults to its original `-4,-22,0` start. Override it with
+`./launch.sh --pearl_start=X,Y,H` or `./launch_pearl.sh --start_pos=X,Y,H`. The grounded UAV is attached to
+that ship position; PEARL is not relocated. Configure the deck's absolute MSL
+altitude with `ship_altitude_msl` in `meta_uav.moos` (default 0 m MSL, not height
+above SITL home). For live height/heave input, set `ship_altitude_var` in that
+block and refresh it within `input_timeout`. Landmark geometry uses the same
+deck height. Deck roll/pitch are not modeled.
+
+Time warp above 1 is supported when **SITL speedup matches MOOS time warp**:
+
+```bash
+./launch_sitl.sh 5
+./launch.sh --mode=SITL 5
+```
+
+Use the same factor for split community launches. `SITL_SPEEDUP=5
+./launch_sitl.sh` is equivalent. Freshness and publish periods are in simulated
+seconds; CPU/network capacity must sustain the accelerated update rates.
+
+`pMavlinkShipBridge` also emulates the landmark camera: it sends
+`LANDING_TARGET` at 10 Hz only while fresh UAV/PEARL navigation is within the
+configured **3-D** detection range (12 m default). It uses the UAV's attitude
+yaw—not ground course—and MSL altitude to encode body-forward/right/down
+position. The camera model assumes level roll/pitch. Inputs older than one
+second or separation beyond the range stop target transmission. ArduPilot's
+precision-landing target-loss policy then owns recovery.
+
+Landmark range (`detection_range=12`), deck height, and takeoff altitude (8 m)
+remain in their respective MOOS/BHV app configs, not launcher arguments. Edit the `pMavlinkShipBridge` block in
+`meta_uav.moos` for range, height, connection, rate, IDs, and freshness settings.
+The native takeoff altitude is in `plug_uav_ardupilot.moos`; route altitude is
+in `meta_uav.bhv`. Secondary recovery coordinates are supplied to
+`meta_uav.moos` with `--secondary_landing=X,Y` (default `10,15`). Bridge state is posted
+as `MAVLINK_SHIP_BRIDGE_CONNECTED`, `MAVLINK_SHIP_POSE_ACTIVE`,
+`LANDMARK_EMULATOR_ACTIVE`, and
+`LANDMARK_EMULATOR_DISTANCE`. REAL mode does not run this emulator.
+
+Regression checks: `python3 tests/test_ship_coupling.py` verifies the actual
+mission-owned coupling policy across primary/secondary recovery cycles;
+`python3 ../../../src/pMavlinkShipBridge/tests/test_bridge.py` verifies wire
+format, range/condition independence, and constant/live deck height. The SITL
+repository's `make test-deck` validates physical deck following, stale release,
+and two isolated takeoff/landing cycles (not precision-landing guidance).
 
 ## Layout and launch modes
 
@@ -626,13 +684,13 @@ mission:
 ```
 
 `launch_sitl.sh` delegates to
-`~/workspace/mit/pearl/ardupilot-sitl/bin/ardupilot-sitl` and starts
-`sitl_landing_target.py`, which publishes a centered MAVLink 2 `LANDING_TARGET`
-on ArduCopter's external-producer connection as the reproducible stand-in for
-the real vision source. The ArduPilot precision-landing target in `sitl.parm`
-matches the default SITL UAV home and default PEARL start. If those positions
-change, update `SIM_PLD_LAT` and `SIM_PLD_LON` before treating
-precision-landing results as meaningful.
+`~/workspace/mit/pearl/ardupilot-sitl/bin/ardupilot-sitl`, passing `sitl.parm`
+as an additional startup defaults file through `SITL_PARAM_FILE`. No Python
+helper or host-side MAVLink package is required. Rebuild the Docker image after
+installing the external-ship patch, and build `pMavlinkShipBridge` and
+`pArduBridge` before launching. Use fresh SITL state: persisted parameter values
+can override defaults. `PLND_TYPE=1` selects the MAVLink target backend and
+`SIM_PLD_ENABLE=0` disables the competing stationary target simulator.
 
 SITL uses PEARL's simulated battery, wind, and process-health telemetry to
 exercise the same pre-commit platform gate enabled in REAL.
