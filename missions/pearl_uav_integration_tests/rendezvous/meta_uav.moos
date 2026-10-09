@@ -1,0 +1,330 @@
+//-------------------------------------------------
+// FILE: meta_uav.moos
+// UAV community: ArduPilot SITL, lane transit, rendezvous only.
+//-------------------------------------------------
+
+ServerHost = localhost
+ServerPort = $(MOOS_PORT)
+Community  = uav
+
+#include plug_origin_warp.moos
+
+//----------------------------------------------------
+ProcessConfig = ANTLER
+{
+  MSBetweenLaunches = 100
+
+  Run = MOOSDB             @ NewConsole = false
+  Run = pShare             @ NewConsole = false
+  Run = pHostInfo          @ NewConsole = false
+  Run = pLogger            @ NewConsole = false
+  Run = pNodeReporter      @ NewConsole = false
+  Run = uFldNodeBroker     @ NewConsole = false
+  Run = uFldMessageHandler @ NewConsole = false
+  Run = pMediator          @ NewConsole = false
+  Run = pHelmIvP           @ NewConsole = false
+
+  Run = pArduBridge        @ NewConsole = false
+
+  Run = pRendezvous        @ NewConsole = false
+  Run = pEchoVar           @ NewConsole = false
+  Run = uTimerScript       @ NewConsole = false ~ uAutoStartReady
+  Run = uTimerScript       @ NewConsole = false ~ uAutoArm
+  Run = uTimerScript       @ NewConsole = false ~ uAutoTakeoff
+  Run = uTimerScript       @ NewConsole = false ~ uLaneStart
+  Run = uTimerScript       @ NewConsole = false ~ uRendezvousSequence
+}
+
+//----------------------------------------------------
+// Rendezvous traffic is mediated to PEARL; shoreside observes status via the node broker.
+ProcessConfig = pShare
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  input = route = localhost:$(PSHARE_PORT)
+
+  // Peer-to-peer rendezvous traffic is encapsulated by pMediator.
+  output = src_name=MEDIATED_MESSAGE_LOCAL, dest_name=MEDIATED_MESSAGE, route=localhost:$(PEARL_PSHARE)
+  output = src_name=ACK_MESSAGE_LOCAL, dest_name=ACK_MESSAGE, route=localhost:$(PEARL_PSHARE)
+}
+
+//----------------------------------------------------
+ProcessConfig = pHostInfo
+{
+  AppTick   = 1
+  CommsTick = 1
+
+  default_hostip_force = localhost
+}
+
+//----------------------------------------------------
+ProcessConfig = pLogger
+{
+  AppTick       = 5
+  CommsTick     = 5
+  File          = LOG_UAV
+  PATH          = ./
+  AsyncLog      = true
+  FileTimeStamp = true
+
+  WildCardLogging     = true
+  WildCardOmitPattern = *_STATUS
+  WildCardOmitPattern = DB_VARSUMMARY
+  WildCardOmitPattern = DB_RWSUMMARY
+}
+
+//----------------------------------------------------
+ProcessConfig = pNodeReporter
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  platform_type   = quadcopter
+  platform_color  = yellow
+  platform_length = 1.5
+  platform_group  = drone
+
+  cross_fill_policy = global
+  report_cog        = true
+}
+
+//----------------------------------------------------
+ProcessConfig = uFldNodeBroker
+{
+  AppTick   = 1
+  CommsTick = 1
+
+  auto_bridge_realmcast = false
+  try_shore_host = pshare_route=localhost:$(SHORE_PSHARE)
+
+  bridge = src=NODE_REPORT_LOCAL, alias=NODE_REPORT
+  bridge = src=VIEW_POINT
+  bridge = src=VIEW_SEGLIST
+  bridge = src=VIEW_CIRCLE
+  bridge = src=APPCAST
+  bridge = src=AUTOPILOT_MODE
+  bridge = src=NAV_ALTITUDE
+  bridge = src=UAV_AUTO_START
+  bridge = src=UAV_COMMAND_RESULT
+  bridge = src=UAV_IS_ARMED
+  bridge = src=UAV_LANDED_STATE
+  bridge = src=RENDEZVOUS_OWN_PHASE, alias=RENDEZVOUS_UAV_PHASE
+  bridge = src=RENDEZVOUS_OWN_STATE, alias=RENDEZVOUS_UAV_STATE
+  bridge = src=RENDEZVOUS_OWN_SESSION, alias=RENDEZVOUS_UAV_SESSION
+  bridge = src=RENDEZVOUS_OWN_POINT, alias=RENDEZVOUS_UAV_POINT
+  bridge = src=RENDEZVOUS_OWN_SPEED, alias=RENDEZVOUS_UAV_SPEED
+  bridge = src=RENDEZVOUS_OWN_MOTION, alias=RENDEZVOUS_UAV_MOTION
+}
+
+//----------------------------------------------------
+ProcessConfig = uFldMessageHandler
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  strict_addressing = true
+}
+
+//----------------------------------------------------
+ProcessConfig = pMediator
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  vname         = uav
+  mates         = pearl
+  resend_thresh = 1
+  max_tries     = 10
+}
+
+//----------------------------------------------------
+// The UAV independently starts on RENDEZVOUS_START from shoreside.
+// pRendezvous only exchanges motion history and computes its own waypoint;
+// landing is not part of this app.
+ProcessConfig = pRendezvous
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  ownship   = uav
+  peer_node = pearl
+
+  point_shape        = disc
+  point_radius       = 0.5
+  point_color        = yellow
+  point_transparency = 0.5
+  point_label        = false
+
+  nav_stale_thresh    = 10
+  transit_timeout     = 300
+  point_freeze_radius = 2
+  rendezvous_distance = 0.5
+  arrival_dwell       = 5
+}
+
+//----------------------------------------------------
+ProcessConfig = pHelmIvP
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  ok_skew   = any
+  behaviors = targ_uav.bhv
+
+  start_in_drive  = true
+  park_on_allstop = false
+  Domain = course:0:359:360
+  Domain = speed:0:5:51
+  Domain = altitude:0:30:61
+}
+
+//----------------------------------------------------
+ProcessConfig = pArduBridge
+{
+  AppTick   = 10
+  CommsTick = 10
+
+  url          = 127.0.0.1:$(SITL_PORT)
+  url_protocol = tcp
+  vehicle_type = copter
+
+  vname  = uav
+  vcolor = yellow
+  // Native telemetry uses UAV_*; pEchoVar maps navigation to NAV_*.
+  prefix = UAV
+  // MOOS-IvP (pNodeReporter, uSimMarineV22, pMarineViewer) is built with
+  // USE_UTM. The default local grid would put NAV_X/Y ~2.5% of the northing
+  // off from PEARL's frame and the map (about 3 m at the meeting point).
+  geodesy = utm
+
+  takeoff_altitude      = $(ALTITUDE)
+  helm_setpoint_timeout = 2
+  command_groundspeed   = true
+  is_sim                = true
+  logger                = false
+}
+
+//----------------------------------------------------
+ProcessConfig = pEchoVar
+{
+  AppTick   = 10
+  CommsTick = 10
+
+  Echo = UAV_X        -> NAV_X
+  Echo = UAV_Y        -> NAV_Y
+  Echo = UAV_LAT      -> NAV_LAT
+  Echo = UAV_LON      -> NAV_LONG
+  Echo = UAV_SPEED    -> NAV_SPEED
+  Echo = UAV_HEADING  -> NAV_HEADING
+  Echo = UAV_ALTITUDE -> NAV_ALTITUDE
+  Echo = UAV_DEPTH    -> NAV_DEPTH
+}
+
+//----------------------------------------------------
+// SITL reports healthy/armable before its takeoff command path is ready.
+// Wait until the simulator has completed startup before arming; otherwise the
+// short armed-on-ground window can expire before takeoff is accepted.
+ProcessConfig = uAutoStartReady
+{
+  AppTick       = 10
+  CommsTick     = 10
+  script_atomic = true
+  reset_max     = 0
+  paused        = false
+  script_name   = AUTO_START_READY
+
+  event = var=UAV_AUTOSTART_READY, val=true, time=45
+}
+
+//----------------------------------------------------
+// Auto start, step 1: arm 3 s after ArduPilot reports armable and healthy,
+// and every 5 s after that while disarmed on the ground.
+ProcessConfig = uAutoArm
+{
+  AppTick   = 10
+  CommsTick = 10
+
+  condition   = UAV_AUTO_START = pending
+  condition   = UAV_AUTOSTART_READY = true
+  condition   = UAV_HEALTH_ALL_OK = 1
+  condition   = UAV_IS_ARMABLE = 1
+  condition   = UAV_IS_ARMED = 0
+  condition   = UAV_LANDED_STATE = ON_GROUND
+  upon_awake  = restart
+  reset_max   = unlimited
+  reset_time  = 5
+  paused      = false
+  script_name = AUTO_ARM
+
+  event = var=ARM_UAV, val=true, time=3
+}
+
+//----------------------------------------------------
+// Auto start, step 2: take off 5 seconds after reporting armed. pArduBridge
+// rejects takeoff while the Helm is active, so the Helm stays off until
+// step 3.
+ProcessConfig = uAutoTakeoff
+{
+  AppTick   = 10
+  CommsTick = 10
+
+  condition   = UAV_AUTO_START = pending
+  condition   = UAV_IS_ARMED = 1
+  condition   = UAV_LANDED_STATE = ON_GROUND
+  upon_awake  = restart
+  reset_max   = unlimited
+  reset_time  = 5
+  paused      = false
+  script_name = AUTO_TAKEOFF
+
+  event = var=ARDU_COMMAND, val=DO_TAKEOFF, time=5
+}
+
+//----------------------------------------------------
+// Auto start, step 3: near takeoff altitude, form the lane decision and hand
+// control to the Helm (same ordering as the field mission's route handoff).
+ProcessConfig = uLaneStart
+{
+  AppTick   = 10
+  CommsTick = 10
+
+  condition     = UAV_AUTO_START = pending
+  condition     = UAV_LANDED_STATE = IN_AIR
+  upon_awake    = restart
+  // Step 3 clears its own gate; it must still run to completion.
+  script_atomic = true
+  reset_max     = 0
+  paused        = false
+  script_name   = LANE_START
+
+  event = var=UAV_AUTO_START, val=lane,         time=0
+  event = var=UAV_LANE,       val=true,         time=0
+  event = var=HELM_STATUS,    val=true,         time=0
+  event = var=ARDU_COMMAND,   val=FLY_WAYPOINT, time=0.80
+}
+
+//----------------------------------------------------
+// Dedicated rendezvous waypoint handoff requested by pRendezvous.
+ProcessConfig = uRendezvousSequence
+{
+  AppTick   = 10
+  CommsTick = 10
+
+  condition     = RENDEZVOUS_OWN_HANDOFF_REQUEST = true
+  condition     = RENDEZVOUS_OWN_ACTIVE = true
+  condition     = RENDEZVOUS_OWN_WAYPOINT_READY = true
+  condition     = RENDEZVOUS_OWN_PHASE = RENDEZVOUS
+  condition     = UAV_IS_ARMED = 1
+  condition     = UAV_LANDED_STATE = IN_AIR
+
+  upon_awake    = restart
+  script_atomic = false
+  reset_max     = unlimited
+  paused        = false
+  script_name   = RENDEZVOUS_HANDOFF
+
+  event = var=HELM_STATUS,                    val=true,         time=0
+  event = var=ARDU_COMMAND,                   val=FLY_WAYPOINT, time=0.80
+  event = var=RENDEZVOUS_OWN_HANDOFF_REQUEST, val=false,        time=0.90
+}
