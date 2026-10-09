@@ -1,0 +1,276 @@
+// UAV-only landing-target observation test. No rendezvous or recovery control.
+ServerHost = localhost
+ServerPort = $(MOOS_PORT)
+Community = uav
+#include plug_origin_warp.moos
+
+ProcessConfig = ANTLER
+{
+  MSBetweenLaunches = 100
+  Run = MOOSDB @ NewConsole = false
+  Run = pShare @ NewConsole = false
+  Run = pHostInfo @ NewConsole = false
+  Run = pLogger @ NewConsole = false
+  Run = pNodeReporter @ NewConsole = false
+  Run = uFldNodeBroker @ NewConsole = false
+  Run = pHelmIvP @ NewConsole = false
+  Run = pArduBridge @ NewConsole = false
+  Run = pMavlinkLandingTarget @ NewConsole = false
+  Run = pLandingTargetViewer @ NewConsole = false
+  Run = pEchoVar @ NewConsole = false
+  Run = uTimerScript @ NewConsole = false ~ uStaticTarget
+  Run = uTimerScript @ NewConsole = false ~ uAutoStartReady
+  Run = uTimerScript @ NewConsole = false ~ uAutoArm
+  Run = uTimerScript @ NewConsole = false ~ uAutoTakeoff
+  Run = uTimerScript @ NewConsole = false ~ uPassStart
+  Run = uTimerScript @ NewConsole = false ~ uSecondPass
+  Run = uTimerScript @ NewConsole = false ~ uThirdPass
+}
+
+ProcessConfig = pShare
+{
+  AppTick = 4
+  CommsTick = 4
+  input = route=localhost:$(PSHARE_PORT)
+}
+ProcessConfig = pHostInfo
+{
+  AppTick = 1
+  CommsTick = 1
+  default_hostip_force = localhost
+}
+ProcessConfig = pLogger
+{
+  AppTick = 5
+  CommsTick = 5
+  File = LOG_UAV
+  PATH = ./
+  AsyncLog = true
+  FileTimeStamp = true
+  WildCardLogging = true
+  WildCardOmitPattern = *_STATUS
+  WildCardOmitPattern = DB_VARSUMMARY
+  WildCardOmitPattern = DB_RWSUMMARY
+}
+ProcessConfig = pNodeReporter
+{
+  AppTick = 4
+  CommsTick = 4
+  platform_type = quadcopter
+  platform_color = yellow
+  platform_length = 1.5
+  platform_group = drone
+  cross_fill_policy = global
+  report_cog = true
+}
+ProcessConfig = uFldNodeBroker
+{
+  AppTick = 1
+  CommsTick = 1
+  auto_bridge_realmcast = false
+  try_shore_host = pshare_route=localhost:$(SHORE_PSHARE)
+  bridge = src=NODE_REPORT_LOCAL, alias=NODE_REPORT
+  bridge = src=VIEW_POINT
+  bridge = src=VIEW_SEGLIST
+  bridge = src=VIEW_CIRCLE
+  bridge = src=VIEW_POLYGON
+  bridge = src=LANDING_TARGET_VIEW_ACTIVE
+  bridge = src=APPCAST
+  bridge = src=TARGET_TEST_PHASE
+  bridge = src=LANDMARK_EMULATOR_ACTIVE
+  bridge = src=LANDMARK_EMULATOR_DISTANCE
+  bridge = src=LANDMARK_EMULATOR_CONDITIONS_MET
+  bridge = src=UAV_LANDING_TARGET_AVAILABLE
+  bridge = src=UAV_LANDING_TARGET_AGE
+  bridge = src=UAV_LANDING_TARGET_FRAME
+  bridge = src=MAVLINK_LANDING_TARGET_CONNECTED
+  bridge = src=AUTOPILOT_MODE
+  bridge = src=NAV_ALTITUDE
+  bridge = src=UAV_ALTITUDE_MSL
+  bridge = src=UAV_COMMAND_RESULT
+  bridge = src=UAV_IS_ARMED
+  bridge = src=UAV_LANDED_STATE
+}
+
+// Refresh the static geometry so the broadcaster's normal freshness gate applies.
+// Heading is 30 degrees clockwise from map north. A point has no drawn orientation.
+ProcessConfig = uStaticTarget
+{
+  AppTick = 10
+  CommsTick = 10
+  paused = false
+  reset_max = unlimited
+  reset_time = 0.5
+  script_atomic = true
+  script_name = STATIC_TARGET
+  event = var=TARGET_NAV_X, val=$(TARGET_X), time=0
+  event = var=TARGET_NAV_Y, val=$(TARGET_Y), time=0
+  event = var=TARGET_NAV_LAT, val=$(TARGET_LAT), time=0
+  event = var=TARGET_NAV_LONG, val=$(TARGET_LON), time=0
+  event = var=TARGET_NAV_HEADING, val=$(TARGET_YAW), time=0
+}
+ProcessConfig = pMavlinkLandingTarget
+{
+  AppTick = 20
+  CommsTick = 20
+  mavlink_port = $(SITL_TARGET_PORT)
+  target_nav_prefix = TARGET_NAV
+  vehicle_nav_prefix = UAV_NAV
+  target_altitude_msl = 1
+  detection_range = $(TARGET_RANGE)
+  input_timeout = 2
+  publish_rate_hz = 10
+  show_visuals = true
+  // No condition entries: conditions default true, so target visuals stay shown.
+}
+// Uses only the bridge's received MAVLink fields and native vehicle pose.
+// The emulator currently sends zero angular sizes, so draw a 1 m footprint.
+ProcessConfig = pLandingTargetViewer
+{
+  AppTick = 20
+  CommsTick = 20
+  target_prefix = UAV_LANDING_TARGET
+  vehicle_prefix = UAV
+  observation_timeout = 0.5
+  input_timeout = 2
+  target_size = 1
+  use_received_size = true
+  color = magenta
+}
+ProcessConfig = pHelmIvP
+{
+  AppTick = 4
+  CommsTick = 4
+  ok_skew = any
+  behaviors = targ_uav.bhv
+  start_in_drive = true
+  park_on_allstop = false
+  Domain = course:0:359:360
+  Domain = speed:0:5:51
+  Domain = altitude:0:30:61
+}
+ProcessConfig = pArduBridge
+{
+  AppTick = 10
+  CommsTick = 10
+  url = 127.0.0.1:$(SITL_PORT)
+  url_protocol = tcp
+  vehicle_type = copter
+  vname = uav
+  vcolor = yellow
+  prefix = UAV
+  geodesy = utm
+  takeoff_altitude = 8
+  helm_setpoint_timeout = 2
+  command_groundspeed = true
+  is_sim = true
+  logger = false
+}
+ProcessConfig = pEchoVar
+{
+  AppTick = 10
+  CommsTick = 10
+  Echo = UAV_X -> NAV_X
+  Echo = UAV_Y -> NAV_Y
+  Echo = UAV_LAT -> NAV_LAT
+  Echo = UAV_LON -> NAV_LONG
+  Echo = UAV_SPEED -> NAV_SPEED
+  Echo = UAV_HEADING -> NAV_HEADING
+  Echo = UAV_ALTITUDE -> NAV_ALTITUDE
+  Echo = UAV_DEPTH -> NAV_DEPTH
+  Echo = UAV_LAT -> UAV_NAV_LAT
+  Echo = UAV_LON -> UAV_NAV_LONG
+  Echo = UAV_YAW -> UAV_NAV_HEADING
+  Echo = UAV_ALTITUDE_MSL -> UAV_NAV_ALTITUDE_MSL
+}
+
+// Startup delay avoids premature arming while SITL is initializing.
+ProcessConfig = uAutoStartReady
+{
+  AppTick = 10
+  CommsTick = 10
+  script_atomic = true
+  reset_max = 0
+  paused = false
+  script_name = AUTO_START_READY
+  event = var=UAV_AUTOSTART_READY, val=true, time=45
+}
+ProcessConfig = uAutoArm
+{
+  AppTick = 10
+  CommsTick = 10
+  condition = TARGET_TEST_PHASE=takeoff
+  condition = UAV_AUTOSTART_READY=true
+  condition = UAV_HEALTH_ALL_OK=1
+  condition = UAV_IS_ARMABLE=1
+  condition = UAV_IS_ARMED=0
+  condition = UAV_LANDED_STATE=ON_GROUND
+  upon_awake = restart
+  reset_max = unlimited
+  reset_time = 5
+  paused = false
+  script_name = AUTO_ARM
+  event = var=ARM_UAV, val=true, time=3
+}
+ProcessConfig = uAutoTakeoff
+{
+  AppTick = 10
+  CommsTick = 10
+  condition = TARGET_TEST_PHASE=takeoff
+  condition = UAV_IS_ARMED=1
+  condition = UAV_LANDED_STATE=ON_GROUND
+  upon_awake = restart
+  reset_max = unlimited
+  reset_time = 5
+  paused = false
+  script_name = AUTO_TAKEOFF
+  event = var=ARDU_COMMAND, val=DO_TAKEOFF, time=5
+}
+ProcessConfig = uPassStart
+{
+  AppTick = 10
+  CommsTick = 10
+  condition = TARGET_TEST_PHASE=takeoff
+  condition = UAV_LANDED_STATE=IN_AIR
+  condition = NAV_ALTITUDE>7.8
+  condition = NAV_ALTITUDE<8.2
+  upon_awake = restart
+  script_atomic = true
+  reset_max = 0
+  paused = false
+  script_name = FIRST_PASS
+  event = var=TARGET_TEST_PHASE, val=pass_1, time=0
+  event = var=HELM_STATUS, val=true, time=0
+  event = var=ARDU_COMMAND, val=FLY_WAYPOINT, time=0.8
+}
+// Reposition away from the target, then settle altitude before each next pass.
+ProcessConfig = uSecondPass
+{
+  AppTick = 10
+  CommsTick = 10
+  condition = TARGET_TEST_PHASE=prepare_2
+  condition = UAV_LANDED_STATE=IN_AIR
+  condition = NAV_ALTITUDE>3.8
+  condition = NAV_ALTITUDE<4.2
+  upon_awake = restart
+  script_atomic = true
+  reset_max = 0
+  paused = false
+  script_name = SECOND_PASS
+  event = var=TARGET_TEST_PHASE, val=pass_2, time=0
+}
+ProcessConfig = uThirdPass
+{
+  AppTick = 10
+  CommsTick = 10
+  condition = TARGET_TEST_PHASE=prepare_3
+  condition = UAV_LANDED_STATE=IN_AIR
+  condition = NAV_ALTITUDE>14.8
+  condition = NAV_ALTITUDE<15.2
+  upon_awake = restart
+  script_atomic = true
+  reset_max = 0
+  paused = false
+  script_name = THIRD_PASS
+  event = var=TARGET_TEST_PHASE, val=pass_3, time=0
+}

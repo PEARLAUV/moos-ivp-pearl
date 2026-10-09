@@ -1,0 +1,133 @@
+// Three north/south passes. Left/right are west/east in the map frame,
+// independent of the static target's 30-degree yaw.
+initialize TARGET_TEST_PHASE = takeoff
+initialize UAV_AUTOSTART_READY = false
+initialize DESIRED_ALTITUDE = 8
+
+Behavior = BHV_Waypoint
+{
+  name = pass_left
+  pwt = 100
+  condition = TARGET_TEST_PHASE=pass_1
+  endflag = TARGET_TEST_PHASE=shift_right
+  speed = $(UAV_SPEED)
+  speed_alt = $(UAV_SPEED)
+  use_alt_speed = true
+  end_spd = slow_dist=5, stop_dist=0
+  capture_radius = 0.2
+  slip_radius = 0.5
+  capture_line = false
+  points = $(LEFT_X),$(SOUTH_Y)
+  visual_hints = nextpt_color=yellow, nextpt_label_color=invisible
+  visual_hints = vertex_color=yellow, edge_color=gray50
+}
+Behavior = BHV_Waypoint
+{
+  name = move_right
+  pwt = 100
+  condition = TARGET_TEST_PHASE=shift_right
+  endflag = TARGET_TEST_PHASE=prepare_2
+  speed = $(UAV_SPEED)
+  speed_alt = $(UAV_SPEED)
+  use_alt_speed = true
+  end_spd = slow_dist=3, stop_dist=0
+  capture_radius = 0.2
+  slip_radius = 0.5
+  capture_line = false
+  points = $(RIGHT_X),$(SOUTH_Y)
+  visual_hints = nextpt_color=yellow, nextpt_label_color=invisible
+  visual_hints = vertex_color=yellow, edge_color=gray50
+}
+Behavior = BHV_Waypoint
+{
+  name = pass_right
+  pwt = 100
+  condition = TARGET_TEST_PHASE=pass_2
+  endflag = TARGET_TEST_PHASE=shift_center
+  speed = $(UAV_SPEED)
+  speed_alt = $(UAV_SPEED)
+  use_alt_speed = true
+  end_spd = slow_dist=5, stop_dist=0
+  capture_radius = 0.2
+  slip_radius = 0.5
+  capture_line = false
+  points = $(RIGHT_X),$(NORTH_Y)
+  visual_hints = nextpt_color=yellow, nextpt_label_color=invisible
+  visual_hints = vertex_color=yellow, edge_color=gray50
+}
+Behavior = BHV_Waypoint
+{
+  name = move_center
+  pwt = 100
+  condition = TARGET_TEST_PHASE=shift_center
+  endflag = TARGET_TEST_PHASE=prepare_3
+  speed = $(UAV_SPEED)
+  speed_alt = $(UAV_SPEED)
+  use_alt_speed = true
+  end_spd = slow_dist=3, stop_dist=0
+  capture_radius = 0.2
+  slip_radius = 0.5
+  capture_line = false
+  points = $(CENTER_X),$(NORTH_Y)
+  visual_hints = nextpt_color=yellow, nextpt_label_color=invisible
+  visual_hints = vertex_color=yellow, edge_color=gray50
+}
+Behavior = BHV_Waypoint
+{
+  name = pass_overhead
+  pwt = 100
+  condition = TARGET_TEST_PHASE=pass_3
+  endflag = TARGET_TEST_PHASE=COMPLETE
+  endflag = ARDU_COMMAND=HOLD_POSITION
+  speed = $(UAV_SPEED)
+  speed_alt = $(UAV_SPEED)
+  use_alt_speed = true
+  end_spd = slow_dist=5, stop_dist=0
+  capture_radius = 0.2
+  slip_radius = 0.5
+  capture_line = false
+  points = $(CENTER_X),$(SOUTH_Y)
+  visual_hints = nextpt_color=yellow, nextpt_label_color=invisible
+  visual_hints = vertex_color=yellow, edge_color=gray50
+}
+Behavior = BHV_StationKeep
+{
+  name = altitude_settle
+  pwt = 100
+  condition = ((TARGET_TEST_PHASE=prepare_2) or (TARGET_TEST_PHASE=prepare_3)) or (TARGET_TEST_PHASE=COMPLETE)
+  center_activate = true
+  inner_radius = 0.2
+  outer_radius = 1
+  hibernation_radius = 2
+  outer_speed = $(UAV_SPEED)
+  transit_speed = $(UAV_SPEED)
+  swing_time = 3
+  visual_hints = vertex_size=0, edge_color=yellow, label_color=invisible
+}
+Behavior = BHV_ConstantAltitude
+{
+  name = first_altitude
+  pwt = 100
+  condition = (TARGET_TEST_PHASE=takeoff) or (TARGET_TEST_PHASE=pass_1)
+  perpetual = true
+  altitude = 8
+  duration = -1
+}
+Behavior = BHV_ConstantAltitude
+{
+  name = second_altitude
+  pwt = 100
+  condition = ((TARGET_TEST_PHASE=shift_right) or (TARGET_TEST_PHASE=prepare_2)) or (TARGET_TEST_PHASE=pass_2)
+  perpetual = true
+  altitude = 4
+  duration = -1
+}
+Behavior = BHV_ConstantAltitude
+{
+  name = third_altitude
+  pwt = 100
+  condition = (((TARGET_TEST_PHASE=shift_center) or (TARGET_TEST_PHASE=prepare_3)) or (TARGET_TEST_PHASE=pass_3)) or (TARGET_TEST_PHASE=COMPLETE)
+  perpetual = true
+  altitude = 15
+  duration = -1
+}

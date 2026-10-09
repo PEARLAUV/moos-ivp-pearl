@@ -1,0 +1,86 @@
+// Observer only. No recovery, rendezvous or peer vehicle.
+ServerHost = localhost
+ServerPort = $(MOOS_PORT)
+Community = shoreside
+#include plug_origin_warp.moos
+
+ProcessConfig = ANTLER
+{
+  MSBetweenLaunches = 100
+  Run = MOOSDB @ NewConsole = false
+  Run = pShare @ NewConsole = false
+  Run = pHostInfo @ NewConsole = false
+  Run = pLogger @ NewConsole = false
+  Run = uFldShoreBroker @ NewConsole = false
+#ifdef LAUNCH_GUI yes
+  Run = moos-vnc-session @ NewConsole = false ~ pMarineViewer
+#endif
+}
+ProcessConfig = pShare
+{
+  AppTick = 4
+  CommsTick = 4
+  input = route=localhost:$(PSHARE_PORT)
+}
+ProcessConfig = pHostInfo
+{
+  AppTick = 1
+  CommsTick = 1
+  default_hostip_force = localhost
+}
+ProcessConfig = pLogger
+{
+  AppTick = 5
+  CommsTick = 5
+  File = LOG_SHORESIDE
+  PATH = ./
+  AsyncLog = true
+  FileTimeStamp = true
+  WildCardLogging = true
+  WildCardOmitPattern = *_STATUS
+  WildCardOmitPattern = DB_VARSUMMARY
+  WildCardOmitPattern = DB_RWSUMMARY
+}
+ProcessConfig = uFldShoreBroker
+{
+  AppTick = 4
+  CommsTick = 4
+  auto_bridge_appcast = true
+  auto_bridge_realmcast = false
+}
+ProcessConfig = pMarineViewer
+{
+  AppTick = 4
+  CommsTick = 4
+  tiff_file = MIT_SP.tif
+  set_pan_x = $(TARGET_X)
+  set_pan_y = $(TARGET_Y)
+  zoom = 3
+  vehicle_shape_scale = 1.5
+  vehicles_name_mode = off
+  trails_length = 300
+  appcast_viewable = true
+  appcast_height = 70
+  appcast_width = 35
+  appcast_color_scheme = indigo
+  appcast_font_size = large
+  procs_font_size = large
+  nodes_font_size = large
+  stale_report_thresh = 10
+  stale_remove_thresh = 30
+  scope = TARGET_TEST_PHASE
+  scope = UAV_LANDED_STATE
+  scope = UAV_IS_ARMED
+  scope = AUTOPILOT_MODE
+  scope = UAV_COMMAND_RESULT
+  scope = NAV_ALTITUDE
+  scope = UAV_ALTITUDE_MSL
+  scope = MAVLINK_LANDING_TARGET_CONNECTED
+  scope = UAV_LANDING_TARGET_AVAILABLE
+  scope = UAV_LANDING_TARGET_AGE
+  scope = UAV_LANDING_TARGET_FRAME
+  scope = LANDMARK_EMULATOR_CONDITIONS_MET
+  scope = LANDMARK_EMULATOR_ACTIVE
+  scope = LANDING_TARGET_VIEW_ACTIVE
+  scope = LANDMARK_EMULATOR_DISTANCE
+}

@@ -5,7 +5,8 @@ set -euo pipefail
 usage() {
   cat <<EOF
 Usage: $0 [--param-file PATH] [--no-rc] [--home LOCATION] [--speedup FACTOR]
-          [--port PORT] [time_warp] [STATE_DIRECTORY] [COMPOSE_COMMAND ...]
+          [--port ENDPOINT] [--diagnostic-port ENDPOINT] [--sim-port ENDPOINT]
+          [time_warp] [STATE_DIRECTORY] [COMPOSE_COMMAND ...]
 Passes mission and runtime options to the ardupilot-sitl wrapper by CLI flags.
 Use SITL_WRAPPER to select a non-default wrapper executable.
 EOF
@@ -33,7 +34,16 @@ while (($#)); do
       wrapper_options+=(--no-rc)
       shift
       ;;
-    --home|--speedup|--port|--diagnostic-port|--target-port)
+    --target-port)
+      # Compatibility with missions using the former simulation-port name.
+      if (($# < 2)); then
+        echo "$0: --target-port requires a value." >&2
+        exit 2
+      fi
+      wrapper_options+=(--sim-port "$2")
+      shift 2
+      ;;
+    --home|--speedup|--port|--diagnostic-port|--sim-port)
       if (($# < 2)); then
         echo "$0: $1 requires a value." >&2
         usage >&2
