@@ -1,0 +1,121 @@
+//-------------------------------------------------
+// FILE: meta_shoreside.moos
+// Observer plus the single DEPLOY command.
+//-------------------------------------------------
+
+ServerHost = localhost
+ServerPort = $(MOOS_PORT)
+Community  = shoreside
+
+#include plug_origin_warp.moos
+
+//----------------------------------------------------
+ProcessConfig = ANTLER
+{
+  MSBetweenLaunches = 100
+
+  Run = MOOSDB          @ NewConsole = false
+  Run = pShare          @ NewConsole = false
+  Run = pHostInfo       @ NewConsole = false
+  Run = pLogger         @ NewConsole = false
+  Run = uFldShoreBroker @ NewConsole = false
+#ifdef LAUNCH_GUI yes
+  Run = moos-vnc-session @ NewConsole = false ~ pMarineViewer
+#endif
+}
+
+//----------------------------------------------------
+ProcessConfig = pShare
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  input = route = localhost:$(PSHARE_PORT)
+}
+
+//----------------------------------------------------
+ProcessConfig = pHostInfo
+{
+  AppTick   = 1
+  CommsTick = 1
+
+  default_hostip_force = localhost
+}
+
+//----------------------------------------------------
+ProcessConfig = pLogger
+{
+  AppTick       = 5
+  CommsTick     = 5
+  File          = LOG_SHORESIDE
+  PATH          = ./
+  AsyncLog      = true
+  FileTimeStamp = true
+
+  WildCardLogging     = true
+  WildCardOmitPattern = *_STATUS
+  WildCardOmitPattern = DB_VARSUMMARY
+  WildCardOmitPattern = DB_RWSUMMARY
+}
+
+//----------------------------------------------------
+ProcessConfig = uFldShoreBroker
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  auto_bridge_appcast   = true
+  auto_bridge_realmcast = false
+
+  // The same start flag is independently delivered to both vehicles.
+  qbridge = RENDEZVOUS_START
+}
+
+//----------------------------------------------------
+ProcessConfig = pMarineViewer
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  tiff_file           = MIT_SP.tif
+  set_pan_x           = 0
+  set_pan_y           = -400
+  zoom                = 1
+  vehicle_shape_scale = 1.5
+  vehicles_name_mode  = off
+  trails_length       = 300
+
+  appcast_viewable     = true
+  appcast_height       = 70
+  appcast_width        = 35
+  appcast_color_scheme = indigo
+  appcast_font_size    = large
+  procs_font_size      = large
+  nodes_font_size      = large
+
+  stale_report_thresh = 10
+  stale_remove_thresh = 30
+
+  scope = RENDEZVOUS_UAV_STATE
+  scope = RENDEZVOUS_PEARL_STATE
+  scope = RENDEZVOUS_UAV_PHASE
+  scope = RENDEZVOUS_PEARL_PHASE
+  scope = RENDEZVOUS_UAV_SESSION
+  scope = RENDEZVOUS_PEARL_SESSION
+  scope = RENDEZVOUS_UAV_POINT
+  scope = RENDEZVOUS_PEARL_POINT
+  scope = RENDEZVOUS_UAV_SPEED
+  scope = RENDEZVOUS_PEARL_SPEED
+  scope = RENDEZVOUS_UAV_MOTION
+  scope = RENDEZVOUS_PEARL_MOTION
+  scope = UAV_AUTO_START
+  scope = UAV_LANDED_STATE
+  scope = UAV_IS_ARMED
+  scope = AUTOPILOT_MODE
+  scope = UAV_COMMAND_RESULT
+  scope = NAV_ALTITUDE
+
+  // _ALL is translated by uFldShoreBroker into independent local
+  // RENDEZVOUS_START notifications for UAV and PEARL.
+  button_1 = RENDEZVOUS # RENDEZVOUS_START_ALL=true
+}

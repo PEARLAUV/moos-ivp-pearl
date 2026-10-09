@@ -1,0 +1,86 @@
+//-------------------------------------------------
+// FILE: meta_pearl.bhv
+//-------------------------------------------------
+
+initialize MOOS_MANUAL_OVERRIDE = false
+initialize PEARL_LANE           = true
+initialize RENDEZVOUS_OWN_ACTIVE           = false
+initialize RENDEZVOUS_OWN_WAYPOINT_REACHED = false
+
+// These are initialized for the independent mission's stationkeeping
+// behavior; pRendezvous does not save or restore control authority.
+initialize DEPLOY       = true
+initialize RETURN       = false
+initialize STATION_KEEP = false
+
+//----------------------------------------------------
+// Pre-deploy transit: drive the lane until a rendezvous takes over. It never
+// resumes after the rendezvous completes or aborts.
+Behavior = BHV_Waypoint
+{
+  name      = pearl_lane
+  pwt       = 100
+  condition = PEARL_LANE=true
+  condition = ((RENDEZVOUS_OWN_PHASE=IDLE) or (RENDEZVOUS_OWN_PHASE=STARTING)) or (RENDEZVOUS_OWN_PHASE=REQUESTING)
+  endflag   = PEARL_LANE=false
+
+  speed          = $(PEARL_SPEED)
+  // No lead: PEARL starts on its lane, and a lead point would draw a
+  // labelled track point that visual_hints cannot hide.
+  capture_radius = 3
+  slip_radius    = 8
+  points         = $(PEARL_LANE_X),$(LANE_END_Y)
+
+  visual_hints = nextpt_color=dodger_blue, nextpt_label_color=invisible
+  visual_hints = vertex_color=dodger_blue, edge_color=gray50
+}
+
+//----------------------------------------------------
+// Live-updated rendezvous guidance owned by pRendezvous.
+Behavior = BHV_Waypoint
+{
+  name      = pearl_rendezvous
+  pwt       = 110
+  perpetual = true
+  condition = MOOS_MANUAL_OVERRIDE=false
+  condition = RENDEZVOUS_OWN_ACTIVE=true
+  updates   = RENDEZVOUS_OWN_UPDATE
+
+  endflag = RENDEZVOUS_OWN_ACTIVE=false
+  // The behavior remains active at the point during arrival_dwell;
+  // pRendezvous owns local completion.
+
+  speed          = $(PEARL_SPEED)
+  capture_radius = 0.8
+  slip_radius    = 2
+  capture_line   = false
+  points         = empty
+  repeat         = 0
+  order          = normal
+
+  visual_hints = nextpt_color=dodger_blue, nextpt_label_color=invisible
+  visual_hints = nextpt_vertex_size=8
+  visual_hints = vertex_color=dodger_blue, edge_color=white
+}
+
+//----------------------------------------------------
+// Hold whenever neither the lane nor the rendezvous waypoint is driving:
+// after the lane ends, after capturing the point, and after completion.
+Behavior = BHV_StationKeep
+{
+  name      = pearl_hold
+  pwt       = 100
+  condition = MOOS_MANUAL_OVERRIDE=false
+  condition = RENDEZVOUS_OWN_ACTIVE=false
+  condition = ((PEARL_LANE=false) or (RENDEZVOUS_OWN_PHASE=COMPLETE)) or (RENDEZVOUS_OWN_PHASE=ABORT)
+
+  center_activate    = true
+  inner_radius       = 0.25
+  outer_radius       = 0.5
+  hibernation_radius = 0.75
+  outer_speed        = $(PEARL_SPEED)
+  transit_speed      = $(PEARL_SPEED)
+  swing_time         = 3
+
+  visual_hints = vertex_size=0, edge_color=magenta, label_color=invisible
+}

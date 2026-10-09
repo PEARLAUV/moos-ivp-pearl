@@ -1,0 +1,105 @@
+//-------------------------------------------------
+// FILE: meta_uav.bhv
+//-------------------------------------------------
+
+// pending -> lane once airborne (see uLaneStart).
+initialize UAV_AUTO_START   = pending
+initialize UAV_AUTOSTART_READY = false
+initialize UAV_LANE           = false
+
+initialize DESIRED_ALTITUDE = $(ALTITUDE)
+initialize RENDEZVOUS_OWN_ACTIVE           = false
+initialize RENDEZVOUS_OWN_WAYPOINT_READY   = false
+initialize RENDEZVOUS_OWN_WAYPOINT_REACHED = false
+initialize RENDEZVOUS_OWN_HANDOFF_REQUEST  = false
+
+//----------------------------------------------------
+// Pre-deploy transit: fly the lane until a rendezvous takes over. It never
+// resumes after the rendezvous completes or aborts.
+Behavior = BHV_Waypoint
+{
+  name      = uav_lane
+  pwt       = 100
+  condition = UAV_LANE=true
+  condition = ((RENDEZVOUS_OWN_PHASE=IDLE) or (RENDEZVOUS_OWN_PHASE=STARTING)) or (RENDEZVOUS_OWN_PHASE=REQUESTING)
+  endflag   = UAV_LANE=false
+  endflag   = ARDU_COMMAND=HOLD_POSITION
+
+  speed          = $(UAV_SPEED)
+  // pArduBridge may report speed=0 before the first leg.
+  speed_alt      = $(UAV_SPEED)
+  use_alt_speed  = true
+  // No lead: the UAV starts on its lane, and a lead point would draw a
+  // labelled track point that visual_hints cannot hide.
+  // Ramp down over the last 5 m so the hold is placed on the endpoint
+  // instead of after a 1.5 m/s overshoot.
+  end_spd        = slow_dist=5, stop_dist=0
+  capture_radius = 0.5
+  slip_radius    = 1
+  points         = $(UAV_LANE_X),$(LANE_END_Y)
+
+  visual_hints = nextpt_color=yellow, nextpt_label_color=invisible
+  visual_hints = vertex_color=yellow, edge_color=gray50
+}
+
+//----------------------------------------------------
+// Live-updated rendezvous guidance owned by pRendezvous.
+Behavior = BHV_Waypoint
+{
+  name         = uav_rendezvous
+  pwt          = 110
+  perpetual    = true
+  updates      = RENDEZVOUS_OWN_UPDATE
+  condition    = RENDEZVOUS_OWN_ACTIVE=true
+  activeflag   = RENDEZVOUS_OWN_WAYPOINT_READY=true
+  inactiveflag = RENDEZVOUS_OWN_WAYPOINT_READY=false
+  endflag      = RENDEZVOUS_OWN_ACTIVE=false
+  endflag      = ARDU_COMMAND=HOLD_POSITION
+
+  speed          = 1.5
+  speed_alt      = 1.5
+  use_alt_speed  = true
+  // Ramp down over the last 5 m so the hold is placed on the point.
+  end_spd        = slow_dist=5, stop_dist=0
+  capture_radius = 0.2
+  slip_radius    = 0.5
+  capture_line   = false
+  points         = empty
+  repeat         = 0
+  order          = normal
+
+  visual_hints = nextpt_color=yellow, nextpt_label_color=invisible
+  visual_hints = nextpt_vertex_size=8
+  visual_hints = vertex_color=yellow, edge_color=white
+}
+
+//----------------------------------------------------
+// Keep Helm producing course/speed after the rendezvous waypoint completes.
+Behavior = BHV_StationKeep
+{
+  name      = uav_station_hold
+  pwt       = 100
+  condition = (RENDEZVOUS_OWN_PHASE=COMPLETE) or (RENDEZVOUS_OWN_PHASE=ABORT)
+  condition = UAV_LANDED_STATE=IN_AIR
+
+  center_activate    = true
+  inner_radius       = 0.5
+  outer_radius       = 2
+  hibernation_radius = 4
+  outer_speed        = $(UAV_SPEED)
+  transit_speed      = $(UAV_SPEED)
+  swing_time         = 3
+
+  visual_hints = vertex_size=0, edge_color=yellow, label_color=invisible
+}
+
+//----------------------------------------------------
+Behavior = BHV_ConstantAltitude
+{
+  name      = uav_altitude
+  pwt       = 100
+  condition = (((UAV_LANE=true) or (RENDEZVOUS_OWN_ACTIVE=true)) or (RENDEZVOUS_OWN_PHASE=COMPLETE)) or (RENDEZVOUS_OWN_PHASE=ABORT)
+  perpetual = true
+  altitude  = $(ALTITUDE)
+  duration  = -1
+}
