@@ -1,6 +1,6 @@
 //-------------------------------------------------
 // FILE: meta_shoreside.moos
-// Observer plus the single DEPLOY command.
+// Observer plus the single RECOVER command.
 //-------------------------------------------------
 
 ServerHost = localhost
@@ -67,8 +67,8 @@ ProcessConfig = uFldShoreBroker
   auto_bridge_appcast   = true
   auto_bridge_realmcast = false
 
-  // The same start flag is independently delivered to both vehicles.
-  qbridge = RENDEZVOUS_START
+  // Only the UAV receives RECOVER_UAV; PEARL is requested via pMediator.
+  qbridge = RECOVER
 }
 
 //----------------------------------------------------
@@ -79,10 +79,11 @@ ProcessConfig = pMarineViewer
 
   tiff_file           = MIT_SP.tif
   set_pan_x           = 0
-  set_pan_y           = -400
+  set_pan_y           = -200
   zoom                = 1
-  vehicle_shape_scale = 1.5
+  vehicle_shape_scale = 1
   vehicles_name_mode  = off
+  vehicles_layer      = bottom
   trails_length       = 300
 
   appcast_viewable     = true
@@ -114,8 +115,23 @@ ProcessConfig = pMarineViewer
   scope = AUTOPILOT_MODE
   scope = UAV_COMMAND_RESULT
   scope = NAV_ALTITUDE
+  scope = LANDING_PEARL_PHASE
+  scope = LANDING_UAV_PHASE
+  scope = LANDING_PEARL_SESSION
+  scope = LANDING_UAV_SESSION
+  scope = LANDING_PEARL_CLEARANCE
+  scope = LANDING_UAV_CHECKS_READY
+  scope = UAV_LANDING_TARGET_AVAILABLE
+  scope = UAV_LANDING_TARGET_AGE
+  scope = UAV_LANDING_TARGET_FRAME
+  scope = UAV_ALTITUDE_MSL
+  scope = LANDING_TARGET_VIEW_ACTIVE
+  scope = LANDMARK_EMULATOR_CONDITIONS_MET
+  scope = MAVLINK_LANDING_TARGET_CONNECTED
+  scope = LANDMARK_EMULATOR_ACTIVE
+  scope = LANDMARK_EMULATOR_DISTANCE
+  scope = MAVLINK_SHIP_POSE_ACTIVE
+  scope = MAVLINK_SHIP_BRIDGE_CONNECTED
 
-  // _ALL is translated by uFldShoreBroker into independent local
-  // RENDEZVOUS_START notifications for UAV and PEARL.
-  button_1 = RENDEZVOUS # RENDEZVOUS_START_ALL=true
+  button_1 = RECOVER # RECOVER_UAV=true
 }

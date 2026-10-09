@@ -1,6 +1,6 @@
 //-------------------------------------------------
 // FILE: meta_uav.moos
-// UAV community: ArduPilot SITL, lane transit, rendezvous only.
+// UAV community: ArduPilot SITL, recovery coordination, rendezvous and landing.
 //-------------------------------------------------
 
 ServerHost = localhost
@@ -27,7 +27,13 @@ ProcessConfig = ANTLER
   Run = pArduBridge        @ NewConsole = false
 
   Run = pRendezvous        @ NewConsole = false
+  Run = pLandingCoordinator @ NewConsole = false
+
+  Run = pMavlinkLandingTarget @ NewConsole = false
+  Run = pLandingTargetViewer @ NewConsole = false
+
   Run = pEchoVar           @ NewConsole = false
+  Run = uTimerScript       @ NewConsole = false ~ uPrepareTakeoff
   Run = uTimerScript       @ NewConsole = false ~ uAutoStartReady
   Run = uTimerScript       @ NewConsole = false ~ uAutoArm
   Run = uTimerScript       @ NewConsole = false ~ uAutoTakeoff
@@ -102,9 +108,23 @@ ProcessConfig = uFldNodeBroker
   bridge = src=VIEW_POINT
   bridge = src=VIEW_SEGLIST
   bridge = src=VIEW_CIRCLE
+  bridge = src=VIEW_POLYGON
+  bridge = src=LANDMARK_EMULATOR_ACTIVE
+  bridge = src=LANDMARK_EMULATOR_DISTANCE
+  bridge = src=LANDMARK_EMULATOR_CONDITIONS_MET
+  bridge = src=MAVLINK_LANDING_TARGET_CONNECTED
+  bridge = src=LANDING_TARGET_VIEW_ACTIVE
+  bridge = src=UAV_LANDING_TARGET_AVAILABLE
+  bridge = src=UAV_LANDING_TARGET_AGE
+  bridge = src=UAV_LANDING_TARGET_FRAME
+  bridge = src=LANDING_OWN_PHASE, alias=LANDING_UAV_PHASE
+  bridge = src=LANDING_OWN_REASON, alias=LANDING_UAV_REASON
+  bridge = src=LANDING_OWN_SESSION, alias=LANDING_UAV_SESSION
+  bridge = src=LANDING_OWN_CHECKS_READY, alias=LANDING_UAV_CHECKS_READY
   bridge = src=APPCAST
   bridge = src=AUTOPILOT_MODE
   bridge = src=NAV_ALTITUDE
+  bridge = src=UAV_ALTITUDE_MSL
   bridge = src=UAV_AUTO_START
   bridge = src=UAV_COMMAND_RESULT
   bridge = src=UAV_IS_ARMED
@@ -139,9 +159,8 @@ ProcessConfig = pMediator
 }
 
 //----------------------------------------------------
-// The UAV independently starts on RENDEZVOUS_START from shoreside.
-// pRendezvous only exchanges motion history and computes its own waypoint;
-// landing is not part of this app.
+// The UAV requests recovery and starts rendezvous after PEARL agrees.
+// pRendezvous still owns only motion planning, not landing clearance.
 ProcessConfig = pRendezvous
 {
   AppTick   = 4
@@ -161,6 +180,48 @@ ProcessConfig = pRendezvous
   point_freeze_radius = 2
   rendezvous_distance = 0.5
   arrival_dwell       = 5
+}
+
+//----------------------------------------------------
+ProcessConfig = pLandingCoordinator
+{
+  AppTick = 4
+  CommsTick = 4
+  ownship = uav
+  peer_node = pearl
+  role = aircraft
+  landing_timeout = 450
+  input_timeout = 3
+}
+
+// Pure 3-D range gate; no recovery/session/clearance inputs.
+ProcessConfig = pMavlinkLandingTarget
+{
+  AppTick = 20
+  CommsTick = 20
+  mavlink_port = $(SITL_TARGET_PORT)
+  target_nav_prefix = PEARL_NAV
+  vehicle_nav_prefix = UAV_NAV
+  target_altitude_msl = $(DECK_ALTITUDE)
+  detection_range = $(TARGET_RANGE)
+  input_timeout = 2
+  publish_rate_hz = 10
+  show_visuals = true
+}
+
+// Uses only the bridge's received MAVLink fields and native vehicle pose.
+// The emulator currently sends zero angular sizes, so draw a 1 m footprint.
+ProcessConfig = pLandingTargetViewer
+{
+  AppTick = 20
+  CommsTick = 20
+  target_prefix = UAV_LANDING_TARGET
+  vehicle_prefix = UAV
+  observation_timeout = 0.5
+  input_timeout = 2
+  target_size = 1
+  use_received_size = true
+  color = magenta
 }
 
 //----------------------------------------------------
@@ -219,12 +280,34 @@ ProcessConfig = pEchoVar
   Echo = UAV_HEADING  -> NAV_HEADING
   Echo = UAV_ALTITUDE -> NAV_ALTITUDE
   Echo = UAV_DEPTH    -> NAV_DEPTH
+  Echo = UAV_LAT      -> UAV_NAV_LAT
+  Echo = UAV_LON      -> UAV_NAV_LONG
+  Echo = UAV_YAW      -> UAV_NAV_HEADING
+  Echo = UAV_ALTITUDE_MSL -> UAV_NAV_ALTITUDE_MSL
 }
 
 //----------------------------------------------------
-// SITL reports healthy/armable before its takeoff command path is ready.
-// Wait until the simulator has completed startup before arming; otherwise the
-// short armed-on-ground window can expire before takeoff is accepted.
+// Health and armability become true before Guided can obtain horizontal
+// position. Probe Guided mode while disarmed until ArduPilot accepts it.
+ProcessConfig = uPrepareTakeoff
+{
+  AppTick       = 10
+  CommsTick     = 10
+  condition     = UAV_HEALTH_ALL_OK = 1
+  condition     = UAV_IS_ARMABLE = 1
+  condition     = UAV_IS_ARMED = 0
+  condition     = UAV_LANDED_STATE = ON_GROUND
+  condition     = UAV_GUIDED_POSITION_READY = 0
+  upon_awake    = restart
+  reset_max     = unlimited
+  reset_time    = 2
+  paused        = false
+  script_name   = PREPARE_TAKEOFF
+
+  event = var=ARDU_COMMAND, val=PREPARE_TAKEOFF, time=0
+}
+
+// Release auto-arm immediately after the Guided-mode probe succeeds.
 ProcessConfig = uAutoStartReady
 {
   AppTick       = 10
@@ -233,8 +316,9 @@ ProcessConfig = uAutoStartReady
   reset_max     = 0
   paused        = false
   script_name   = AUTO_START_READY
+  condition     = UAV_GUIDED_POSITION_READY = 1
 
-  event = var=UAV_AUTOSTART_READY, val=true, time=45
+  event = var=UAV_AUTOSTART_READY, val=true, time=0
 }
 
 //----------------------------------------------------

@@ -8,6 +8,7 @@ initialize UAV_AUTOSTART_READY = false
 initialize UAV_LANE           = false
 
 initialize DESIRED_ALTITUDE = $(ALTITUDE)
+initialize LANDING_OWN_PHASE = IDLE
 initialize RENDEZVOUS_OWN_ACTIVE           = false
 initialize RENDEZVOUS_OWN_WAYPOINT_READY   = false
 initialize RENDEZVOUS_OWN_WAYPOINT_REACHED = false
@@ -80,6 +81,8 @@ Behavior = BHV_StationKeep
   name      = uav_station_hold
   pwt       = 100
   condition = (RENDEZVOUS_OWN_PHASE=COMPLETE) or (RENDEZVOUS_OWN_PHASE=ABORT)
+  // Keep guidance available until pArduBridge parks Helm after LAND acceptance.
+  // Disabling it on coordinator acknowledgement races that parking transition.
   condition = UAV_LANDED_STATE=IN_AIR
 
   center_activate    = true
@@ -99,6 +102,7 @@ Behavior = BHV_ConstantAltitude
   name      = uav_altitude
   pwt       = 100
   condition = (((UAV_LANE=true) or (RENDEZVOUS_OWN_ACTIVE=true)) or (RENDEZVOUS_OWN_PHASE=COMPLETE)) or (RENDEZVOUS_OWN_PHASE=ABORT)
+  // Flight-controller LAND owns descent once pArduBridge parks the Helm.
   perpetual = true
   altitude  = $(ALTITUDE)
   duration  = -1

@@ -435,9 +435,7 @@ void Rendezvous::complete(const string &reason)
   Notify(ownVar("HANDOFF_REQUEST"), "false");
   Notify("ARDU_COMMAND", "HOLD_POSITION");
   Notify("MOOS_MANUAL_OVERRIDE", "false");
-  // Keep the independently selected endpoint visible while the vehicle
-  // station-keeps/loiters there.
-  publishPoint(true);
+  // Endpoint metadata remains available; publishState removes its visual.
   publishMotion(true);
 }
 
@@ -464,6 +462,10 @@ void Rendezvous::publishState(bool force)
   Notify(ownVar("ARRIVED"), m_state == "COMPLETE" ? 1.0 : 0.0);
   Notify(ownVar("POINT"), pointString());
   m_last_state_time = m_curr_time;
+  // Repeat terminal removals so a dropped viewer/pShare notification cannot
+  // leave a ghost circle. A new session or earlier peer freeze redraws it.
+  if (m_state == "COMPLETE" || m_state == "ABORT")
+    publishPoint(false);
 }
 
 void Rendezvous::publishPoint(bool active)

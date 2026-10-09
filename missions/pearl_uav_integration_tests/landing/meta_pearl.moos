@@ -1,6 +1,6 @@
 //-------------------------------------------------
 // FILE: meta_pearl.moos
-// PEARL community: simulated surface vehicle, lane transit, rendezvous only.
+// PEARL community: simulated platform and landing-clearance authority.
 //-------------------------------------------------
 
 ServerHost = localhost
@@ -23,6 +23,8 @@ ProcessConfig = ANTLER
   Run = uFldMessageHandler @ NewConsole = false
   Run = pMediator          @ NewConsole = false
   Run = pRendezvous        @ NewConsole = false
+  Run = pLandingCoordinator @ NewConsole = false
+  Run = pMavlinkShipBridge @ NewConsole = false
   Run = pHelmIvP           @ NewConsole = false
   Run = uSimMarineV22      @ NewConsole = false
   Run = pMarinePIDV22      @ NewConsole = false
@@ -41,6 +43,13 @@ ProcessConfig = pShare
   // Peer-to-peer rendezvous traffic is encapsulated by pMediator.
   output = src_name=MEDIATED_MESSAGE_LOCAL, dest_name=MEDIATED_MESSAGE, route=localhost:$(UAV_PSHARE)
   output = src_name=ACK_MESSAGE_LOCAL, dest_name=ACK_MESSAGE, route=localhost:$(UAV_PSHARE)
+
+  // Simulation geometry only. Coordination/status remains mediated.
+  output = src_name=NAV_X, dest_name=PEARL_NAV_X, route=localhost:$(UAV_PSHARE)
+  output = src_name=NAV_Y, dest_name=PEARL_NAV_Y, route=localhost:$(UAV_PSHARE)
+  output = src_name=NAV_LAT, dest_name=PEARL_NAV_LAT, route=localhost:$(UAV_PSHARE)
+  output = src_name=NAV_LONG, dest_name=PEARL_NAV_LONG, route=localhost:$(UAV_PSHARE)
+  output = src_name=NAV_HEADING, dest_name=PEARL_NAV_HEADING, route=localhost:$(UAV_PSHARE)
 }
 
 //----------------------------------------------------
@@ -106,6 +115,12 @@ ProcessConfig = uFldNodeBroker
   bridge = src=RENDEZVOUS_OWN_POINT, alias=RENDEZVOUS_PEARL_POINT
   bridge = src=RENDEZVOUS_OWN_SPEED, alias=RENDEZVOUS_PEARL_SPEED
   bridge = src=RENDEZVOUS_OWN_MOTION, alias=RENDEZVOUS_PEARL_MOTION
+  bridge = src=LANDING_OWN_PHASE, alias=LANDING_PEARL_PHASE
+  bridge = src=LANDING_OWN_REASON, alias=LANDING_PEARL_REASON
+  bridge = src=LANDING_OWN_SESSION, alias=LANDING_PEARL_SESSION
+  bridge = src=LANDING_OWN_CLEARANCE, alias=LANDING_PEARL_CLEARANCE
+  bridge = src=MAVLINK_SHIP_POSE_ACTIVE
+  bridge = src=MAVLINK_SHIP_BRIDGE_CONNECTED
 }
 
 //----------------------------------------------------
@@ -130,8 +145,7 @@ ProcessConfig = pMediator
 }
 
 //----------------------------------------------------
-// PEARL independently starts on the same shoreside RENDEZVOUS_START flag.
-// It exchanges motion history and completes its own waypoint independently.
+// PEARL accepts the UAV's recovery request, then joins rendezvous.
 ProcessConfig = pRendezvous
 {
   AppTick   = 4
@@ -151,6 +165,32 @@ ProcessConfig = pRendezvous
   point_freeze_radius = 4
   rendezvous_distance = 1
   arrival_dwell       = 5
+}
+
+//----------------------------------------------------
+ProcessConfig = pLandingCoordinator
+{
+  AppTick = 4
+  CommsTick = 4
+  ownship = pearl
+  peer_node = uav
+  role = platform
+  landing_timeout = 450
+  input_timeout = 3
+}
+
+// Physical deck surface only, enabled at clearance (not at startup).
+ProcessConfig = pMavlinkShipBridge
+{
+  AppTick = 20
+  CommsTick = 20
+  mavlink_port = $(SITL_TARGET_PORT)
+  ship_nav_prefix = NAV
+  ship_system_id = 17
+  ship_altitude_msl = $(DECK_ALTITUDE)
+  ship_pose_enable_var = LANDING_DECK_ENABLED
+  publish_rate_hz = 10
+  input_timeout = 2
 }
 
 //----------------------------------------------------

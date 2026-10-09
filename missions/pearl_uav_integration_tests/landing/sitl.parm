@@ -1,0 +1,135 @@
+# PEARL/UAV recovery: mission-specific ArduCopter SITL parameter overlay.
+# Loaded at startup via --param-file; the wrapper separately supplies --no-rc.
+# The companion ardupilot-sitl image MUST include patches/external-ship.patch.
+# No entry here requests landing, overrides MOOS navigation, or forces disarm.
+# Landing coordination and readiness checks belong to pLandingCoordinator;
+# ArduPilot owns guidance, descent, target-loss handling, touchdown and disarm.
+
+# PLND_ENABLED -- enable ArduPilot's precision-landing subsystem (boolean).
+# Official Quick Start: "Set PLND_ENABLED = 1 and reboot to expose parameters."
+# With 1, a detected target can guide the final descent in LAND. This does NOT
+# enter LAND, arm the aircraft, or guarantee target acquisition. The coordinator
+# must still check the target actually received by pArduBridge before AUTOLAND.
+# With 0, the generic AUTOLAND command can still land, but without this precision
+# backend. This startup overlay enables the subsystem before the flight begins.
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html#quick-start
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-enabled
+PLND_ENABLED      1
+
+# PLND_TYPE -- select the precision-landing observation backend (enum).
+# Official choices: 0 disables; 1 MAVLink LANDING_TARGET; 2 IR-LOCK;
+# 3 Gazebo simulation; 4 native SITL simulation. Use 1 even though this is SITL:
+# pMavlinkLandingTarget supplies real MAVLink messages on its independent link.
+# It reports a position-valid BODY_FRD vector to PEARL's geographic deck center,
+# using native UAV yaw and the same MSL deck altitude as the physical simulator.
+# Selecting 4 would test ArduPilot's built-in synthetic sensor instead of the
+# mission's external observation stream and bridge-reported target checks.
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html#quick-start
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-type
+# Message: https://mavlink.io/en/messages/common.html#LANDING_TARGET
+PLND_TYPE         1
+
+# PLND_OPTIONS -- precision-landing behavior bitmask, not a boolean.
+# Official instruction: "Set PLND_OPTIONS bit 0 if landing on a moving target."
+# Value 1 = 2^0: declare a moving target rather than the default stationary-target
+# assumption. PEARL moves during approach and may drift while stationkeeping.
+# Bit 1 (value 2, continue precision landing after manual pilot reposition) and
+# bit 2 (value 4, faster final descent) remain unset. Thus this setting does not
+# enable either feature; ArduPilot can reduce final descent speed for accuracy.
+# The mission normally has no RC input; this option does not create one.
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html#operation
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-options
+PLND_OPTIONS      1
+
+# PLND_STRICT -- response to a missing/lost precision target (enum).
+# Official mode 2: "perform landing retries until PLND_RET_MAX is reached,
+# then hover instead of landing." Mode 0 permits ordinary landing; mode 1
+# retries, then permits ordinary landing. Choose 2 to avoid silently treating
+# target loss over a boat as permission for an unobserved off-deck touchdown.
+# Retry geometry/count still come from PLND_RET_BEHAVE / PLND_RET_MAX defaults;
+# this does NOT promise an immediate hover on every missing observation.
+# Important documented exception: below PLND_ALT_MIN, losing the target still
+# allows vertical landing. PLND_ALT_MAX also affects when retry logic begins.
+# These heights/retries are not overridden here. MOOS gates the initial LAND
+# request, but ArduPilot, not the coordinator or bridge, owns in-flight retries.
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html#operation
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-strict
+PLND_STRICT       2
+
+# SIM_PLD_ENABLE -- enable the native SITL precision-landing device (boolean).
+# Official parameter metadata: "Allows you to enable (1) or disable (0) the
+# Preland simulation". Keep 0: this mission's synthetic camera is the separate
+# MOOS pMavlinkLandingTarget process, using the MAVLink backend above.
+# This disables the built-in simulated beacon/device, NOT precision landing
+# itself and NOT the external MAVLink stream. Range/stale-geometry failures
+# should be visible through that stream rather than hidden by a native target.
+# Native simulated-beacon position, radiance and range parameters are therefore
+# not part of this mission's target geometry configuration.
+# Official metadata / implementation:
+# https://github.com/ArduPilot/ardupilot/blob/master/libraries/SITL/SIM_Precland.cpp
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#sim-pld-enable
+SIM_PLD_ENABLE    0
+
+# SIM_SHIP_ENABLE -- enable SITL's ship/deck model (boolean).
+# Official parameter metadata: "Enable ship landing simulation"; 0 disables,
+# 1 enables. Use 1 so the patched simulator can provide an elevated physical
+# surface and carry the grounded UAV with PEARL; target observations alone
+# cannot create that surface or simulate elevated contact.
+# With SIM_SHIP_EXT=1 below, the patch requires a valid fresh external pose:
+# enabling this parameter alone does not activate a deck at startup.
+# pMavlinkShipBridge begins pose streaming only at PEARL's landing clearance
+# and keeps streaming after touchdown. Deck and target share --deck_altitude,
+# in MSL metres, while the mission's SITL home is 0 m MSL.
+# Official metadata / implementation:
+# https://github.com/ArduPilot/ardupilot/blob/master/libraries/SITL/SIM_Ship.cpp
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#sim-ship-enable
+# Modified behavior: companion ardupilot-sitl/patches/external-ship.patch.
+SIM_SHIP_ENABLE   1
+
+# SIM_SHIP_EXT -- CUSTOM PATCH parameter, not an upstream ArduPilot option.
+# Patch description: "Use GLOBAL_POSITION_INT from SIM_SHIP_SYSID instead of
+# the internal circular trajectory". Value 1 selects external MAVLink deck
+# position, MSL altitude, velocity and heading; 0 uses the native trajectory.
+# pMavlinkShipBridge supplies these poses from PEARL, independently of the
+# precision-target broadcaster. No valid pose, or a pose older than 1000 ms
+# of ArduPilot simulated time, makes the external deck surface unavailable.
+# SAFETY/LIMITATION: the patch has NO horizontal proximity gate. While active,
+# its MSL height replaces the ground surface even off-deck, and grounded UAVs
+# are attached to the supplied ship center. Do not enable pose streaming for
+# an off-deck contingency landing or before takeoff. Fresh poses must continue
+# after recovery to retain the raised deck and carry the recovered aircraft.
+# No official documentation exists for this extension. Authoritative source:
+# companion ardupilot-sitl/patches/external-ship.patch (ShipSim::var_info,
+# get_external_location/get_location, and Aircraft::update_dynamics).
+# Relative source: ../../../../ardupilot-sitl/patches/external-ship.patch
+SIM_SHIP_EXT      1
+
+# SIM_SHIP_SYSID -- ship's MAVLink system ID (integer; use a distinct vehicle ID).
+# Official parameter metadata: "System ID of the ship"; upstream default is 17.
+# The custom external-pose patch also uses this ID to filter incoming
+# GLOBAL_POSITION_INT senders. Set 17 to match pMavlinkShipBridge's
+# ship_system_id=17 in meta_pearl.moos. UAV target observations use system 1
+# and must not be mistaken for deck poses. A mismatch silently prevents valid
+# external deck acquisition, even if the TCP simulation link is connected.
+# This is sender selection, NOT authentication or a MOOS community name.
+# Official metadata / implementation:
+# https://github.com/ArduPilot/ardupilot/blob/master/libraries/SITL/SIM_Ship.cpp
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#sim-ship-sysid
+# Additional receive-filter behavior: ardupilot-sitl/patches/external-ship.patch,
+# ShipSim::handle_external_position.
+SIM_SHIP_SYSID    17
+
+# SIM_SHIP_SPEED -- speed of the native ship trajectory, in metres/second.
+# Official parameter metadata: "Speed of the ship"; native default is 3 m/s.
+# Set 0 so an internal trajectory, if deliberately selected, does not drive
+# an independently moving synthetic boat. This is NOT PEARL's mission speed.
+# With SIM_SHIP_EXT=1, the patch bypasses the native trajectory and derives
+# ship speed/ground motion from external pose velocity instead; PEARL can
+# still move at --pearl_speed and drift during its hold despite this value 0.
+# This value neither freezes MOOS PEARL nor cancels external deck motion.
+# Official metadata / implementation:
+# https://github.com/ArduPilot/ardupilot/blob/master/libraries/SITL/SIM_Ship.cpp
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#sim-ship-speed
+# External-mode override: ardupilot-sitl/patches/external-ship.patch,
+# ShipSim::update and ShipSim::apply_external_position.
+SIM_SHIP_SPEED    0
