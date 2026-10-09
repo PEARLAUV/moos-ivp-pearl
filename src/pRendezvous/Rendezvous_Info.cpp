@@ -1,7 +1,7 @@
-#include <cstdlib>
 #include "Rendezvous_Info.h"
 #include "ColorParse.h"
 #include "ReleaseInfo.h"
+#include <cstdlib>
 
 using namespace std;
 
@@ -55,12 +55,13 @@ void showInterfaceAndExit()
   blk("SUBSCRIPTIONS:");
   blk("  RENDEZVOUS_START, RENDEZVOUS_ABORT, NAV_X, NAV_Y");
   blk("  NODE_REPORT, RENDEZVOUS_MOTION");
-  blk("  <OWNSHIP>_RENDEZVOUS_WAYPOINT_REACHED");
+  blk("  RENDEZVOUS_OWN_WAYPOINT_REACHED");
   blk("PUBLICATIONS:");
   blk("  NODE_MESSAGE_LOCAL (peer motion history)");
-  blk("  <OWNSHIP>_RENDEZVOUS_UPDATE/ACTIVE/STATE/PHASE/SESSION");
-  blk("  <OWNSHIP>_RENDEZVOUS_SPEED/SPEED_VALID/SPEED_WINDOW");
-  blk("  VIEW_POINT or VIEW_CIRCLE and RENDEZVOUS_POINT");
+  blk("  RENDEZVOUS_OWN_UPDATE/ACTIVE/STATE/PHASE/SESSION/POINT");
+  blk("  RENDEZVOUS_OWN_SPEED/SPEED_VALID/SPEED_WINDOW");
+  blk("  RENDEZVOUS_PEER_PHASE/SESSION/SPEED/SPEED_VALID/SPEED_WINDOW");
+  blk("  VIEW_POINT or VIEW_CIRCLE and RENDEZVOUS_OWN_POINT");
   exit(0);
 }
 
