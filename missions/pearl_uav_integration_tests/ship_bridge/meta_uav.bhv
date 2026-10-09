@@ -1,0 +1,4 @@
+// Intentionally no behaviors: the UAV Helm stays parked and sends no guidance.
+initialize UAV_TEST_PHASE = IDLE
+initialize MOOS_MANUAL_OVERRIDE = true
+initialize HELM_STATUS = false

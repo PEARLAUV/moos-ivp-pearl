@@ -1,0 +1,165 @@
+// Loitering PEARL; ship attachment is independent of the Helm.
+ServerHost = localhost
+ServerPort = $(MOOS_PORT)
+Community = pearl
+#include plug_origin_warp.moos
+ProcessConfig = ANTLER
+{
+  MSBetweenLaunches = 100
+  Run = MOOSDB @ NewConsole = false
+  Run = pShare @ NewConsole = false
+  Run = pHostInfo @ NewConsole = false
+  Run = pLogger @ NewConsole = false
+  Run = pNodeReporter @ NewConsole = false
+  Run = uFldNodeBroker @ NewConsole = false
+  Run = pHelmIvP @ NewConsole = false
+  Run = pMavlinkShipBridge @ NewConsole = false
+  Run = pEchoVar @ NewConsole = false
+  Run = uSimMarineV22 @ NewConsole = false
+  Run = pMarinePIDV22 @ NewConsole = false
+  Run = pThrustMixer @ NewConsole = false
+}
+ProcessConfig = pShare
+{
+  AppTick = 4
+  CommsTick = 4
+  input = route=localhost:$(PSHARE_PORT)
+}
+ProcessConfig = pHostInfo
+{
+  AppTick = 1
+  CommsTick = 1
+  default_hostip_force = localhost
+}
+ProcessConfig = pLogger
+{
+  AppTick = 5
+  CommsTick = 5
+  File = LOG_PEARL
+  PATH = ./
+  AsyncLog = true
+  FileTimeStamp = true
+  WildCardLogging = true
+  WildCardOmitPattern = *_STATUS
+  WildCardOmitPattern = DB_VARSUMMARY
+  WildCardOmitPattern = DB_RWSUMMARY
+}
+
+ProcessConfig = pNodeReporter
+{
+  AppTick = 4
+  CommsTick = 4
+  platform_type = ship
+  platform_color = dodger_blue
+  platform_length = 2.8
+  platform_group = surface
+  cross_fill_policy = global
+  report_cog = true
+}
+ProcessConfig = uFldNodeBroker
+{
+  AppTick = 1
+  CommsTick = 1
+  auto_bridge_realmcast = false
+  try_shore_host = pshare_route=localhost:$(SHORE_PSHARE)
+  bridge = src=NODE_REPORT_LOCAL, alias=NODE_REPORT
+  bridge = src=VIEW_POINT
+  bridge = src=VIEW_POLYGON
+  bridge = src=VIEW_SEGLIST
+  bridge = src=APPCAST
+  bridge = src=SHIP_ATTACHMENT_REQUESTED
+  bridge = src=MAVLINK_SHIP_BRIDGE_CONNECTED
+  bridge = src=MAVLINK_SHIP_POSE_ACTIVE
+  bridge = src=IVPHELM_STATE, alias=PEARL_HELM_STATE
+}
+// Never export the input command itself through pShare: pShare suppresses
+// incoming variables it also exports. Echo intent onto a distinct status name.
+ProcessConfig = pEchoVar
+{
+  AppTick = 10
+  CommsTick = 10
+  Echo = SHIP_POSE_ENABLED -> SHIP_ATTACHMENT_REQUESTED
+}
+ProcessConfig = pMavlinkShipBridge
+{
+  AppTick = 20
+  CommsTick = 20
+  mavlink_port = $(SITL_TARGET_PORT)
+  ship_nav_prefix = NAV
+  ship_system_id = 17
+  ship_altitude_msl = $(DECK_ALTITUDE)
+  ship_pose_enable_var = SHIP_POSE_ENABLED
+  publish_rate_hz = 10
+  input_timeout = 2
+}
+ProcessConfig = pHelmIvP
+{
+  AppTick = 4
+  CommsTick = 4
+  ok_skew = any
+  behaviors = targ_pearl.bhv
+  start_in_drive = true
+  park_on_allstop = false
+  Domain = course:0:359:360
+  Domain = speed:0:0.5:11
+}
+ProcessConfig = uSimMarineV22
+{
+  AppTick   = 10
+  CommsTick = 10
+
+  start_pos = $(PEARL_START)
+  prefix    = NAV
+
+  max_speed        = 1
+  max_deceleration = 0.5
+  turn_rate        = 100
+  turn_spd_loss    = 0.6
+  thrust_mode_diff = true
+
+  post_des_thrust = DESIRED_THRUSTX
+  post_des_rudder = DESIRED_RUDDERX
+}
+
+//----------------------------------------------------
+ProcessConfig = pMarinePIDV22
+{
+  AppTick   = 10
+  CommsTick = 10
+
+  verbose       = false
+  depth_control = false
+  active_start  = true
+
+  yaw_pid_kp             = 1.2
+  yaw_pid_kd             = 0.1
+  yaw_pid_ki             = 0.3
+  yaw_pid_integral_limit = 0.07
+
+  speed_pid_kp             = 1.0
+  speed_pid_kd             = 0.0
+  speed_pid_ki             = 0.0
+  speed_pid_integral_limit = 0.07
+
+  maxrudder    = 100
+  maxthrust    = 100
+  speed_factor = 20
+}
+
+//----------------------------------------------------
+ProcessConfig = pThrustMixer
+{
+  AppTick   = 10
+  CommsTick = 10
+
+  input_thrust_var = DESIRED_THRUST
+  input_rudder_var = DESIRED_RUDDER
+  output_left_var  = DESIRED_THRUST_L
+  output_right_var = DESIRED_THRUST_R
+  state_var        = THRUST_MIXER_STATE
+
+  max_thrust    = 100
+  max_rudder    = 50
+  stale_timeout = 1
+}
+

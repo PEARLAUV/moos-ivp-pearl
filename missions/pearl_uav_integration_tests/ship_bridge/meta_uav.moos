@@ -1,0 +1,112 @@
+// Native UAV telemetry only. No arming, takeoff, landing or guidance scripts.
+ServerHost = localhost
+ServerPort = $(MOOS_PORT)
+Community = uav
+#include plug_origin_warp.moos
+ProcessConfig = ANTLER
+{
+  MSBetweenLaunches = 100
+  Run = MOOSDB @ NewConsole = false
+  Run = pShare @ NewConsole = false
+  Run = pHostInfo @ NewConsole = false
+  Run = pLogger @ NewConsole = false
+  Run = pNodeReporter @ NewConsole = false
+  Run = uFldNodeBroker @ NewConsole = false
+  Run = pHelmIvP @ NewConsole = false
+  Run = pArduBridge @ NewConsole = false
+  Run = pEchoVar @ NewConsole = false
+}
+ProcessConfig = pShare
+{
+  AppTick = 4
+  CommsTick = 4
+  input = route=localhost:$(PSHARE_PORT)
+}
+ProcessConfig = pHostInfo
+{
+  AppTick = 1
+  CommsTick = 1
+  default_hostip_force = localhost
+}
+ProcessConfig = pLogger
+{
+  AppTick = 5
+  CommsTick = 5
+  File = LOG_UAV
+  PATH = ./
+  AsyncLog = true
+  FileTimeStamp = true
+  WildCardLogging = true
+  WildCardOmitPattern = *_STATUS
+  WildCardOmitPattern = DB_VARSUMMARY
+  WildCardOmitPattern = DB_RWSUMMARY
+}
+
+ProcessConfig = pNodeReporter
+{
+  AppTick = 4
+  CommsTick = 4
+  platform_type = quadcopter
+  platform_color = yellow
+  platform_length = 1.5
+  platform_group = drone
+  cross_fill_policy = global
+  report_cog = true
+}
+ProcessConfig = uFldNodeBroker
+{
+  AppTick = 1
+  CommsTick = 1
+  auto_bridge_realmcast = false
+  try_shore_host = pshare_route=localhost:$(SHORE_PSHARE)
+  bridge = src=NODE_REPORT_LOCAL, alias=NODE_REPORT
+  bridge = src=APPCAST
+  bridge = src=UAV_TEST_PHASE
+  bridge = src=UAV_IS_ARMED
+  bridge = src=UAV_LANDED_STATE
+  bridge = src=UAV_ALTITUDE_MSL
+  bridge = src=AUTOPILOT_MODE
+  bridge = src=UAV_COMMAND_RESULT
+  bridge = src=IVPHELM_STATE, alias=UAV_HELM_STATE
+}
+ProcessConfig = pHelmIvP
+{
+  AppTick = 4
+  CommsTick = 4
+  ok_skew = any
+  behaviors = targ_uav.bhv
+  start_in_drive = false
+  park_on_allstop = true
+  Domain = course:0:359:360
+  Domain = speed:0:5:51
+  Domain = altitude:0:30:61
+}
+ProcessConfig = pArduBridge
+{
+  AppTick = 10
+  CommsTick = 10
+  url = 127.0.0.1:$(SITL_PORT)
+  url_protocol = tcp
+  vehicle_type = copter
+  vname = uav
+  vcolor = yellow
+  prefix = UAV
+  geodesy = utm
+  helm_setpoint_timeout = 2
+  command_groundspeed = true
+  is_sim = true
+  logger = false
+}
+ProcessConfig = pEchoVar
+{
+  AppTick = 10
+  CommsTick = 10
+  Echo = UAV_X -> NAV_X
+  Echo = UAV_Y -> NAV_Y
+  Echo = UAV_LAT -> NAV_LAT
+  Echo = UAV_LON -> NAV_LONG
+  Echo = UAV_SPEED -> NAV_SPEED
+  Echo = UAV_HEADING -> NAV_HEADING
+  Echo = UAV_ALTITUDE -> NAV_ALTITUDE
+  Echo = UAV_DEPTH -> NAV_DEPTH
+}

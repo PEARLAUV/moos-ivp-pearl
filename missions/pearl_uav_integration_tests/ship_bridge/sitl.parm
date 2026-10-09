@@ -1,0 +1,68 @@
+# Ship attachment-only SITL overlay. No precision landing or flight automation.
+# The wrapper separately supplies --no-rc. Requires external-ship.patch.
+# IMPORTANT: ATTACH deliberately teleports a grounded UAV to the moving ship;
+# this is simulator coupling, NOT a flight maneuver or a real attachment model.
+
+# SIM_SHIP_ENABLE -- enable SITL's ship/deck model (boolean).
+# Official parameter metadata: "Enable ship landing simulation"; 0 disables,
+# 1 enables. Use 1 so the patched simulator can provide an elevated physical
+# surface and carry the grounded UAV with PEARL; target observations alone
+# cannot create that surface or simulate elevated contact.
+# With SIM_SHIP_EXT=1 below, the patch requires a valid fresh external pose:
+# enabling this parameter alone does not activate a deck at startup.
+# ATTACH enables pMavlinkShipBridge poses; DETACH stops them. The UAV remains
+# disarmed/grounded throughout this test; poses are initially disabled. Deck
+# height is --deck_altitude in MSL metres; the SITL home is 0 m MSL.
+# Official metadata / implementation:
+# https://github.com/ArduPilot/ardupilot/blob/master/libraries/SITL/SIM_Ship.cpp
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#sim-ship-enable
+# Modified behavior: companion ardupilot-sitl/patches/external-ship.patch.
+SIM_SHIP_ENABLE   1
+
+# SIM_SHIP_EXT -- CUSTOM PATCH parameter, not an upstream ArduPilot option.
+# Patch description: "Use GLOBAL_POSITION_INT from SIM_SHIP_SYSID instead of
+# the internal circular trajectory". Value 1 selects external MAVLink deck
+# position, MSL altitude, velocity and heading; 0 uses the native trajectory.
+# pMavlinkShipBridge supplies these poses from PEARL, independently of the
+# precision-target broadcaster. No valid pose, or a pose older than 1000 ms
+# of ArduPilot simulated time, makes the external deck surface unavailable.
+# SAFETY/LIMITATION: the patch has NO horizontal proximity gate. While active,
+# its MSL height replaces the ground surface even off-deck, and grounded UAVs
+# are attached to the supplied ship center. Do not enable pose streaming for
+# an off-deck contingency landing or before takeoff. Fresh poses must continue
+# after recovery to retain the raised deck and carry the recovered aircraft.
+# No official documentation exists for this extension. Authoritative source:
+# companion ardupilot-sitl/patches/external-ship.patch (ShipSim::var_info,
+# get_external_location/get_location, and Aircraft::update_dynamics).
+# Relative source: ../../../../ardupilot-sitl/patches/external-ship.patch
+SIM_SHIP_EXT      1
+
+# SIM_SHIP_SYSID -- ship's MAVLink system ID (integer; use a distinct vehicle ID).
+# Official parameter metadata: "System ID of the ship"; upstream default is 17.
+# The custom external-pose patch also uses this ID to filter incoming
+# GLOBAL_POSITION_INT senders. Set 17 to match pMavlinkShipBridge's
+# ship_system_id=17 in meta_pearl.moos. The UAV itself uses system 1; no landing
+# targets are broadcast in this mission. A mismatch silently prevents valid
+# external deck acquisition, even if the TCP simulation link is connected.
+# This is sender selection, NOT authentication or a MOOS community name.
+# Official metadata / implementation:
+# https://github.com/ArduPilot/ardupilot/blob/master/libraries/SITL/SIM_Ship.cpp
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#sim-ship-sysid
+# Additional receive-filter behavior: ardupilot-sitl/patches/external-ship.patch,
+# ShipSim::handle_external_position.
+SIM_SHIP_SYSID    17
+
+# SIM_SHIP_SPEED -- speed of the native ship trajectory, in metres/second.
+# Official parameter metadata: "Speed of the ship"; native default is 3 m/s.
+# Set 0 so an internal trajectory, if deliberately selected, does not drive
+# an independently moving synthetic boat. This is NOT PEARL's mission speed.
+# With SIM_SHIP_EXT=1, the patch bypasses the native trajectory and derives
+# ship speed/ground motion from external pose velocity instead; PEARL can
+# still loiter at --pearl_speed despite this value 0.
+# This value neither freezes MOOS PEARL nor cancels external deck motion.
+# Official metadata / implementation:
+# https://github.com/ArduPilot/ardupilot/blob/master/libraries/SITL/SIM_Ship.cpp
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#sim-ship-speed
+# External-mode override: ardupilot-sitl/patches/external-ship.patch,
+# ShipSim::update and ShipSim::apply_external_position.
+SIM_SHIP_SPEED    0

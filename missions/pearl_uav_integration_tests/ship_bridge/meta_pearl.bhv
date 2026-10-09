@@ -1,0 +1,17 @@
+initialize MOOS_MANUAL_OVERRIDE = false
+initialize SHIP_POSE_ENABLED = false
+
+Behavior = BHV_Loiter
+{
+  name = pearl_loiter
+  pwt = 100
+  condition = MOOS_MANUAL_OVERRIDE=false
+  polygon = format=radial, x=$(CENTER_X), y=$(CENTER_Y), radius=$(LOITER_RADIUS), pts=12
+  clockwise = true
+  speed = $(PEARL_SPEED)
+  capture_radius = 1
+  slip_radius = 2
+  acquire_dist = 5
+  visual_hints = polygon_label_color=invisible, polygon_vertex_size=0
+  visual_hints = polygon_edge_color=dodger_blue, nextpt_label_color=invisible
+}
