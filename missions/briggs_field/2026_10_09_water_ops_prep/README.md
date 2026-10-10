@@ -69,6 +69,19 @@ Use `LAUNCH_ARGS` for common flags and `SHORESIDE_ARGS`, `PEARL_ARGS`,
 (`DRONE_ARGS=--upload-params` on REAL); ordinary targets never request it.
 Do not regenerate a different site's targets over a running mission.
 
+The REAL drone launcher connects `pArduBridge` to the Pixhawk's stable USB
+interface `serial/by-id/usb-ArduPilot_Pixhawk6X_200023000E51333531343838-if00`
+at 115200 baud. Interface `if00` is reserved for `pArduBridge`; the independent
+`mavp2p`/QGC link uses `if02`. This avoids volatile `/dev/ttyACM*` numbering,
+which changes when USB devices reconnect. The serial endpoint passed to
+`pArduBridge` is intentionally relative to `/dev/`. For replacement hardware,
+override it explicitly, for example:
+
+```bash
+make drone-briggs \
+  DRONE_ARGS='--ap_url=serial/by-id/usb-ArduPilot_NEW_SERIAL-if00:115200'
+```
+
 ### Local simulation and explicit housekeeping
 
 ```bash

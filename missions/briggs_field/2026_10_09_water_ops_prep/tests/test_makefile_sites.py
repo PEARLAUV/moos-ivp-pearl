@@ -14,6 +14,9 @@ MISSION = Path(__file__).resolve().parents[1]
 ROOT = MISSION.parents[2]
 NODES = ("shoreside", "pearl", "drone")
 SITES = ("briggs", "charles")
+PIXHAWK_IF00 = (
+    "serial/by-id/usb-ArduPilot_Pixhawk6X_200023000E51333531343838-if00:115200"
+)
 
 
 def run_make(directory, *args):
@@ -200,6 +203,16 @@ class MakefileSiteTest(unittest.TestCase):
                     self.assertEqual(options["ip"], "100.112.119.114")
                     self.assertEqual(options["shore"], "100.88.214.50")
                     self.assertEqual(options["pearl_ip"], pearl_ip)
+                    self.assertRegex(
+                        self.configs[node, site],
+                        rf"(?m)^\s*url\s*=\s*{re.escape(PIXHAWK_IF00)}\s*$",
+                    )
+                    self.assertRegex(
+                        self.configs[node, site],
+                        r"(?m)^\s*url_protocol\s*=\s*serial\s*$",
+                    )
+                    self.assertNotIn("url          = ttyACM0:115200",
+                                     self.configs[node, site])
 
     def test_same_site_datum_on_every_node(self):
         for site, latitude, longitude in (("briggs", 42.3569186052, -71.0990291116),
@@ -234,7 +247,8 @@ class MakefileSiteTest(unittest.TestCase):
             else:
                 origin = ("42.358436", "-71.087448")
                 expected_points = ((42.358465, -71.087338), (42.358542, -71.087357))
-            for key, expected in zip(("pearl_return", "uav_rally"), expected_points):
+            for key, expected in zip(("pearl_return", "uav_rally"), expected_points,
+                                     strict=True):
                 result = subprocess.check_output(
                     [str(ROOT / "scripts/local_to_latlon.py"), *origin,
                      *shore[key].split(",")], text=True)

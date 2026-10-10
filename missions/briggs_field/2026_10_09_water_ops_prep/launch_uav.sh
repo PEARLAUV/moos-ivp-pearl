@@ -41,6 +41,10 @@ VNAME="uav"
 COLOR="yellow"
 AP_URL=""
 AP_PROTOCOL=""
+# The flight controller exposes two stable USB CDC interfaces. Reserve if00
+# for pArduBridge; mavp2p/QGC uses if02 independently. pArduBridge's serial
+# protocol prepends /dev/, so this endpoint is intentionally /dev-relative.
+REAL_AP_URL_DEFAULT="serial/by-id/usb-ArduPilot_Pixhawk6X_200023000E51333531343838-if00:115200"
 SECONDARY_LANDING="10,15"
 MIN_STATE_TIME="0"
 DECK_ALTITUDE="1"
@@ -69,7 +73,7 @@ for ARGI; do
     echo "  --shore_pshare=<9200>   Shoreside pShare port"
     echo "  --pearl_ip=<localhost>  Direct PEARL host; also enables peer telemetry"
     echo "  --pearl_pshare=<9202>   Direct PEARL pShare port"
-    echo "  --ap_url=<endpoint>     ArduPilot endpoint"
+    echo "  --ap_url=<endpoint>     ArduPilot endpoint (REAL default: Pixhawk if00 by-id)"
     echo "  --ap_protocol=<proto>   udp, tcp, or serial"
     echo "  --model=<x500>               Drone parameter profile basename (not SITL frame)"
     echo "  --drone-params=<PATH|none>    Override model-selected drone profile"
@@ -204,7 +208,7 @@ if [ -z "$AP_URL" ]; then
   if [ "$MODE" = "SITL" ]; then
     AP_URL="127.0.0.1:${SITL_PORT:-5760}"
   elif [ "$MODE" = "REAL" ]; then
-    AP_URL="ttyACM0:115200"
+    AP_URL="$REAL_AP_URL_DEFAULT"
   fi
 fi
 if [ -z "$AP_PROTOCOL" ]; then
