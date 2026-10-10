@@ -68,8 +68,8 @@ class uChecks : public AppCastingMOOSApp {
                        double now) const;
   void publish(const std::string& var, std::string& status_cache,
                std::string& info_cache, const std::string& status,
-               const std::string& info);
-  void updateCheck(NamedCheck& check, bool enabled, double now);
+               const std::string& info, bool refresh = false);
+  void updateCheck(NamedCheck& check, bool enabled, double now, bool refresh);
   void publishSnapshot(double now, bool enabled);
   std::string snapshotSignature() const;
 
@@ -82,6 +82,8 @@ class uChecks : public AppCastingMOOSApp {
   std::string m_snapshot_epoch;
   std::string m_snapshot_signature;
   std::string m_snapshot_session;
+  double m_result_interval = 0; // Opt-in active authorization lease; zero is change-only.
+  double m_last_result_time = -1;
   double m_snapshot_interval = 1;
   double m_last_snapshot_time = -1;
   unsigned long long m_snapshot_sequence = 0;

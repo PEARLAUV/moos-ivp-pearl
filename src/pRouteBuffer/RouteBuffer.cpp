@@ -14,6 +14,8 @@
 #include "XYFormatUtilsSegl.h"
 #include "XYSegList.h"
 #include "RouteBuffer.h"
+#include <chrono>
+#include <cmath>
 
 using namespace std;
 
@@ -71,6 +73,18 @@ bool RouteBuffer::OnNewMail(MOOSMSG_LIST &NewMail)
 {
   AppCastingMOOSApp::OnNewMail(NewMail);
 
+  // Cache guard facts before commands, without changing their producer times.
+  for(const auto& msg : NewMail) {
+    if(m_task_guards.count(msg.GetKey()))
+      m_task_inputs[msg.GetKey()] = {
+        msg.IsDouble() ? doubleToStringX(msg.GetDouble()) : msg.GetString(), msg.GetTime()};
+    if(m_task_start_pending && msg.GetKey() == m_task_started_var &&
+       msg.IsString() && msg.GetString() == m_task_started_value &&
+       msg.GetTime() >= m_task_requested_time && msg.GetTime() <= m_curr_time + 1 &&
+       m_curr_time - msg.GetTime() <= 3)
+      m_task_started = true;
+  }
+
   MOOSMSG_LIST::iterator p;
   for(p=NewMail.begin(); p!=NewMail.end(); p++) {
     CMOOSMsg &msg = *p;
@@ -79,6 +93,13 @@ bool RouteBuffer::OnNewMail(MOOSMSG_LIST &NewMail)
     bool handled = false;
     if((m_role == "shoreside") && (key == m_point_var))
       handled = handleMailPoint(msg);
+    else if((m_role == "shoreside") && (key == m_task_request_var))
+      handled = handleMailTask(msg);
+    else if((m_role == "shoreside") && !m_stage_clear_request_var.empty() &&
+            key == m_stage_clear_request_var) {
+      if(mailIsTrue(msg)) clearStagedDrawing();
+      handled = true;
+    }
     else if((m_role == "shoreside") && (key == m_deploy_request_var))
       handled = handleMailTrigger(msg, "deploy");
     else if((m_role == "shoreside") && (key == m_clear_request_var))
@@ -91,6 +112,13 @@ bool RouteBuffer::OnNewMail(MOOSMSG_LIST &NewMail)
       handled = handleMailCommand(msg);
     else if((m_role == "vehicle") && (key == m_route_ready_var)) {
       m_route_ready = mailIsTrue(msg);
+      m_route_ready_time = msg.GetTime();
+      handled = true;
+    }
+    else if((m_role == "vehicle") && !m_ready_name_var.empty() &&
+            key == m_ready_name_var && msg.IsString()) {
+      m_ready_name = msg.GetString();
+      m_ready_name_time = msg.GetTime();
       handled = true;
     }
     else if((m_role == "vehicle") && !m_operation_state_var.empty() &&
@@ -98,6 +126,13 @@ bool RouteBuffer::OnNewMail(MOOSMSG_LIST &NewMail)
       m_operation_state = msg.GetString();
       handled = true;
     }
+    else if((m_role == "vehicle") && !m_helm_state_var.empty() &&
+            (key == m_helm_state_var) && msg.IsString()) {
+      m_helm_state = msg.GetString();
+      handled = true;
+    }
+    else if(m_task_guards.count(key) || key == m_task_started_var)
+      handled = true;
     else if(key == "APPCAST_REQ")
       handled = true;
 
@@ -140,10 +175,50 @@ bool RouteBuffer::Iterate()
       processVehicleCommand(command.first, command.second);
     }
 
+    // Parked Helm discards update deltas before its behaviors can spawn.
+    // Release the retained snapshot on actual DRIVE, never on a task timer.
+    if((m_role == "vehicle") && !m_deferred_helm_update.empty() &&
+       (m_helm_state == "DRIVE")) {
+      Notify(m_route_update_var, m_deferred_helm_update);
+      m_deferred_helm_update.clear();
+      reportEvent("Staged route delivered after Helm DRIVE");
+    }
+
+    if(m_task_start_pending) {
+      if(m_task_started) {
+        m_task_start_pending = false;
+        postState("TASK_STARTED");
+      }
+      else if(!taskPermitted() || m_curr_time - m_task_requested_time > 3)
+        cancelPendingTask("TASK_REJECTED_START");
+    }
+
+    if((m_role == "vehicle") && m_vehicle_deploy_pending &&
+       !m_task_execute_var.empty() && !taskPermitted())
+      cancelPendingTask("TASK_REJECTED_CONTEXT");
+
     if((m_role == "vehicle") && m_vehicle_deploy_pending) {
       double staged_time = m_curr_time - m_vehicle_deploy_pending_since;
       bool release_route = false;
-      if((m_deploy_delay > 0) && (staged_time >= m_deploy_delay)) {
+      if(!m_task_execute_var.empty()) {
+        // A matching, post-snapshot Helm readiness publication is evidence;
+        // a fixed delay or a retained true flag is not.
+        if(m_route_ready && m_route_ready_time >= m_vehicle_deploy_pending_since &&
+           m_route_ready_time <= m_curr_time + 1 && m_curr_time - m_route_ready_time <= 3 &&
+           m_ready_name == m_ready_name_prefix + m_vehicle_active_route_name &&
+           m_ready_name_time >= m_vehicle_deploy_pending_since &&
+           m_ready_name_time <= m_curr_time + 1 && m_curr_time - m_ready_name_time <= 3) {
+          Notify(m_route_deploy_var, "true");
+          Notify(m_task_execute_var, "true");
+          m_task_requested_time = m_curr_time;
+          m_task_start_pending = true;
+          m_task_started = false;
+          release_route = true;
+        }
+        else if(staged_time > 5)
+          cancelPendingTask("TASK_REJECTED_NOT_READY");
+      }
+      else if((m_deploy_delay > 0) && (staged_time >= m_deploy_delay)) {
         Notify(m_route_deploy_var, "true");
         if(m_manual_override_var != "")
           Notify(m_manual_override_var, "false");
@@ -172,7 +247,7 @@ bool RouteBuffer::Iterate()
         }
         else {
           m_vehicle_pending_route_update.clear();
-          postState("DEPLOY_ACCEPTED");
+          postState(m_task_execute_var.empty() ? "DEPLOY_ACCEPTED" : "TASK_REQUESTED");
         }
       }
     }
@@ -201,6 +276,7 @@ bool RouteBuffer::Iterate()
 bool RouteBuffer::OnStartUp()
 {
   AppCastingMOOSApp::OnStartUp();
+  m_started = MOOSTime();
 
   STRING_LIST sParams;
   m_MissionReader.EnableVerbatimQuoting(false);
@@ -217,6 +293,39 @@ bool RouteBuffer::OnStartUp()
     bool handled = false;
     if(param == "role")
       handled = handleConfigRole(value);
+    else if(param == "task_request_var")
+      handled = setNonWhiteVarOnString(m_task_request_var, value);
+    else if(param == "stage_clear_request_var")
+      handled = setNonWhiteVarOnString(m_stage_clear_request_var, value);
+    else if(param == "task_destination")
+      handled = !value.empty() && !strContainsWhite(value) &&
+                m_task_destinations.insert(tolower(value)).second;
+    else if(param == "task_submit_flag") {
+      string destination = tolower(stripBlankEnds(biteStringX(value, ':')));
+      string key = stripBlankEnds(biteStringX(value, '='));
+      handled = !destination.empty() && !key.empty() && !value.empty() &&
+                !strContainsWhite(destination) && !strContainsWhite(key);
+      if(handled) m_task_submit_flags[destination].emplace_back(key, value);
+    }
+    else if(param == "route_ready_name_prefix")
+      handled = setNonWhiteVarOnString(m_ready_name_prefix, value);
+    else if(param == "route_ready_name_var")
+      handled = setNonWhiteVarOnString(m_ready_name_var, value);
+    else if(param == "task_execute_var")
+      handled = setNonWhiteVarOnString(m_task_execute_var, value);
+    else if(param == "task_started_state") {
+      m_task_started_var = stripBlankEnds(biteStringX(value, '='));
+      handled = setNonWhiteVarOnString(m_task_started_value, value) &&
+                !m_task_started_var.empty() && !strContainsWhite(m_task_started_var);
+    }
+    else if(param == "task_guard") {
+      string key = stripBlankEnds(biteStringX(value, '='));
+      const auto alternatives = parseString(value, '|');
+      handled = !key.empty() && !strContainsWhite(key) && !alternatives.empty();
+      for(const auto& alternative : alternatives)
+        handled = handled && !alternative.empty() && !strContainsWhite(alternative);
+      if(handled) m_task_guards[key] = set<string>(alternatives.begin(), alternatives.end());
+    }
     else if(param == "destination_node")
       handled = setNonWhiteVarOnString(m_destination_node, value);
     else if(param == "source_node")
@@ -245,6 +354,10 @@ bool RouteBuffer::OnStartUp()
       handled = setNonWhiteVarOnString(m_route_name, value);
     else if(param == "route_purpose_var")
       handled = setNonWhiteVarOnString(m_route_purpose_var, value);
+    else if(param == "route_identity_var")
+      handled = setNonWhiteVarOnString(m_route_identity_var, value);
+    else if(param == "helm_state_var")
+      handled = setNonWhiteVarOnString(m_helm_state_var, value);
     else if(param == "operation_state_var")
       handled = setNonWhiteVarOnString(m_operation_state_var, value);
     else if(param == "recovery_source")
@@ -272,8 +385,13 @@ bool RouteBuffer::OnStartUp()
     else if(param == "live_append")
       handled = setBooleanOnString(m_live_append, value);
 
-    if(!handled)
+    if(!handled) {
       reportUnhandledConfigWarning(orig);
+      if(strBegins(param, "task_") || param == "stage_clear_request_var" ||
+         param == "route_ready_name_var" || param == "route_ready_name_prefix" ||
+         param == "route_identity_var")
+        m_config_valid = false;
+    }
   }
 
   if(m_source_node == "")
@@ -297,6 +415,19 @@ bool RouteBuffer::OnStartUp()
     reportConfigWarning("Route purpose policy needs a purpose variable, FSM state variable, recovery source, and allowed states");
     m_config_valid = false;
   }
+  for(const auto& flags : m_task_submit_flags) {
+    if(!m_task_destinations.count(flags.first)) {
+      reportConfigWarning("task_submit_flag needs an allowed task_destination");
+      m_config_valid = false;
+    }
+  }
+  if(!m_task_execute_var.empty() &&
+     (m_role != "vehicle" || m_task_guards.empty() || m_task_started_var.empty() ||
+      m_ready_name_var.empty() ||
+      m_deploy_delay != 0 || m_route_replay_delay != 0)) {
+    reportConfigWarning("Task execution requires guards, started state and zero deploy/replay delay");
+    m_config_valid = false;
+  }
   if(m_config_valid && !m_route_purpose_var.empty())
     Notify(m_route_purpose_var, "none");
 
@@ -313,6 +444,8 @@ void RouteBuffer::registerVariables()
 
   if(m_role == "shoreside") {
     Register(m_point_var, 0);
+    Register(m_task_request_var, 0);
+    if(!m_stage_clear_request_var.empty()) Register(m_stage_clear_request_var, 0);
     Register(m_deploy_request_var, 0);
     Register(m_clear_request_var, 0);
     Register(m_goto_request_var, 0);
@@ -321,7 +454,11 @@ void RouteBuffer::registerVariables()
   else if(m_role == "vehicle") {
     Register(m_command_var, 0);
     Register(m_route_ready_var, 0);
+    if(!m_ready_name_var.empty()) Register(m_ready_name_var, 0);
     if(!m_operation_state_var.empty()) Register(m_operation_state_var, 0);
+    if(!m_helm_state_var.empty()) Register(m_helm_state_var, 0);
+    for(const auto& guard : m_task_guards) Register(guard.first, 0);
+    if(!m_task_started_var.empty()) Register(m_task_started_var, 0);
   }
 }
 
@@ -334,7 +471,7 @@ bool RouteBuffer::handleMailPoint(const CMOOSMsg& msg)
     return(false);
 
   XYPoint point = string2Point(msg.GetString());
-  if(!point.valid()) {
+  if(!point.valid() || !std::isfinite(point.x()) || !std::isfinite(point.y())) {
     reportRunWarning("Invalid route point: " + msg.GetString());
     return(true);
   }
@@ -359,6 +496,73 @@ bool RouteBuffer::handleMailPoint(const CMOOSMsg& msg)
   postSegList(true);
   postState(sent_append ? "APPEND_SUBMITTED" : "EDITING");
   return(true);
+}
+
+// An explicit target and immutable snapshot share one request. Consuming the
+// drawing never sends a vehicle CLEAR and never cancels another vehicle.
+bool RouteBuffer::handleMailTask(const CMOOSMsg& msg)
+{
+  const string destination = msg.IsString() ? tolower(stripBlankEnds(msg.GetString())) : "";
+  if(!m_config_valid || msg.GetTime() < m_started || msg.GetTime() > m_curr_time + 1 ||
+     m_curr_time - msg.GetTime() > 3 || !m_task_destinations.count(destination)) {
+    postState("TASK_REJECTED_TARGET");
+    return true;
+  }
+  if(m_points.empty()) {
+    postState("TASK_REJECTED_EMPTY");
+    return true;
+  }
+  const auto stamp = std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count();
+  const string id = "task_" + destination + "_" + to_string(stamp);
+  const string command = "action=deploy # task_id=" + id +
+                         " # task_time=" + doubleToStringX(m_curr_time, 6) +
+                         " # points=" + getPointsSpec();
+  if(!sendMediatedCommand(command, destination)) {
+    postState("TASK_REJECTED_SEND");
+    return true;
+  }
+  // pMediator owns retry copies after this post; its ACK is receipt, not execution.
+  clearStagedDrawing();
+  Notify("ROUTE_BUFFER_TASK_ID", id);
+  Notify("ROUTE_BUFFER_TASK_DESTINATION", destination);
+  for(const auto& flag : m_task_submit_flags[destination])
+    Notify(flag.first, flag.second);
+  postState("TASK_SUBMITTED");
+  return true;
+}
+
+void RouteBuffer::clearStagedDrawing()
+{
+  clearVisualization();
+  m_points.clear();
+  m_last_submitted_points.clear();
+  m_route_deployed = false;
+  postState("EMPTY");
+}
+
+bool RouteBuffer::taskPermitted() const
+{
+  for(const auto& guard : m_task_guards) {
+    const auto input = m_task_inputs.find(guard.first);
+    if(input == m_task_inputs.end() || !guard.second.count(input->second.value) ||
+       input->second.time > m_curr_time + 1 || m_curr_time - input->second.time > 3)
+      return false;
+  }
+  return true;
+}
+
+void RouteBuffer::cancelPendingTask(const string& reason)
+{
+  // Cancel only a task not observed in the execution state; support suspension
+  // must not discard an executing route or its waypoint-engine progress.
+  if(!m_task_execute_var.empty()) Notify(m_task_execute_var, "false");
+  processVehicleCommand("action=clear", GetAppName());
+  Notify(m_route_deploy_var, "false");
+  Notify(m_route_ready_var, "false");
+  m_route_ready = false;
+  m_commands_rejected++;
+  postState(reason);
 }
 
 //---------------------------------------------------------
@@ -532,12 +736,15 @@ bool RouteBuffer::processVehicleCommand(const string& command,
   string slip_radius;
   string route_name;
   string purpose = "operator";
+  string task_id, task_time;
   for(unsigned int i=0; i<fields.size(); i++) {
     string field = stripBlankEnds(fields[i]);
     string param = tolower(biteStringX(field, '='));
     string value = stripBlankEnds(field);
 
-    if(param == "action")
+    if(param == "task_id") task_id = value;
+    else if(param == "task_time") task_time = value;
+    else if(param == "action")
       action = tolower(value);
     else if(param == "points")
       points = value;
@@ -561,12 +768,16 @@ bool RouteBuffer::processVehicleCommand(const string& command,
   }
 
   if(action == "clear") {
+    if(m_task_start_pending && !m_task_execute_var.empty()) Notify(m_task_execute_var, "false");
+    m_task_start_pending = false;
+    m_deferred_helm_update.clear();
     m_vehicle_deploy_pending = false;
     m_vehicle_route_replay_pending = false;
     m_vehicle_pending_route_update.clear();
     m_vehicle_route_purpose.clear();
     m_route_deployed = false;
     if(!m_route_purpose_var.empty()) Notify(m_route_purpose_var, "none");
+    if(!m_route_identity_var.empty()) Notify(m_route_identity_var, "none");
     if(!m_vehicle_active_route_name.empty()) {
       // Repeating this update can respawn an expired Helm behavior while idle.
       Notify(m_route_update_var,
@@ -580,6 +791,33 @@ bool RouteBuffer::processVehicleCommand(const string& command,
   }
 
   if(action == "deploy") {
+    if(!task_id.empty() || !m_task_execute_var.empty()) {
+      if(task_id.empty() || strContainsWhite(task_id) || !isNumber(task_time) ||
+         !std::isfinite(atof(task_time.c_str())) || atof(task_time.c_str()) < m_started ||
+         atof(task_time.c_str()) > m_curr_time + 1 ||
+         m_curr_time - atof(task_time.c_str()) > 30) {
+        postState("TASK_REJECTED_STALE");
+        m_commands_rejected++;
+        return false;
+      }
+      if(!m_seen_tasks.insert(task_id).second) {
+        reportEvent("Ignored duplicate task " + task_id);
+        return true;
+      }
+      if(purpose != "operator" || !taskPermitted() ||
+         m_vehicle_deploy_pending || m_task_start_pending ||
+         (!m_vehicle_active_route_name.empty() && m_vehicle_route_purpose == "operator")) {
+        postState("TASK_REJECTED_CONTEXT");
+        m_commands_rejected++;
+        return false;
+      }
+      route_name = task_id; // Immutable task identity is also its Helm instance.
+      m_route_ready = false;
+      m_route_ready_time = -1;
+      m_ready_name.clear();
+      m_ready_name_time = -1;
+      Notify(m_route_ready_var, "false");
+    }
     if(purpose != "operator" && purpose != "recovery") {
       m_commands_rejected++;
       postState("DEPLOY_REJECTED_PURPOSE");
@@ -635,9 +873,10 @@ bool RouteBuffer::processVehicleCommand(const string& command,
 //---------------------------------------------------------
 // Procedure: sendMediatedCommand()
 
-bool RouteBuffer::sendMediatedCommand(const string& command)
+bool RouteBuffer::sendMediatedCommand(const string& command, const string& destination)
 {
-  NodeMessage message(m_source_node, m_destination_node, m_command_var);
+  NodeMessage message(m_source_node, destination.empty() ? m_destination_node : destination,
+                      m_command_var);
   message.setSourceApp(GetAppName());
   message.setStringVal(command);
 
@@ -646,7 +885,8 @@ bool RouteBuffer::sendMediatedCommand(const string& command)
     return(false);
   }
 
-  Notify("NODE_MESSAGE_LOCAL", message.getSpec());
+  if(!Notify("NODE_MESSAGE_LOCAL", message.getSpec()))
+    return false;
   m_commands_sent++;
   return(true);
 }
@@ -705,8 +945,30 @@ bool RouteBuffer::postRouteSnapshot(const string& points, const string& speed,
     return(false);
   }
 
+  for(unsigned int i=0; i<seglist.size(); ++i) {
+    if(!std::isfinite(seglist.get_vx(i)) || !std::isfinite(seglist.get_vy(i))) {
+      m_commands_rejected++;
+      postState("DEPLOY_REJECTED_POINTS");
+      return false;
+    }
+  }
+
   string update_name = (route_name == "") ? m_route_name : route_name;
+  // Identity is a literal in a Helm logic condition, never operator syntax.
+  if(!m_route_identity_var.empty() &&
+     update_name.find_first_not_of(
+       "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != string::npos) {
+    m_commands_rejected++;
+    postState("DEPLOY_REJECTED_ROUTE_NAME");
+    return false;
+  }
   string update = "name=" + update_name;
+  if(!m_route_identity_var.empty()) {
+    // A parked Helm may discard a previous duration=0 delta. Retained
+    // instances must never become runnable again for a different task.
+    update += " # condition=" + m_route_identity_var + "=" + update_name;
+    Notify(m_route_identity_var, update_name);
+  }
   m_vehicle_active_route_name = update_name;
   m_vehicle_route_purpose = purpose;
   update += " # order=normal";
@@ -727,7 +989,11 @@ bool RouteBuffer::postRouteSnapshot(const string& points, const string& speed,
   }
   Notify(m_route_clear_var, "false");
   if(!m_route_purpose_var.empty()) Notify(m_route_purpose_var, purpose);
-  Notify(m_route_update_var, update);
+  m_deferred_helm_update.clear();
+  if(m_helm_state_var.empty() || m_helm_state == "DRIVE")
+    Notify(m_route_update_var, update);
+  else
+    m_deferred_helm_update = update;
   m_vehicle_route_replay_pending = false;
   m_vehicle_pending_route_update = update;
   m_vehicle_deploy_pending = true;
@@ -842,12 +1108,18 @@ bool RouteBuffer::mailIsTrue(const CMOOSMsg& msg) const
 bool RouteBuffer::buildReport()
 {
   m_msgs << "Role:             " << m_role << endl;
+  m_msgs << "Task guards ready: " << (taskPermitted() ? "true" : "false") << endl;
+  m_msgs << "Task start pending: " << (m_task_start_pending ? "true" : "false") << endl;
   m_msgs << "State:            " << m_state << endl;
   m_msgs << "Source node:      " << m_source_node << endl;
   m_msgs << "Destination node: " << m_destination_node << endl;
   m_msgs << "Route points:     " << m_points.size()
          << "/" << m_max_points << endl;
   m_msgs << "Contacts cached:  " << m_contact_points.size() << endl;
+  if(!m_helm_state_var.empty()) {
+    m_msgs << "Helm state:       " << (m_helm_state.empty() ? "missing" : m_helm_state) << endl;
+    m_msgs << "Snapshot waiting for DRIVE: " << boolToString(!m_deferred_helm_update.empty()) << endl;
+  }
   m_msgs << "Contact max age:  " << m_contact_max_age << endl;
   m_msgs << "Deploy delay:     " << m_deploy_delay << endl;
   m_msgs << "Route replay delay:" << m_route_replay_delay << endl;

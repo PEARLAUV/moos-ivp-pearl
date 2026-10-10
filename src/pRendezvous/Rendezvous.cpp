@@ -57,7 +57,9 @@ bool Rendezvous::Iterate()
   if (m_state == "STARTING") {
     publishMotion();
     if (navFresh() && peerFresh()) {
-      m_planner.reset(m_curr_time, m_nav_x, m_nav_y);
+      m_planning_started_time = m_curr_time;
+      m_planner.reset(m_planning_history_window > 0 ? min(m_nav_x_time, m_nav_y_time) : m_curr_time,
+                      m_nav_x, m_nav_y);
       m_peer_speed_estimator.reset(m_peer_time, m_peer_x, m_peer_y);
       m_planner.update(m_curr_time, m_nav_x, m_nav_y, m_peer_x, m_peer_y,
                        RendezvousPlanner::Speed(), m_point_freeze_radius);
@@ -85,7 +87,7 @@ bool Rendezvous::Iterate()
       updatePlanner();
       const double distance = hypot(m_nav_x - m_target_x, m_nav_y - m_target_y);
       Notify(ownVar("DISTANCE"), distance);
-      if (m_waypoint_reached || distance <= m_arrival_radius) {
+      if (m_history_usable && (m_waypoint_reached || distance <= m_arrival_radius)) {
         if (m_arrival_start <= 0)
           m_arrival_start = m_curr_time;
         if (m_curr_time - m_arrival_start >= m_arrival_dwell)
@@ -126,6 +128,15 @@ bool Rendezvous::OnStartUp()
       ok = setPosDoubleOnString(m_transit_timeout, value);
     else if (param == "point_freeze_radius")
       ok = setNonNegDoubleOnString(m_point_freeze_radius, value);
+    else if (param == "planning_history_window")
+      ok = setNonNegDoubleOnString(m_planning_history_window, value) &&
+           isfinite(m_planning_history_window) &&
+           (m_planning_history_window == 0 ||
+            (m_planning_history_window >= 3 && m_planning_history_window <= 20 &&
+             floor(m_planning_history_window) == m_planning_history_window));
+    else if (param == "planning_max_positive_accel")
+      ok = setNonNegDoubleOnString(m_planning_max_positive_accel, value) &&
+           isfinite(m_planning_max_positive_accel);
     else if (param == "rendezvous_distance" || param == "arrival_radius")
       ok = setPosDoubleOnString(m_arrival_radius, value);
     else if (param == "arrival_dwell")
@@ -171,6 +182,7 @@ bool Rendezvous::OnStartUp()
     reportConfigWarning("peer_node is required");
     m_config_valid = false;
   }
+  m_history_usable = m_config_valid && m_planning_history_window == 0;
   registerVariables();
   return true;
 }
@@ -193,6 +205,10 @@ bool Rendezvous::handleStart(const CMOOSMsg &msg)
     return true;
   if (m_state == "RENDEZVOUS" || m_state == "STARTING")
     return true;
+  if (!m_config_valid) {
+    abort("invalid_configuration");
+    return true;
+  }
   // STARTING motion packets are the peer's initial position source. Keep the
   // first key=value token non-empty so tokStringParse can parse later fields.
   m_session = makeSession();
@@ -202,6 +218,9 @@ bool Rendezvous::handleStart(const CMOOSMsg &msg)
   m_freeze_node.clear();
   m_waypoint_reached = false;
   m_arrival_start = 0;
+  m_history_usable = m_planning_history_window == 0;
+  m_own_history = {};
+  m_peer_history = {};
   m_state = "STARTING";
   m_reason = "start_received";
   m_state_enter_time = m_curr_time;
@@ -285,6 +304,8 @@ bool Rendezvous::handleMotion(const CMOOSMsg &msg)
   if (stamp < m_peer_time || stamp > m_curr_time + 1 || m_curr_time - stamp > m_nav_stale_thresh)
     return true;
   const double x = atof(sx.c_str()), y = atof(sy.c_str());
+  if (!isfinite(x) || !isfinite(y))
+    return true;
   m_peer_speed_estimator.sample(stamp, x, y, m_nav_stale_thresh);
   m_peer_x = x;
   m_peer_y = y;
@@ -317,11 +338,22 @@ void Rendezvous::updatePlanner()
   Notify(peerVar("SPEED"), peer_speed.value);
   Notify(peerVar("SPEED_VALID"), peer_speed.valid ? 1.0 : 0.0);
   Notify(peerVar("SPEED_WINDOW"), peer_speed.window);
+  m_own_history = m_planner.history(m_curr_time, m_planning_history_window,
+                                    m_planning_max_positive_accel, m_planning_started_time);
+  m_peer_history =
+      m_peer_speed_estimator.history(m_curr_time, m_planning_history_window,
+                                     m_planning_max_positive_accel, m_planning_started_time);
+  m_history_usable = m_own_history.usable && m_peer_history.usable;
+  Notify(ownVar("HISTORY_USABLE"), m_history_usable ? 1.0 : 0.0);
+  Notify(ownVar("HISTORY_REASON"), string(m_own_history.reason));
+  Notify(peerVar("HISTORY_REASON"), string(m_peer_history.reason));
+  Notify(ownVar("MAX_POSITIVE_ACCEL"), m_own_history.max_positive_accel);
+  Notify(peerVar("MAX_POSITIVE_ACCEL"), m_peer_history.max_positive_accel);
   const bool own_captured =
       m_waypoint_reached || hypot(m_nav_x - m_target_x, m_nav_y - m_target_y) <= m_arrival_radius;
   const bool was_frozen = m_planner.frozen();
   if (m_planner.update(m_curr_time, m_nav_x, m_nav_y, m_peer_x, m_peer_y, peer_speed,
-                       m_point_freeze_radius, own_captured)) {
+                       m_point_freeze_radius, own_captured, m_history_usable)) {
     m_target_x = m_planner.x();
     m_target_y = m_planner.y();
     publishPoint(true);
@@ -441,6 +473,7 @@ void Rendezvous::complete(const string &reason)
 
 void Rendezvous::abort(const string &reason)
 {
+  m_history_usable = false;
   m_state = "ABORT";
   m_reason = reason;
   m_state_enter_time = m_curr_time;
@@ -456,6 +489,7 @@ void Rendezvous::publishState(bool force)
 {
   if (!force && m_curr_time - m_last_state_time < m_state_post_interval)
     return;
+  Notify(ownVar("HISTORY_USABLE"), m_history_usable ? 1.0 : 0.0);
   Notify(ownVar("STATE"), m_state);
   Notify(ownVar("PHASE"), m_state);
   Notify(ownVar("SESSION"), m_session);
@@ -560,6 +594,16 @@ bool Rendezvous::buildReport()
   m_msgs << std::right << std::setw(label_width) << "Speed valid:" << " "
          << (own_speed.valid ? "true" : "false") << " / " << (peer_speed.valid ? "true" : "false")
          << " (own / peer)\n";
+  m_msgs << std::right << std::setw(label_width) << "History usable:" << " "
+         << (m_history_usable ? "true" : "false") << " (" << m_planning_history_window
+         << " s window)\n";
+  m_msgs << std::right << std::setw(label_width) << "History window O/P:" << " "
+         << m_own_history.window << " / " << m_peer_history.window << " s\n";
+  m_msgs << std::right << std::setw(label_width) << "History own / peer:" << " "
+         << m_own_history.reason << " / " << m_peer_history.reason << "\n";
+  m_msgs << std::right << std::setw(label_width) << "Accel own / peer:" << " "
+         << m_own_history.max_positive_accel << " / " << m_peer_history.max_positive_accel
+         << " m/s^2, limit " << m_planning_max_positive_accel << "\n";
   m_msgs << std::right << std::setw(label_width) << "Completed locally:" << " "
          << (m_state == "COMPLETE" ? "true" : "false") << "\n";
   m_msgs << std::right << std::setw(label_width) << "Landing owner:" << " "

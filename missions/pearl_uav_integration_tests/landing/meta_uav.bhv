@@ -3,9 +3,8 @@
 //-------------------------------------------------
 
 // pending -> lane once airborne (see uLaneStart).
-initialize UAV_AUTO_START   = pending
-initialize UAV_AUTOSTART_READY = false
-initialize UAV_LANE           = false
+initialize UAV_AUTO_START = pending
+initialize UAV_LANE       = false
 
 initialize DESIRED_ALTITUDE = $(ALTITUDE)
 initialize LANDING_OWN_PHASE = IDLE

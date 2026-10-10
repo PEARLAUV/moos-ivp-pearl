@@ -1,0 +1,585 @@
+# Water-operations mission parameters shared by SITL and REAL (Copter 4.7).
+# Ordered application: drone profile, operating-mode profile, this mission.
+# No SIM_* settings or hardware backend selection belong in this shared layer.
+# Parameters authorize neither arming nor LAND. Native readiness, existing FSM
+# checks and coordinator permissions remain mandatory. Retry -> RTL is pending.
+# REAL upload must read existing values first, require fresh native ground/disarm,
+# verify actual readback, and never reboot/arm/change mode on the user's behalf.
+
+# RTL_ALT_M -- baseline minimum RTL return altitude, metres (Copter 4.7).
+# Upstream metadata: "The minimum alt above home the vehicle will climb to
+# before returning. If the vehicle is flying higher than this value it will
+# return at its current altitude." User-approved 15 m matches the default
+# task-frozen rally height; this is not a sensor-height or deck-clearance value.
+# With user-approved RTL_ALT_TYPE=0 (Home-relative frame), 15 means 15 m
+# above FC Home, not above water, terrain or the target. Legacy RTL_ALT uses
+# cm: its equivalent would be 1500, NOT 15; this uses the 4.7 metre name.
+# Rally altitude and current altitude/minimum climb participate in the return
+# calculation. RTL_CONE_SLOPE is a dimensionless height/distance ratio limiting
+# the initial climb, not a 10 m arrival setpoint or continuous approach descent.
+# Cone is explicitly disabled below; fence settings remain inherited. Minimum
+# additional climb is zero. Return altitude can still differ from this baseline.
+# User-selected behavior: acquire range/target during final RTL landing descent,
+# rather than forcing a 10 m return or final hold. This entry does not change
+# RTL_ALT_FINAL_M, authorize LAND, start RTL after retry exhaustion, or guarantee
+# rangefinder health/target acquisition. A 12 m sensor may be out of range at
+# return height; the existing PLND_ALT_MAX=4 search exception permits descent
+# above 4 m. Missing/unhealthy height still bypasses strict protection upstream.
+# Official RTL behavior: https://ardupilot.org/copter/docs/rtl-mode.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#rtl-alt-m
+# Pinned calculation: ArduCopter/mode_rtl.cpp, ModeRTL::compute_return_target
+# https://github.com/ArduPilot/ardupilot/blob/dbe792162d06cab66c3475fd5556bf7a120f119e/ArduCopter/mode_rtl.cpp
+RTL_ALT_M         15
+
+# RTL_ALT_TYPE -- RTL altitude reference (enum, no physical units).
+# Upstream choices: "0:Relative to Home, 1:Terrain". User-approved 0 keeps
+# RTL_ALT_M=15 and the frozen rally's default altitude Home-relative. Home is
+# the FC's reference, not a continuously tracked boat/deck or terrain surface.
+# Choose 0 to avoid making return navigation depend on terrain data or on the
+# 12 m downward rangefinder, which cannot support a 15 m rangefinder-terrain
+# return baseline. For enum 1, WP_RFND_USE selects rangefinder (1) or terrain
+# database (0); terrain-source availability/fallback needs separate review.
+# This entry does not change WP_RFND_USE or disable the downward sensor.
+# Precision landing still uses native rangefinder height for PLND_ALT_MIN/MAX,
+# independently of the Home-relative return frame. Target acquisition is
+# intended during final descent, not guaranteed at the return altitude.
+# A fixed Home-relative altitude is not an obstacle/terrain-clearance guarantee;
+# current height, rally, cone, minimum climb and fence constraints still apply.
+# This is upstream behavior, not a custom retry-to-RTL policy or flight command.
+# Docs: https://ardupilot.org/copter/docs/rtl-mode.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#rtl-alt-type
+# Source: ArduCopter/Parameters.cpp and ModeRTL::compute_return_target in
+# companion ardupilot-sitl/ardupilot (reviewed Copter 4.7.1).
+RTL_ALT_TYPE      0
+
+# RTL_CLIMB_MIN_M -- minimum additional initial RTL climb, metres (Copter 4.7).
+# Upstream metadata: "The vehicle will climb this many meters during the
+# initial climb portion of the RTL" (documented range 0..30 m).
+# User-selected 0 means no mandatory extra climb relative to current height.
+# It does NOT disable the RTL_ALT_M=15 baseline, request descent during return,
+# or cap RTL at 15 m: current height and the chosen rally still participate.
+# With cone disabled and no restrictive fence, an 8 m starting height returns
+# at 15 m; a 20 m starting height returns at 20 m rather than adding 2 m.
+# Cone is explicitly disabled below; fence constraints still apply. Zero is
+# not an obstacle-clearance/terrain-following guarantee or final-descent hold.
+# Final landing/search descent is separate; this parameter neither starts RTL
+# after precision retry exhaustion nor grants LAND/arming authority.
+# This is upstream behavior, not an external-ship or recovery-policy patch.
+# Legacy RTL_CLIMB_MIN is centimetres; use the 4.7 metre parameter here.
+# Docs: https://ardupilot.org/copter/docs/rtl-mode.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#rtl-climb-min-m
+# Source: ArduCopter/mode_rtl.cpp, ModeRTL::var_info and compute_return_target
+# in companion ardupilot-sitl/ardupilot (reviewed Copter 4.7.1).
+RTL_CLIMB_MIN_M   0
+
+# RTL_CONE_SLOPE -- initial RTL climb-limiting cone slope, dimensionless ratio
+# of height to horizontal distance from the selected return destination.
+# Upstream: "Defines a cone above home which determines maximum climb".
+# Metadata range 0..10, increment 0.1; examples 0=Disabled, 1=Shallow, 3=Steep.
+# User explicitly approved 0 (disabled) so being near the frozen rally does
+# not lower the return climb merely because the horizontal distance is small.
+# A nonzero active cone can reduce the calculated target altitude toward
+# distance*slope, subject to the native current-height/minimum-climb floor.
+# It is not a 10 m arrival height, vertical speed, angle in degrees, glide path
+# or continuous descent command. Zero bypasses the cone reduction only.
+# With RTL_ALT_TYPE=0, RTL_ALT_M=15, RTL_CLIMB_MIN_M=0, the frozen rally at
+# Home+15 m and no restrictive altitude fence, an 8 m aircraft climbs to 15 m;
+# a 20 m aircraft returns at 20 m. Higher rally altitude can raise the target;
+# native fence limits and estimator vertical offsets still participate. This
+# neither disables geofencing nor guarantees obstacle/deck/terrain clearance.
+# Final search descent remains separate: after return and RTL_LOIT_TIME=10000,
+# RTL_ALT_FINAL_M=0 selects native landing. Missing-target policy, range health
+# and the explicitly permitted pilot-reposition override remain unchanged.
+# No RTL request, verified-rally readiness or retry-exhaustion policy is added.
+# This is upstream behavior, not a custom simulator/recovery patch.
+# Docs: https://ardupilot.org/copter/docs/rtl-mode.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#rtl-cone-slope
+# Source: ArduCopter/Parameters.cpp and mode_rtl.cpp,
+# ModeRTL::compute_return_target, reviewed companion Copter 4.7.1.
+RTL_CONE_SLOPE    0
+
+# RTL_LOIT_TIME -- pause over the RTL destination before final descent, ms.
+# Upstream metadata: "Time (in milliseconds) to loiter above home before
+# beginning final descent" (documented range 0..60000 ms). The destination
+# may be the selected rally, despite the native state's "home" name.
+# User-selected 10000 ms = 10 seconds, increasing the default 5 second pause
+# to allow more settling time after arrival. The timer starts when native RTL
+# enters its loiter stage after reaching the return waypoint, not at RTL entry.
+# It uses the FC's millis() clock; SITL speedup can shorten host wall-clock
+# duration. It is not a MOOS timeout or evidence of arrival/landing/readiness.
+# Native RESET_TO_ARMED_YAW alignment, when active, must also reach its yaw
+# tolerance; the phase can therefore last longer than 10 seconds. This setting
+# neither requests a particular yaw nor changes WP_YAW_BEHAVIOR.
+# Loiter remains at the calculated return altitude, not at a new 10 m height.
+# At the 15 m baseline, a 12 m sensor/target may remain out of range throughout
+# the pause. Waiting longer does not manufacture sensor health/acquisition:
+# the selected search descent occurs afterward, subject to native RTL/landing
+# state, final-altitude setting and precision policy. No target-readiness gate
+# is added by this timer. This is upstream behavior, not retry-exhaustion -> RTL.
+# Docs: https://ardupilot.org/copter/docs/rtl-mode.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#rtl-loit-time
+# Source: ArduCopter/Parameters.cpp and ModeRTL::loiterathome_start/run in
+# companion ardupilot-sitl/ardupilot (reviewed Copter 4.7.1).
+RTL_LOIT_TIME     10000
+
+# RTL_SPEED_MS -- requested horizontal RTL return speed, metres/second (4.7).
+# Upstream metadata: "The speed in m/s which the aircraft will attempt to
+# maintain horizontally while flying home. If this is set to zero, WP_SPD
+# will be used instead." Documented range 0..20 m/s; 0 is inheritance, not stop.
+# User-approved 2 m/s selects a modest return speed for water-operations trials
+# instead of inheriting a potentially faster waypoint speed. This is a native
+# earth-frame navigation speed request, not an airspeed or exact-speed promise.
+# Native acceleration/braking, available thrust, wind, navigation quality and
+# distance to the return waypoint can change actual speed. 2 m/s is not proof
+# of wind margin, obstacle clearance, target tracking or platform readiness.
+# This changes the RTL waypoint controller's speed selection, not WP_SPD or
+# MOOS task/route speed parameters. It does not select climb/descent speed,
+# change the 10 second RTL loiter, require target acquisition during return,
+# or add a 10 m altitude hold. Landing descent/precision behavior is separate.
+# No RTL/flight command or custom retry-exhaustion recovery is issued here.
+# Legacy RTL_SPEED uses cm/s: the equivalent is 200; use the metre/second name.
+# Docs: https://ardupilot.org/copter/docs/rtl-mode.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#rtl-speed-ms
+# Source: ArduCopter/mode_rtl.cpp, ModeRTL::var_info/init; init passes speed_ms
+# to wp_nav->wp_and_spline_init_m in the reviewed Copter 4.7.1 source.
+RTL_SPEED_MS      2
+
+# RTL_ALT_FINAL_M -- RTL final-altitude/landing choice, metres (Copter 4.7).
+# Upstream metadata: "Altitude the vehicle will move to as the final stage
+# of Returning to Launch or after completing a mission. Set to zero to land."
+# User-approved 0 selects native RTL landing after return and the 10 second
+# loiter, rather than descending to a positive Home-relative altitude and
+# holding. Zero is the LAND selector, not a literal 0 m altitude setpoint:
+# native touchdown detection and disarm logic own the final ground state.
+# This does NOT require target acquisition before starting final descent.
+# With PLND_ALT_MAX=4, search descent above 4 m is allowed. Retain the separately
+# approved PLND_STRICT=2 and PLND_ALT_MIN=0: when height is healthy and in the
+# strict region, never-seen targets can cause hover; acquired/lost targets use
+# native loss delay/retries, then hover if unsuccessful. This is not immediate
+# hover on every lost packet. Missing/unhealthy range data produces OUT_OF_RANGE
+# and can permit descent even below 4 m; these parameters do not unconditionally
+# guarantee target-required touchdown. Native sensor/height validation remains
+# necessary. The same precision policy is used by RTL's native landing stage
+# and ordinary LAND; this entry does not bypass coordinator AUTOLAND checks.
+# It neither enters RTL, uploads/selects a rally, implements retry-exhaustion
+# recovery, nor sends any mode/flight/reboot command. This is upstream behavior.
+# Legacy RTL_ALT_FINAL uses cm; use the 4.7 metre name (0 has the same selector).
+# Docs: https://ardupilot.org/copter/docs/rtl-mode.html
+# Precision policy: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#rtl-alt-final-m
+# Source: ArduCopter/mode_rtl.cpp, ModeRTL::var_info/build_path/land_run, and
+# libraries/AC_PrecLand in reviewed companion ardupilot-sitl/ardupilot 4.7.1.
+RTL_ALT_FINAL_M   0
+
+# RTL_OPTIONS -- optional RTL behavior bitmask, no physical units.
+# Reviewed upstream bit 2 = "Ignore pilot yaw", numeric mask 2^2 = 4.
+# User approved leaving bit 2 UNSET; value 0 selects no optional RTL behavior
+# in the reviewed firmware. It is not enum 2, a precision-landing switch, or
+# a request for zero heading. Do not import undocumented bits from other versions.
+# Thus valid pilot yaw input remains permitted during RTL return/loiter; choose
+# normal intervention behavior rather than suppressing it. SITL normally has no
+# RC input, so this does not invent a pilot/RC source or change --no-rc settings.
+# Final-descent/LAND stages delegate pilot-yaw policy to native LAND instead;
+# unset RTL bit 2 alone does not configure or guarantee landing-stage override.
+# WP_YAW_BEHAVIOR separately controls automatic RTL/mission yaw. This does
+# not issue yaw alignment, track PEARL's heading or enable continuous LAND yaw.
+# Precision target acquisition/loss, native range validity, rally selection and
+# retry budgets remain unchanged. No flight command or custom recovery patch.
+# Docs: https://ardupilot.org/copter/docs/rtl-mode.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#rtl-options
+# Source: ArduCopter/Parameters.cpp and ModeRTL::use_pilot_yaw/option_is_enabled
+# in mode_rtl.cpp, reviewed companion Copter 4.7.1.
+RTL_OPTIONS       0
+
+# WP_YAW_BEHAVIOR -- automatic mission/RTL yaw selection (enum, no units).
+# Upstream choices: 0 "Never change yaw", 1 "Face next waypoint",
+# 2 "Face next waypoint except RTL", 3 "Face along GPS course".
+# User-approved 2 retains normal waypoint-facing mission behavior but selects
+# native AutoYaw HOLD during RTL, instead of pointing at the return destination.
+# The purpose is to preserve the heading already independently aligned with
+# PEARL, not undo that alignment while returning to the frozen rally. Native
+# RTL loiter also retains HOLD instead of its automatic reset-to-armed-yaw
+# branch when the RTL default yaw is HOLD. This is not a specific heading value.
+# It does not perform/verify alignment, continuously track PEARL's heading,
+# issue CONDITION_YAW, guarantee alignment if the boat turns, or change the
+# coordinator's fresh post-ACK yaw admission. Normal mission waypoint legs
+# can still change yaw; explicit flight commands/mode changes have their own
+# rules. This is not a blanket fixed-heading guarantee across every mode.
+# RTL_OPTIONS bit 2 remains unset, so valid pilot yaw can still intervene in
+# RTL return/loiter; final-descent/LAND pilot-yaw policy is separate. Maintaining
+# ship alignment therefore still requires native measured yaw and supervision,
+# not treating this enum as evidence of alignment. It is not PLND_YAW_ALIGN
+# mounting calibration or GPS course/COG selection for MOOS navigation.
+# No flight-control command, new yaw authority or custom recovery patch is
+# added; the existing optional pre-LAND alignment stays separately controlled.
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#wp-yaw-behavior
+# Docs: https://ardupilot.org/copter/docs/rtl-mode.html
+# Source: ArduCopter/Parameters.cpp, autoyaw.cpp (AutoYaw::default_mode),
+# mode_rtl.cpp (loiterathome_start), reviewed companion Copter 4.7.1.
+WP_YAW_BEHAVIOR   2
+
+# RALLY_INCL_HOME -- include Home in RTL rally destination competition (enum).
+# Upstream choices: "0:DoNotIncludeHome,1:IncludeHome"; no physical units.
+# User explicitly selected 0: choose a valid eligible rally even if Home is
+# closer, rather than treating Home as another acceptable landing destination.
+# With 1, Home can win the distance comparison. The mission freezes/uploads
+# one rally via its native ACK/readback transaction; this parameter does not
+# create that point, prove its validity, or grant flight/RTL authority.
+# Keep the existing verified-rally admission requirement. Do NOT hand-set
+# RALLY_TOTAL to pretend that rally storage/upload has succeeded.
+# Limitation: upstream still falls back to Home if no valid eligible rally is
+# found, including rejection by a nonzero RALLY_LIMIT_KM. Thus 0 excludes Home
+# from competition, not every possible fallback; approved RALLY_LIMIT_KM=0
+# below disables distance rejection. Missing/invalid rally storage during flight
+# is not repaired by either flag.
+# Excluding Home as a destination does not remove Home as the RTL_ALT_TYPE=0
+# altitude reference or as the reference for the frozen rally's altitude.
+# This is upstream selection behavior, not a custom no-Home fail-safe patch
+# or the pending one-shot precision-retry-exhaustion -> RTL policy.
+# Docs: https://ardupilot.org/copter/docs/common-rally-points.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#rally-incl-home
+# Source: libraries/AP_Rally/AP_Rally.cpp, var_info/find_nearest_rally_point/
+# calc_best_rally_or_home_location in reviewed companion ArduPilot 4.7.1.
+RALLY_INCL_HOME   0
+
+# RALLY_LIMIT_KM -- maximum permitted distance to the nearest rally, kilometres.
+# Upstream metadata: "If this is set to 0 then the closest rally point is
+# always used." User-approved 0 disables distance-based rally rejection; it
+# does not mean zero travel distance or force the vehicle to land where it is.
+# Combined with RALLY_INCL_HOME=0, select an eligible native rally rather than
+# rejecting it because it is far away or preferring a closer Home destination.
+# With a positive limit, the reviewed native find_nearest_rally_point rejects
+# a nearest rally beyond limit*1000 m, allowing fallback to Home. Zero disables
+# that test. No valid rally still permits upstream Home fallback: this is not
+# an unconditional no-Home failsafe and does not manufacture rally validity.
+# Removing the limit also removes protection against distant leftover rallies.
+# Retain the existing one task-frozen point, native ACK/readback transaction and
+# verified-rally admission; never use retained/unverified storage as readiness.
+# This entry does not upload/clear rally storage, hand-set RALLY_TOTAL, change
+# the frozen point/altitude, grant flight authority or implement retry -> RTL.
+# This is upstream selection behavior, not a custom firmware patch.
+# Docs: https://ardupilot.org/copter/docs/common-rally-points.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#rally-limit-km
+# Source: libraries/AP_Rally/AP_Rally.cpp, var_info/find_nearest_rally_point/
+# calc_best_rally_or_home_location in reviewed companion ArduPilot 4.7.1.
+RALLY_LIMIT_KM    0
+
+# PLND_ENABLED -- enable ArduPilot's precision-landing subsystem (boolean).
+# Official Quick Start: "Set PLND_ENABLED = 1 and reboot to expose parameters."
+# With 1, a detected target can guide the final descent in LAND. This does NOT
+# enter LAND, arm the aircraft, or guarantee target acquisition. The coordinator
+# must still check the target actually received by pArduBridge before AUTOLAND.
+# With 0, the generic AUTOLAND command can still land, but without this precision
+# backend. This startup overlay enables the subsystem before the flight begins.
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html#quick-start
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-enabled
+PLND_ENABLED      1
+
+# PLND_TYPE -- select the precision-landing observation backend (enum).
+# Official choices: 0 disables; 1 MAVLink LANDING_TARGET; 2 IR-LOCK;
+# 3 Gazebo simulation; 4 native SITL simulation. Use 1 even though this is SITL:
+# pMavlinkLandingTarget supplies real MAVLink messages on its independent link.
+# It reports a position-valid BODY_FRD vector to PEARL's geographic deck center,
+# using full native aircraft attitude/estimated position and the same MSL deck
+# altitude as the physical simulator; no yaw-only body-frame approximation.
+# Selecting 4 would test ArduPilot's built-in synthetic sensor instead of the
+# mission's external observation stream and bridge-reported target checks.
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html#quick-start
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-type
+# Message: https://mavlink.io/en/messages/common.html#LANDING_TARGET
+PLND_TYPE         1
+
+# PLND_OPTIONS -- precision-landing behavior bitmask, not a boolean.
+# Official instruction: "Set PLND_OPTIONS bit 0 if landing on a moving target."
+# Value 1 = 2^0: declare a moving target rather than the default stationary-target
+# assumption. PEARL moves during approach and may drift while stationkeeping.
+# Bit 1 (value 2, continue precision landing after manual pilot reposition) and
+# bit 2 (value 4, faster final descent) remain unset. Thus this setting does not
+# enable either feature; ArduPilot can reduce final descent speed for accuracy.
+# The mission normally has no RC input; this option does not create one.
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html#operation
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-options
+PLND_OPTIONS      1
+
+# PLND_STRICT -- response to a missing/lost precision target (enum).
+# Official mode 2: "perform landing retries until PLND_RET_MAX is reached,
+# then hover instead of landing." Mode 0 permits ordinary landing; mode 1
+# retries, then permits ordinary landing. User reaffirmed 2 alongside
+# RTL_ALT_FINAL_M=0; choose 2 to avoid silently treating
+# target loss over a boat as permission for an unobserved off-deck touchdown.
+# Retry count is PLND_RET_MAX=3, timeout PLND_TIMEOUT=1 and geometry
+# PLND_RET_BEHAVE=1 below. No immediate hover on every loss is promised.
+# The explicitly selected altitude exceptions are documented below. They need
+# healthy downward rangefinder data: upstream treats missing/unhealthy height
+# as OUT_OF_RANGE and permits descent, even with strictness 2. This is NOT an
+# unconditional fail-closed landing guarantee. MOOS gates the initial LAND
+# request, but ArduPilot, not the coordinator or bridge, owns in-flight retries.
+# Separately, actual pilot repositioning allowed by LAND_REPOSITION=1 bypasses
+# the precision state machine (including strict retries/hover). With OPTIONS=1
+# this override stays latched after stick release; see the explicit entry below.
+# Proposed retry-exhaustion -> RTL is NOT implemented by this upstream value;
+# generic precision-landing FAILSAFE is not proof of actual retry exhaustion.
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html#operation
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-strict
+PLND_STRICT       2
+
+# PLND_ALT_MIN -- lower target-loss retry/strictness height exception, metres.
+# Pinned upstream metadata: "Vehicle will continue landing vertically even if
+# target is lost below this height. This needs a rangefinder to work. Set to zero
+# to disable this."
+# User-selected 0 disables this height exception: do not intentionally allow a
+# blind near-deck finish. This is rangefinder-derived height, not Home-relative
+# altitude or LANDING_TARGET distance. It does NOT disable the sensor's own
+# hardware minimum, cure unhealthy range data, or guarantee retries on every loss.
+# Docs: https://ardupilot.org/copter/docs/parameters.html#plnd-alt-min
+PLND_ALT_MIN      0
+
+# PLND_ALT_MAX -- upper target-loss retry/strictness height exception, metres.
+# Pinned upstream metadata: "Vehicle will continue landing vertically until
+# this height if target is not found." User-selected 4 permits
+# vertical search descent above 4 m when the target is missing. At/below 4 m,
+# healthy downward range data admits strict missing-target/retry handling;
+# target acquisition itself is not restricted to this height. A never-seen
+# target has no known retry position; strictness 2 can hold instead of retrying.
+# With either height exception nonzero, missing/unhealthy range data bypasses
+# this protection (OUT_OF_RANGE -> descent). The 12 m sensor maximum does not
+# imply valid height at a 15 m RTL return, and this is NOT an RTL action setting.
+# Docs: https://ardupilot.org/copter/docs/parameters.html#plnd-alt-max
+# Pinned behavior: AC_PrecLand::check_if_sensor_in_range / check_target_status,
+# AC_PrecLand_StateMachine::update in companion ardupilot-sitl/ardupilot.
+PLND_ALT_MAX      4
+
+# PLND_XY_DIST_MAX -- precision-landing horizontal descent gate, metres.
+# Upstream metadata: "The vehicle will not start descending if the landing
+# target is detected and it is further than this many meters away. Set 0 to
+# always descend." Documented range 0..10 m; upstream default is 2.5 m.
+# User-selected 0.3 m requires closer estimated alignment before precision
+# descent over the deck, instead of allowing descent from 2.5 m off-center.
+# Native land_run_vertical_control computes sqrt(dNorth^2 + dEast^2) between
+# estimated target and aircraft navigation positions in the EKF-origin frame.
+# This is not simulator truth, MOOS rendezvous/footprint distance, vertical
+# separation, or raw body-frame/slant range. Estimator/mounting/timing errors
+# can affect it; this entry does not tune those or prove their correctness.
+# During active precision landing (target acquired, horizontal navigation
+# active, no pilot reposition), estimated error >0.3 m commands zero vertical
+# climb/descent rate while horizontal target correction continues. At <=0.3 m
+# descent is allowed, subject to other controls. The gate is checked repeatedly,
+# so a later error increase can pause descent again; braking is not instantaneous.
+# This tight gate may lengthen hover/alignment or repeatedly pause descent with
+# a moving target/noisy estimate. It does not guarantee 0.3 m touchdown accuracy,
+# horizontal containment on the deck, or any particular correction speed.
+# With no acquired target this gate is inactive: PLND_STRICT and ALT_MIN/MAX
+# still govern search/loss behavior, including the unhealthy-height bypass.
+# Exceeding this gate alone is not a landing retry, retry-exhaustion fact, RTL
+# request or MOOS failure timeout. No flight command or custom patch is added.
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-xy-dist-max
+# Source: libraries/AC_PrecLand/AC_PrecLand.cpp and ArduCopter/mode.cpp,
+# Mode::land_run_vertical_control/horizontal_control, reviewed Copter 4.7.1.
+PLND_XY_DIST_MAX  0.3
+
+# PLND_RET_MAX -- maximum allowed native precision-landing retries (count).
+# Upstream metadata: "PrecLand Maximum number of retires for a failed landing.
+# Set to zero to disable landing retry." Integer range 0..10, no physical units;
+# default 4. User-selected 3 bounds native retry allowance below that default.
+# Retries need a previously acquired target/known retry location. A never-seen
+# target does not manufacture one; PLND_STRICT=2 can hover without any retry.
+# PLND_TIMEOUT governs loss-descent time, PLND_RET_BEHAVE selects retry geometry,
+# and ALT_MIN/MAX with native height validity determine when retry logic applies.
+# This count does not set those values or remove unhealthy-height descent bypass.
+# Native counter is initialized on precision state-machine init/mode change;
+# reacquiring a target resets the loss/retry substeps, not that mode's counter.
+# It is not a mission-global three-attempt budget across LAND/RTL transitions.
+# Maximum allowance is not a promise that three retries execute: a completed
+# unsuccessful retry can itself enter FAILSAFE, as can a never-seen target.
+# With STRICT=2 that failsafe holds rather than allowing its blind-land action;
+# out-of-range classification still permits descent as documented above.
+# Retry motion follows native position control; count 3 does not guarantee safe
+# clearance, successful reacquisition, touchdown, or a maximum elapsed duration.
+# This upstream parameter does NOT issue RTL on exhaustion. The proposed
+# verified-exhaustion -> one-shot RTL policy remains unimplemented; generic
+# FAILSAFE or a timeout must not be treated as evidence of all retries exhausted.
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-ret-max
+# Source: libraries/AC_PrecLand/AC_PrecLand.cpp and AC_PrecLand_StateMachine.cpp,
+# init/reset_failed_landing_statemachine/retry_landing, reviewed Copter 4.7.1.
+PLND_RET_MAX      3
+
+# PLND_TIMEOUT -- native target-loss descent/retry time threshold, seconds.
+# Upstream metadata: "Time for which vehicle continues descend even if target
+# is lost. After this time period, vehicle will attempt a landing retry
+# depending on PLND_STRICT parameter." Documented range 0..20 s; default 4 s.
+# User-approved 1 s shortens the threshold before eligible retry handling,
+# limiting deliberate continued descent compared with the default 4 seconds.
+# The native comparison uses FC millis() minus get_last_valid_target_ms(),
+# not a new MOOS timer started when loss is first reported. Native acquisition/
+# target-loss detection has separate timing; 1 does not guarantee braking or
+# retry exactly one second after a dropped packet, nor a 1 s total loss delay.
+# State-machine updates and vertical-control dynamics also affect motion.
+# In SITL, the FC clock follows simulation speedup, not necessarily wall time.
+# With STRICT=2 and RET_MAX=3, a previously acquired/lost target can lead to a
+# retry if the height/state allow it and a known retry location exists. A
+# never-seen target has no retry position and can hold without using this loss
+# threshold. ALT_MIN/MAX exceptions and invalid-height OUT_OF_RANGE still
+# permit descent; this timeout does not fix that bypass or guarantee touchdown.
+# Reacquisition resets loss/retry substeps; timeout is not a retry period,
+# mission-global deadline, evidence of retry exhaustion, or a request for RTL.
+# Retry geometry remains separately controlled by PLND_RET_BEHAVE. This is
+# upstream behavior, not the pending custom one-shot retry-exhaustion recovery.
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-timeout
+# Source: libraries/AC_PrecLand/AC_PrecLand.cpp and AC_PrecLand_StateMachine.cpp,
+# get_target_lost_actions, reviewed companion ArduPilot 4.7.1.
+PLND_TIMEOUT      1
+
+# PLND_RET_BEHAVE -- native precision-landing retry destination (enum, no units).
+# Upstream choices: 0 "Go to the last location where landing target was
+# detected", 1 "Go towards the approximate location of the detected landing
+# target". Reviewed source resolves 0 to recorded aircraft position at a valid
+# observation, and 1 to the recorded estimated landing location. Default is 0.
+# User-selected 1 aims to recenter over the estimated pad after an off-center
+# target loss instead of revisiting the aircraft's previous viewing position.
+# The native stored target XY includes precision-estimator/mount/landing-offset
+# corrections; it is not PEARL truth, MOOS's frozen rendezvous or the RTL rally.
+# Target retry Z records aircraft height at a valid observation, not deck height.
+# Reviewed retry_landing adds a hard-coded 1.5 m upward offset to that recorded
+# height, moves toward the selected XYZ, then can descend to the recorded height
+# if still unsuccessful. Arrival tolerances/control dynamics apply; neither
+# constant is configured by this enum. This does not guarantee clear retreat
+# space, an exact vertical-first trajectory, or successful target reacquisition.
+# Acquiring the target again resumes normal precision guidance. Without it,
+# native retry completion can enter failsafe/hover before RET_MAX=3 is consumed.
+# With no previously acquired target there is no known retry destination.
+# These are remembered earth-frame locations, NOT live/predicted PEARL tracking
+# during target loss. PLND_OPTIONS=1 does not make the retry point follow a boat
+# while unseen; motion, stale estimates or target-location error can make it
+# unsuitable. Platform hold/clearance and native sensor/height validity remain
+# necessary. ALT_MIN/MAX/OUT_OF_RANGE can interrupt retry handling; this enum
+# does not remove the unhealthy-height descent bypass described above.
+# PLND_TIMEOUT=1 and STRICT=2 govern loss handling separately. This selects no
+# rally, changes no retry budget, issues no RTL command and implements no custom
+# retry-exhaustion recovery. All behavior here is upstream Copter 4.7.1.
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-ret-behave
+# Source: libraries/AC_PrecLand/AC_PrecLand.cpp (construct_pos_meas,
+# run_output_prediction) and AC_PrecLand_StateMachine.cpp (retry_landing).
+PLND_RET_BEHAVE   1
+
+# PLND_EST_TYPE -- precision-landing target estimator (enum, no physical units).
+# Upstream choices: "0:RawSensor, 1:KalmanFilter". User-approved 1 retains the
+# upstream default/previously observed estimator rather than switching to raw
+# measurements. This selects the precision-target estimator, NOT the aircraft
+# navigation EKF; no navigation source, EKF reset or readiness shortcut is added.
+# Kalman mode fuses horizontal target observations with native aircraft inertial
+# motion to estimate relative North/East position and velocity, predicts between
+# observations and can reject inconsistent measurements. This can reduce noisy
+# guidance/descent-gate changes but is not proof that estimates are correct.
+# With PLND_OPTIONS bit 0 set, native guidance can use estimated target velocity
+# as feed-forward. Raw mode instead returns zero target-velocity feed-forward;
+# raw position still undergoes attitude/mount transforms and motion compensation.
+# Reviewed Kalman init requires about 2 FC seconds of sufficiently continuous
+# accepted observations; a >500 ms accepted-update gap during init can fail it.
+# A received LANDING_TARGET packet is not proof of FC target acquisition. Filter
+# initialization, outlier handling and smoothing can affect response to movement.
+# PLND_ACC_P_NSE controls camera/inertial weighting and PLND_LAG the assumed
+# observation delay; neither is changed by this selection or tuned here.
+# Systematic geometry, mounting, timing or transport errors are not repaired
+# by filtering. It cannot reliably track an unseen moving boat indefinitely.
+# Target-loss/search/retry policy remains governed separately by STRICT,
+# ALT_MIN/MAX, TIMEOUT and RET_MAX/RET_BEHAVE. Sensor validity and the documented
+# unhealthy-height bypass still matter; estimator selection does not guarantee
+# safe touchdown, trigger RTL, or implement the pending custom recovery policy.
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-est-type
+# Source: libraries/AC_PrecLand/AC_PrecLand.cpp, var_info/run_estimator/
+# check_ekf_init_timeout/get_target_velocity_ms, reviewed Copter 4.7.1.
+PLND_EST_TYPE     1
+
+# Native landing speed profile shared by LAND and RTL's final landing stage.
+# User selected high=1 m/s, low=0.4 m/s, slowdown height=2 m. These are nominal
+# vertical-controller requests, not constant actual speeds, altitude holds or
+# touchdown guarantees. Native acceleration/braking and precision overrides
+# apply. Slower low descent increases time exposed to wind/boat motion and
+# battery use; validate the real vehicle/deck before relying on this profile.
+# The landing height estimate prefers healthy native rangefinder, then terrain,
+# then Home-relative fallback; this differs from PLND_ALT_MIN/MAX's rangefinder
+# validity requirements. Low=2 m is a speed-transition setting, NOT the 4 m
+# missing-target strictness gate and NOT the RTL return/loiter altitude.
+# No native readiness/clearance, target-loss protection or flight authority is
+# manufactured. All behavior is upstream, not a new simulator/recovery patch.
+# Source: ArduCopter/mode_land.cpp, mode.h accessors and mode.cpp,
+# Mode::get_alt_above_ground_m/land_run_vertical_control, reviewed Copter 4.7.1.
+
+# LAND_SPD_HIGH_MS -- first/higher-altitude landing descent speed, metres/sec.
+# Upstream: "The descent speed for the first stage of landing in m/s. If this
+# is zero then WP_SPD_DN is used"; documented range 0..5 m/s. Select 1 to bound
+# the higher-stage request explicitly instead of inheriting WP_SPD_DN. Native
+# control slows smoothly toward the low speed as the height approaches 2 m;
+# this is not an abrupt switch or the separate horizontal RTL_SPEED_MS=2.
+# Does not require target acquisition to begin search descent. Loss policy and
+# sensor-height exceptions still apply, including the unhealthy-height bypass.
+# https://ardupilot.org/copter/docs/parameters.html#land-spd-high-ms
+LAND_SPD_HIGH_MS  1
+
+# LAND_SPD_MS -- nominal final/lower-stage landing descent speed, metres/sec.
+# Upstream: "The descent speed for the final stage of landing in m/s".
+# User selected 0.4 (40 cm/s), slower than the 0.5 m/s default and within the
+# documented 0.3..2 m/s range; this supersedes the earlier 0.2 m/s choice.
+# Native readback verifies the stored request, not real flight performance.
+# Normally applies below the slowdown height. With current PLND_OPTIONS bit 2
+# unset and an acquired target, the reviewed 0.35..2 m target-down-separation
+# precision slowdown can reduce descent to about 0.2..0.1 m/s for this setting,
+# depending on estimated XY error. Acquired-target XY error >0.3 m can pause
+# descent. These overrides do not imply exact physical speed or immediate
+# braking, and the precision near-target rule is not active when the target
+# is absent. Native landing detection, not this speed, disarms.
+# Legacy LAND_SPEED uses cm/s (40 here); this file uses the 4.7 metre/sec name.
+# https://ardupilot.org/copter/docs/parameters.html#land-spd-ms
+LAND_SPD_MS       0.4
+
+# LAND_ALT_LOW_M -- landing height for slowing toward LAND_SPD_MS, metres.
+# Upstream: "Altitude during Landing at which vehicle slows to LAND_SPD_MS";
+# documented range 1..100 m, default 10 m. User selected 2 to retain the high
+# descent farther down, then use the slow 0.4 m/s lower stage near the surface.
+# Native braking begins during approach to the transition, not only at exactly
+# 2.000 m. Height may use native rangefinder/terrain/Home fallback as noted
+# above; missing data can make it differ from true deck clearance. This value
+# does not demand a 2 m hold, disable search descent or replace PLND_ALT_MAX=4.
+# At/below 4 m, native strictness can already hold/retry without a valid target
+# when height is healthy. Unhealthy range data still bypasses that protection.
+# Legacy LAND_ALT_LOW uses cm (200 here); use the 4.7 metre parameter.
+# https://ardupilot.org/copter/docs/parameters.html#land-alt-low-m
+LAND_ALT_LOW_M    2
+
+# LAND_REPOSITION -- permit pilot lateral repositioning during landing (enum).
+# Upstream: "Enables user input during LAND mode, the landing phase of RTL,
+# and auto mode landings." Values 0=no repositioning, 1=repositioning; no units.
+# User explicitly selected 1 after reviewing its precision-guidance trade-off,
+# preserving the ability to choose another landing position manually. This does
+# not invent an RC source or itself engage an override; SITL normally has no RC.
+# Native trigger requires valid RC plus nonzero lateral reposition command from
+# roll/pitch. Yaw-only input does not set the land_repo_active lateral flag.
+# Once triggered, ordinary landing controls follow pilot lateral input while
+# descent continues. Target-guided XY control, PLND_XY_DIST_MAX=0.3 gate and
+# precision near-target slowdown are disabled; precland_run bypasses its retry/
+# failsafe state machine, including PLND_STRICT=2. Target observations can still
+# be received/estimated, but are not guiding this overridden landing. This is
+# intentional pilot takeover, not a precision failure automatically starting RTL.
+# Keep PLND_OPTIONS=1 unchanged: bit 0 moving target is set, bit 1 resume after
+# reposition is UNSET, bit 2 faster precision descent is UNSET. Thus releasing
+# lateral sticks alone does not clear the latched override; landing-control
+# reinitialization (e.g. a new LAND entry) resets it. If resume-after-reposition
+# were separately enabled, neutral valid input could clear the flag, but no
+# such option is authorized here. Strict protection remains bypassed while
+# an override is active, so this is not a target-required touchdown guarantee.
+# Enabling reposition is not a global permission to arm, change mode, ignore
+# native readiness or skip coordinator clearance. Pilot yaw/throttle escape/
+# mode-change policy is separate; no RC/failsafe/flight command is sent here.
+# This is upstream behavior, not a custom loss/retry-exhaustion recovery patch.
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#land-reposition
+# Docs: https://ardupilot.org/copter/docs/precision-landing-and-loiter.html
+# Source: ArduCopter/Parameters.cpp, mode.cpp (land_run_horizontal_control,
+# land_run_vertical_control, precland_retry_position, precland_run) and
+# mode_land.cpp (init), reviewed companion Copter 4.7.1.
+LAND_REPOSITION   1
+

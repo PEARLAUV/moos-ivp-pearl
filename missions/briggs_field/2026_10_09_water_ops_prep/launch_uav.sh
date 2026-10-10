@@ -28,14 +28,13 @@ AUTO_LAUNCHED="no"
 
 MODE="SITL"
 IS_SIM="true"
-SHIP_SYSTEM_ID="17"
 IP_ADDR="localhost"
 MOOS_PORT="9001"
 PSHARE_PORT="9201"
 SHORE_IP="localhost"
 SHORE_PSHARE="9200"
 DIRECT_PEER="false"
-PEARL_IP="unused"
+PEARL_IP="localhost"
 PEARL_PSHARE="9202"
 VNAME="uav"
 COLOR="yellow"
@@ -43,6 +42,11 @@ AP_URL=""
 AP_PROTOCOL=""
 SECONDARY_LANDING="10,15"
 MIN_STATE_TIME="0"
+DECK_ALTITUDE="1"
+TARGET_RANGE="12"
+UPLOAD_PARAMS="no"
+PARAM_SYSTEM_ID=1
+PARAM_COMPONENT_ID=1
 
 #------------------------------------------------------------
 #  Part 3: Parse command-line arguments.
@@ -61,11 +65,20 @@ for ARGI; do
     echo "  --pshare=<9201>         UAV pShare port"
     echo "  --shore=<localhost>     Shoreside host"
     echo "  --shore_pshare=<9200>   Shoreside pShare port"
-    echo "  --pearl_ip=<address>    Direct PEARL host (optional)"
+    echo "  --pearl_ip=<localhost>  Direct PEARL host; also enables peer telemetry"
     echo "  --pearl_pshare=<9202>   Direct PEARL pShare port"
     echo "  --ap_url=<endpoint>     ArduPilot endpoint"
     echo "  --ap_protocol=<proto>   udp, tcp, or serial"
+    echo "  --model=<x500>               Drone parameter profile basename (not SITL frame)"
+    echo "  --drone-params=<PATH|none>    Override model-selected drone profile"
+    echo "  --mode-params=<PATH|none>     Optional mode parameter profile"
+    echo "  --mission-params=<PATH|none>  Optional mission parameter profile"
+    echo "  --upload-params         REAL only: guarded upload/readback before MOOS"
+    echo "  --param-system-id=<1>   Native FC system ID for verified upload"
+    echo "  --param-component-id=<1> Native FC component ID for verified upload"
     echo "  --secondary_landing=<X,Y>  Contingency landing point (default: 10,15)"
+    echo "  --deck_altitude=<1>     Shared target/deck height, metres MSL"
+    echo "  --target_range=<12>     Landing-target 3-D detection range, metres"
     echo "  --min_state_time=<0>       Minimum FSM state dwell, seconds"
     exit 0
   elif [[ "${ARGI}" =~ ^[0-9]+$ && "$TIME_WARP" = 1 ]]; then
@@ -101,8 +114,26 @@ for ARGI; do
     AP_URL="${ARGI#*=}"
   elif [[ "${ARGI}" == --ap_protocol=* ]]; then
     AP_PROTOCOL="${ARGI#*=}"
+  elif [[ "${ARGI}" == --model=* ]]; then
+    export DRONE_MODEL="${ARGI#*=}"
+  elif [[ "${ARGI}" == --drone-params=* ]]; then
+    DRONE_PARAM_FILE="${ARGI#*=}"
+  elif [[ "${ARGI}" == --mode-params=* ]]; then
+    MODE_PARAM_FILE="${ARGI#*=}"
+  elif [[ "${ARGI}" == --mission-params=* ]]; then
+    MISSION_PARAM_FILE="${ARGI#*=}"
+  elif [[ "${ARGI}" == --upload-params ]]; then
+    UPLOAD_PARAMS="yes"
+  elif [[ "${ARGI}" == --param-system-id=* ]]; then
+    PARAM_SYSTEM_ID="${ARGI#*=}"
+  elif [[ "${ARGI}" == --param-component-id=* ]]; then
+    PARAM_COMPONENT_ID="${ARGI#*=}"
   elif [[ "${ARGI}" == --secondary_landing=* ]]; then
     SECONDARY_LANDING="${ARGI#*=}"
+  elif [[ "${ARGI}" == --deck_altitude=* ]]; then
+    DECK_ALTITUDE="${ARGI#*=}"
+  elif [[ "${ARGI}" == --target_range=* ]]; then
+    TARGET_RANGE="${ARGI#*=}"
   elif [[ "${ARGI}" == --min_state_time=* ]]; then
     MIN_STATE_TIME="${ARGI#*=}"
   else
@@ -123,12 +154,23 @@ fi
 SECONDARY_LANDING_X="${SECONDARY_LANDING%%,*}"
 SECONDARY_LANDING_Y="${SECONDARY_LANDING#*,}"
 
+if [[ ! "$DECK_ALTITUDE" =~ ^[0-9]+([.][0-9]+)?$ || ! "$TARGET_RANGE" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
+   ! awk -v d="$DECK_ALTITUDE" -v r="$TARGET_RANGE" 'BEGIN {exit !(d>=0 && d<=5 && r>0)}'; then
+  echo "$ME: require deck_altitude in [0,5] m MSL and target_range > 0." >&2
+  exit 1
+fi
 MODE=$(echo "$MODE" | tr '[:lower:]' '[:upper:]')
+SITL_ROUTER_PORT="${SITL_TARGET_PORT:-5763}"
 if [ "$MODE" = "SITL" ]; then
+  if [[ ! "$SITL_ROUTER_PORT" =~ ^[0-9]{1,5}$ ]] ||
+     (( 10#$SITL_ROUTER_PORT < 1 || 10#$SITL_ROUTER_PORT > 65535 )); then
+    echo "$ME: invalid SITL_TARGET_PORT" >&2
+    exit 1
+  fi
+  SITL_ROUTER_PORT="$((10#$SITL_ROUTER_PORT))"
   IS_SIM="true"
 elif [ "$MODE" = "REAL" ]; then
   IS_SIM="false"
-  SHIP_SYSTEM_ID="0"
 else
   echo "$ME: --mode must be SITL or REAL. Exit Code 1."
   exit 1
@@ -136,7 +178,7 @@ fi
 
 if [ -z "$AP_URL" ]; then
   if [ "$MODE" = "SITL" ]; then
-    AP_URL="127.0.0.1:5760"
+    AP_URL="127.0.0.1:${SITL_PORT:-5760}"
   elif [ "$MODE" = "REAL" ]; then
     AP_URL="ttyACM0:115200"
   fi
@@ -147,6 +189,15 @@ if [ -z "$AP_PROTOCOL" ]; then
   elif [ "$MODE" = "REAL" ]; then
     AP_PROTOCOL="serial"
   fi
+fi
+
+# Profiles are optional; explicit missing paths/invalid files are errors.
+source "$PEARL_ROOT/scripts/ardupilot_param_stack.sh"
+ardupilot_parameter_stack "$PEARL_ROOT" "$MISSION_DIR" "$MODE" || exit 1
+python3 "$PEARL_ROOT/scripts/ardupilot_params.py" "${ARDUPILOT_PARAM_ARGS[@]}" > /dev/null || exit 1
+if [[ "$UPLOAD_PARAMS" = yes && "$MODE" != REAL ]]; then
+  echo "$ME: --upload-params is REAL-only; SITL uses startup defaults." >&2
+  exit 1
 fi
 
 #------------------------------------------------------------
@@ -169,9 +220,11 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "PEARL_PSHARE =      [${PEARL_PSHARE}]"
   echo "AP_URL =            [${AP_URL}]"
   echo "AP_PROTOCOL =       [${AP_PROTOCOL}]"
-  echo "SHIP_SYSTEM_ID =    [${SHIP_SYSTEM_ID}]"
   echo "SECONDARY_LANDING = [${SECONDARY_LANDING}]"
   echo "MIN_STATE_TIME =    [${MIN_STATE_TIME}]"
+  echo "DRONE_MODEL =       [${DRONE_MODEL}]"
+  echo "PARAMETER_STACK =   [${ARDUPILOT_PARAM_ARGS[*]}]"
+  echo "UPLOAD_PARAMS =     [${UPLOAD_PARAMS}]"
 fi
 
 #------------------------------------------------------------
@@ -195,15 +248,34 @@ nsplug meta_uav.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
   SECONDARY_LANDING_X="$SECONDARY_LANDING_X" \
   SECONDARY_LANDING_Y="$SECONDARY_LANDING_Y" \
   MIN_STATE_TIME="$MIN_STATE_TIME" \
-  XMODE="$MODE" IS_SIM="$IS_SIM" SHIP_SYSTEM_ID="$SHIP_SYSTEM_ID" \
-  PEARL_LIB_DIR="$PEARL_ROOT/lib"
+  XMODE="$MODE" IS_SIM="$IS_SIM" \
+  SITL_ROUTER_PORT="$SITL_ROUTER_PORT" DECK_ALTITUDE="$DECK_ALTITUDE" TARGET_RANGE="$TARGET_RANGE" \
+  PEARL_LIB_DIR="$PEARL_ROOT/lib" || exit 1
 
 nsplug meta_uav.bhv "targ_${VNAME}.bhv" "${NSFLAGS[@]}" \
-  VNAME="$VNAME"
+  VNAME="$VNAME" SECONDARY_LANDING_X="$SECONDARY_LANDING_X" SECONDARY_LANDING_Y="$SECONDARY_LANDING_Y" || exit 1
 
 if [ "$JUST_MAKE" = "yes" ]; then
   echo "$ME: Targ files made; exiting without launch."
   exit 0
+fi
+
+# REAL upload is opt-in, before the bridge/Helm can own this endpoint.
+# No flight commands, simulated facts, automatic reboot or rollback.
+if [[ "$MODE" = REAL && "$UPLOAD_PARAMS" = yes ]]; then
+  PARAM_LOG_DIR="${PARAM_LOG_DIR:-$MISSION_DIR/LOG_params}"
+  mkdir -p -- "$PARAM_LOG_DIR" || exit 1
+  PARAM_REPORT="$PARAM_LOG_DIR/upload-$(date -u +%Y%m%dT%H%M%SZ)-$$.json"
+  echo "$ME: Guarded REAL parameter upload; audit: $PARAM_REPORT"
+  if ! python3 "$PEARL_ROOT/scripts/ardupilot_params.py" \
+      "${ARDUPILOT_PARAM_ARGS[@]}" --apply --protocol "$AP_PROTOCOL" \
+      --endpoint "$AP_URL" --system-id "$PARAM_SYSTEM_ID" \
+      --component-id "$PARAM_COMPONENT_ID" --report "$PARAM_REPORT"; then
+    echo "$ME: Parameters failed verification or require operator reboot; not launching MOOS." >&2
+    exit 1
+  fi
+elif [[ "$MODE" = REAL ]]; then
+  echo "$ME: REAL parameter upload not requested; configuration is NOT verified by this launch." >&2
 fi
 
 #------------------------------------------------------------
@@ -248,18 +320,21 @@ if [ "$MODE" = "SITL" ]; then
   while true; do
     # Ownership matters: an unrelated listener must not release this launcher.
     RUNNING_ID="$(timeout 2 "$MISSION_DIR/launch_sitl.sh" "$TIME_WARP" \
-      ps --status running --quiet 2>> "$SITL_LOG_FILE" || true)"
-    if [[ -n "$RUNNING_ID" ]] &&
-       timeout 1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/"$1"' _ "$CONTROLLER_PORT" 2>/dev/null; then
+      ps --status running --quiet sitl 2>> "$SITL_LOG_FILE" || true)"
+    ROUTER_ID="$(timeout 2 "$MISSION_DIR/launch_sitl.sh" "$TIME_WARP" \
+      ps --status running --quiet sim_router 2>> "$SITL_LOG_FILE" || true)"
+    if [[ -n "$RUNNING_ID" && -n "$ROUTER_ID" ]] &&
+       timeout 1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/"$1"' _ "$CONTROLLER_PORT" 2>/dev/null &&
+       timeout 1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/"$1"' _ "$SITL_ROUTER_PORT" 2>/dev/null; then
       break
     fi
     if (( SECONDS >= DEADLINE )); then
-      echo "$ME: SITL controller startup timed out; see $SITL_LOG_FILE" >&2
+      echo "$ME: SITL controller/router startup timed out; see $SITL_LOG_FILE" >&2
       exit 1
     fi
     sleep 0.2
   done
-  echo "$ME: SITL controller ready."
+  echo "$ME: SITL controller and simulation router ready."
 fi
 
 #------------------------------------------------------------

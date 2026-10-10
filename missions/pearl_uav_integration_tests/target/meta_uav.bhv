@@ -1,7 +1,6 @@
 // Three north/south passes. Left/right are west/east in the map frame,
 // independent of the static target's 30-degree yaw.
 initialize TARGET_TEST_PHASE = takeoff
-initialize UAV_AUTOSTART_READY = false
 initialize DESIRED_ALTITUDE = 8
 
 Behavior = BHV_Waypoint

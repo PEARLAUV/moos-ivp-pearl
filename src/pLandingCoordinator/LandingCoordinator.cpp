@@ -1,4 +1,5 @@
 #include "LandingCoordinator.h"
+#include "BodyFrame.h"
 #include "MBUtils.h"
 #include "NodeMessage.h"
 #include <algorithm>
@@ -33,7 +34,26 @@ bool LandingCoordinator::OnStartUp()
       ok = setPosDoubleOnString(m_timeout, data);
     else if (param == "input_timeout")
       ok = setPosDoubleOnString(m_input_timeout, data);
-    else if (param != "apptick" && param != "commstick")
+    else if (param == "observation_pose_samples_var")
+      ok = setNonWhiteVarOnString(m_pose_samples_var, data);
+    else if (param == "align_yaw")
+      ok = setBooleanOnString(m_align_yaw, data);
+    else if (param == "yaw_tolerance")
+      ok = setPosDoubleOnString(m_yaw_tolerance, data) && isfinite(m_yaw_tolerance) && m_yaw_tolerance <= 45;
+    else if (param == "yaw_rate")
+      ok = setPosDoubleOnString(m_yaw_rate, data) && isfinite(m_yaw_rate) && m_yaw_rate <= 90;
+    else if (param == "yaw_timeout")
+      ok = setPosDoubleOnString(m_yaw_timeout, data) && isfinite(m_yaw_timeout);
+    else if (param == "agreement_condition" || param == "rendezvous_condition" ||
+             param == "clearance_condition" || param == "command_condition") {
+      const string stage = param.substr(0, param.find('_'));
+      LogicCondition condition;
+      ok = condition.setCondition(data);
+      if (ok) {
+        m_conditions[stage] = condition;
+        m_condition_specs[stage] = data;
+      }
+    } else if (param != "apptick" && param != "commstick")
       ok = false;
     if (!ok) {
       reportUnhandledConfigWarning(raw);
@@ -46,6 +66,11 @@ bool LandingCoordinator::OnStartUp()
     reportConfigWarning("Require peer_node and role=platform|aircraft");
     m_valid = false;
   }
+  if (m_align_yaw && m_role != "aircraft") {
+    reportConfigWarning("align_yaw is aircraft-only");
+    m_valid = false;
+  }
+  m_yaw_state = m_align_yaw ? "WAITING" : "DISABLED";
   registerVariables();
   Notify("LANDING_DECK_ENABLED", "false");
   publish();
@@ -68,6 +93,18 @@ void LandingCoordinator::registerVariables()
         "UAV_HEALTH_ALL_OK", "UAV_HEALTH_AGE", "UAV_IS_ARMED", "UAV_LANDED_STATE",
         "UAV_LANDED_STATE_AVAILABLE", "UAV_LANDED_STATE_AGE", "UAV_COMMAND_RESULT"})
     Register(key, 0);
+  if (m_align_yaw && !m_pose_samples_var.empty()) Register(m_pose_samples_var, 0);
+  if (m_align_yaw)
+    for (const auto &key : {"UAV_YAW", "UAV_ROLL", "UAV_PITCH", "UAV_ATTITUDE_AVAILABLE",
+                            "UAV_ATTITUDE_AGE", "UAV_ATTITUDE_SAMPLE_TIME", "UAV_ATTITUDE_TIME_USEC",
+                            "UAV_GUIDED_MODE_ACTIVE", "UAV_ATTITUDE_SAMPLES",
+                            "UAV_LANDING_TARGET_TIME_USEC", "UAV_YAW_ALIGN_RESULT",
+                            "UAV_LANDING_TARGET_Q_W", "UAV_LANDING_TARGET_Q_X",
+                            "UAV_LANDING_TARGET_Q_Y", "UAV_LANDING_TARGET_Q_Z"})
+      Register(key, 0);
+  for (const auto &entry : m_conditions)
+    for (const auto &key : entry.second.getVarNames())
+      Register(key, 0);
 }
 
 bool LandingCoordinator::OnNewMail(MOOSMSG_LIST &mail)
@@ -75,6 +112,10 @@ bool LandingCoordinator::OnNewMail(MOOSMSG_LIST &mail)
   AppCastingMOOSApp::OnNewMail(mail);
   for (const auto &msg : mail) {
     const string key = msg.GetKey();
+    if (!m_pose_samples_var.empty() && key == m_pose_samples_var) {
+      mavlink::readPoseWindow(msg.IsString() ? msg.GetString() : "", m_observation_poses);
+      continue;
+    }
     if (key == "RECOVER") {
       // RECOVER is sent only to the aircraft; PEARL receives a mediated request.
       if (m_valid && m_role == "aircraft" && isTrue(msg) &&
@@ -88,11 +129,32 @@ bool LandingCoordinator::OnNewMail(MOOSMSG_LIST &mail)
     else if (key != "APPCAST_REQ") {
       m_inputs[key].value = msg.IsDouble() ? doubleToStringX(msg.GetDouble(), 6) : msg.GetString();
       m_inputs[key].time = msg.GetTime();
+      m_inputs[key].numeric = msg.IsDouble();
+      if (key == "UAV_ATTITUDE_SAMPLES" && m_align_yaw) {
+        m_native_samples_seen = true;
+        m_attitude_history.receive(msg.IsString() ? msg.GetString() : "");
+      }
       if (key == "RENDEZVOUS_OWN_SESSION" && m_rv_started && value(key) != m_old_rv_session &&
           msg.GetTime() >= m_state_time)
         m_rv_session = value(key);
       if (key == "RENDEZVOUS_OWN_PHASE" && m_rv_started && !m_rv_session.empty())
         m_rv_phase = value(key);
+      if (key == "UAV_YAW_ALIGN_RESULT" && m_align_yaw && m_state == "RENDEZVOUS" &&
+          !m_yaw_request_id.empty() && msg.IsString() &&
+          msg.GetTime() >= m_yaw_request_time && fresh(key) &&
+          tokStringParse(msg.GetString(), "id", '#', '=') == m_yaw_request_id) {
+        const string status = tokStringParse(msg.GetString(), "status", '#', '=');
+        const string heading = tokStringParse(msg.GetString(), "heading", '#', '=');
+        if (isNumber(heading) && isfinite(atof(heading.c_str())) &&
+            fabs(atof(heading.c_str()) - m_yaw_goal) < 1e-4) {
+          if (status == "ACCEPTED") {
+            m_yaw_accepted = true;
+            m_yaw_ack_time = msg.GetTime();
+            m_yaw_state = "ACCEPTED";
+          } else if (status == "REJECTED" || status == "FAILED")
+            abort("yaw_alignment_rejected");
+        }
+      }
       if (key == "UAV_COMMAND_RESULT" && m_state == "COMMANDING" &&
           msg.GetTime() >= m_command_time) {
         const string command = tokStringParse(msg.GetString(), "command");
@@ -107,6 +169,13 @@ bool LandingCoordinator::OnNewMail(MOOSMSG_LIST &mail)
         }
       }
     }
+  }
+  if (m_align_yaw && !m_native_samples_seen) {
+    double stamp = 0, roll = 0, pitch = 0, yaw = 0, received = 0;
+    if (number("UAV_ATTITUDE_TIME_USEC", stamp) && stamp > 0 && stamp < 9007199254740992.0 &&
+        number("UAV_ROLL", roll) && number("UAV_PITCH", pitch) && number("UAV_YAW", yaw) &&
+        number("UAV_ATTITUDE_SAMPLE_TIME", received))
+      m_attitude_history.remember(static_cast<uint64_t>(stamp), roll, pitch, yaw, received);
   }
   return true;
 }
@@ -125,6 +194,10 @@ void LandingCoordinator::begin()
   m_rv_phase = "IDLE";
   m_rv_session.clear();
   m_command_accepted = false;
+  m_yaw_started = m_yaw_request_time = m_yaw_ack_time = -1;
+  m_yaw_request_id.clear();
+  m_yaw_accepted = false;
+  m_yaw_state = m_align_yaw ? "WAITING" : "DISABLED";
   Notify("LANDING_DECK_ENABLED", "false");
   state("REQUESTED", "recover_received");
   send();
@@ -132,7 +205,7 @@ void LandingCoordinator::begin()
 
 void LandingCoordinator::startRendezvous()
 {
-  if (m_rv_started)
+  if (m_rv_started || !permits("rendezvous"))
     return;
   m_old_rv_session = value("RENDEZVOUS_OWN_SESSION");
   m_rv_session.clear();
@@ -169,7 +242,11 @@ void LandingCoordinator::handleExchange(const string &data)
     m_rv_session.clear();
     m_command_accepted = false;
     Notify("LANDING_DECK_ENABLED", "false");
-    state("AGREED", "aircraft_recovery_request_accepted");
+    // Expose a pending session for admission checks before guarded agreement.
+    // Ungated missions retain their immediate agreement behavior.
+    state(m_conditions.count("agreement") ? "REQUESTED" : "AGREED",
+          m_conditions.count("agreement") ? "awaiting_platform_permission"
+                                          : "aircraft_recovery_request_accepted");
   }
   if (time < m_peer_time)
     return;
@@ -207,6 +284,39 @@ bool LandingCoordinator::flag(const string &key) const
   return fresh(key) && (data == "true" || (isNumber(data) && atof(data.c_str()) == 1));
 }
 
+bool LandingCoordinator::permits(const string &stage) const
+{
+  const auto it = m_conditions.find(stage);
+  if (it == m_conditions.end())
+    return true;
+  LogicCondition condition = it->second;
+  for (const auto &key : condition.getVarNames()) {
+    // Periodic FSM/check facts provide a lease: never reuse stale permission.
+    if (!fresh(key))
+      return false;
+    const auto &input = m_inputs.at(key);
+    if (input.numeric)
+      condition.setVarVal(key, atof(input.value.c_str()));
+    else
+      condition.setVarVal(key, input.value);
+  }
+  return condition.eval();
+}
+
+bool LandingCoordinator::targetFresh() const
+{
+  const string age = value("UAV_LANDING_TARGET_AGE");
+  const string frame = value("UAV_LANDING_TARGET_FRAME");
+  if (!fresh("UAV_LANDING_TARGET_AGE") || !isNumber(age))
+    return false;
+  const double reported_age = atof(age.c_str());
+  const double elapsed = max(0.0, m_curr_time - m_inputs.at("UAV_LANDING_TARGET_AGE").time) /
+                         max(0.001, GetMOOSTimeWarp());
+  return isfinite(reported_age) && reported_age >= 0 && reported_age + elapsed <= 0.5 &&
+         flag("UAV_LANDING_TARGET_AVAILABLE") && flag("UAV_LANDING_TARGET_POSITION_VALID") &&
+         fresh("UAV_LANDING_TARGET_FRAME") && isNumber(frame) && atof(frame.c_str()) == 12;
+}
+
 bool LandingCoordinator::checksReady() const
 {
   // Recovery policy belongs in MOOS, not in the generic AUTOLAND bridge.
@@ -219,13 +329,162 @@ bool LandingCoordinator::checksReady() const
     const double age = atof(data.c_str());
     return isfinite(age) && age >= 0 && age <= limit;
   };
-  const string frame = value("UAV_LANDING_TARGET_FRAME");
-  return flag("UAV_LANDING_TARGET_AVAILABLE") && flag("UAV_LANDING_TARGET_POSITION_VALID") &&
-         fresh("UAV_LANDING_TARGET_FRAME") && isNumber(frame) && atof(frame.c_str()) == 12 &&
-         age_ok("UAV_LANDING_TARGET_AGE", 0.5) && flag("UAV_HEALTH_ALL_OK") &&
-         age_ok("UAV_HEALTH_AGE", m_input_timeout) && flag("UAV_IS_ARMED") &&
-         flag("UAV_LANDED_STATE_AVAILABLE") && fresh("UAV_LANDED_STATE") &&
+  return targetFresh() && flag("UAV_HEALTH_ALL_OK") && age_ok("UAV_HEALTH_AGE", m_input_timeout) &&
+         flag("UAV_IS_ARMED") && flag("UAV_LANDED_STATE_AVAILABLE") && fresh("UAV_LANDED_STATE") &&
          value("UAV_LANDED_STATE") == "IN_AIR" && age_ok("UAV_LANDED_STATE_AGE", 2.0);
+}
+
+bool LandingCoordinator::landedAndDisarmed() const
+{
+  const string age = value("UAV_LANDED_STATE_AGE");
+  return flag("UAV_LANDED_STATE_AVAILABLE") && fresh("UAV_LANDED_STATE") &&
+         value("UAV_LANDED_STATE") == "ON_GROUND" && fresh("UAV_IS_ARMED") &&
+         m_inputs.at("UAV_IS_ARMED").numeric && isNumber(value("UAV_IS_ARMED")) &&
+         atof(value("UAV_IS_ARMED").c_str()) == 0 && fresh("UAV_LANDED_STATE_AGE") &&
+         isNumber(age) && isfinite(atof(age.c_str())) && atof(age.c_str()) >= 0 &&
+         atof(age.c_str()) <= 2.0;
+}
+
+bool LandingCoordinator::number(const string &key, double &data) const
+{
+  const auto it = m_inputs.find(key);
+  if (!fresh(key) || it == m_inputs.end() || !it->second.numeric || !isNumber(it->second.value))
+    return false;
+  data = atof(it->second.value.c_str());
+  return isfinite(data);
+}
+
+bool LandingCoordinator::targetHeading(double &heading, double &yaw, double &sample_time)
+{
+  double roll = 0, pitch = 0, available = 0, age = 0;
+  if (!flag("UAV_GUIDED_MODE_ACTIVE")) {
+    m_yaw_input_reason = "guided_mode_missing_stale_or_inactive";
+    return false;
+  }
+  if (!targetFresh()) {
+    m_yaw_input_reason = "target_missing_or_stale";
+    return false;
+  }
+  for (const auto &entry : {make_pair("UAV_ROLL", &roll), make_pair("UAV_PITCH", &pitch),
+                            make_pair("UAV_YAW", &yaw), make_pair("UAV_ATTITUDE_AVAILABLE", &available),
+                            make_pair("UAV_ATTITUDE_AGE", &age)}) {
+    if (!number(entry.first, *entry.second)) {
+      m_yaw_input_reason = string(entry.first) + "_missing_stale_or_not_numeric";
+      return false;
+    }
+  }
+  if (available != 1 || age < 0 ||
+      age + max(0.0, m_curr_time - m_inputs.at("UAV_ATTITUDE_AGE").time) /
+                max(0.001, GetMOOSTimeWarp()) > 0.5) {
+    m_yaw_input_reason = "native_attitude_unavailable_or_old";
+    return false;
+  }
+  if (m_native_samples_seen) {
+    uint64_t latest_stamp = 0;
+    bodyframe::Pose current;
+    if (!m_attitude_history.latest(latest_stamp, current) ||
+        current.received_moos_time > m_curr_time + 1 ||
+        (m_curr_time - current.received_moos_time) / max(0.001, GetMOOSTimeWarp()) > 0.5) {
+      m_yaw_input_reason = "native_attitude_samples_missing_or_old";
+      return false;
+    }
+    yaw = current.yaw;
+    sample_time = current.received_moos_time;
+  } else if (!number("UAV_ATTITUDE_SAMPLE_TIME", sample_time)) {
+    m_yaw_input_reason = "native_attitude_sample_time_missing";
+    return false;
+  }
+  bodyframe::Quaternion q{};
+  const char *fields[] = {"W", "X", "Y", "Z"};
+  double norm = 0;
+  for (unsigned i = 0; i < 4; ++i) {
+    if (!number(string("UAV_LANDING_TARGET_Q_") + fields[i], q[i])) {
+      m_yaw_input_reason = string("quaternion_") + fields[i] + "_missing_stale_or_not_numeric";
+      return false;
+    }
+    norm += q[i] * q[i];
+  }
+  if (!isfinite(norm) || norm <= 1e-12) {
+    m_yaw_input_reason = "quaternion_invalid_or_unavailable";
+    return false;
+  }
+  for (auto &component : q)
+    component /= sqrt(norm);
+  double stamp = 0;
+  bodyframe::Pose exposure;
+  if (!number("UAV_LANDING_TARGET_TIME_USEC", stamp) || stamp <= 0 ||
+      stamp >= 9007199254740992.0 || floor(stamp) != stamp) {
+    m_yaw_input_reason = "observation_attitude_timestamp_missing_or_invalid";
+    return false;
+  }
+  if (!m_pose_samples_var.empty()) {
+    const auto pose = m_observation_poses.find(static_cast<uint64_t>(stamp));
+    if (pose == m_observation_poses.end()) {
+      m_yaw_input_reason = "observation_timestamp_not_in_direct_native_pose_history";
+      return false;
+    }
+    exposure.rotation = bodyframe::bodyToNed(pose->second.roll, pose->second.pitch, pose->second.yaw);
+    exposure.received_moos_time = pose->second.received_moos;
+  } else if (!m_attitude_history.find(static_cast<uint64_t>(stamp), exposure)) {
+    m_yaw_input_reason = "observation_attitude_timestamp_not_in_native_history";
+    return false;
+  }
+  if (exposure.received_moos_time > m_curr_time + 1 ||
+      (m_curr_time - exposure.received_moos_time) / max(0.001, GetMOOSTimeWarp()) > 0.5) {
+    m_yaw_input_reason = "observation_native_attitude_sample_too_old_or_future";
+    return false;
+  }
+  const auto forward = bodyframe::toNed(exposure.rotation, bodyframe::rotate(q, {{1, 0, 0}}));
+  if (hypot(forward[0], forward[1]) <= 1e-6) {
+    m_yaw_input_reason = "target_forward_axis_vertical";
+    return false;
+  }
+  heading = fmod(atan2(forward[1], forward[0]) / bodyframe::radians + 360, 360);
+  m_yaw_input_reason = "ready";
+  return true;
+}
+
+bool LandingCoordinator::yawReady()
+{
+  if (!m_align_yaw)
+    return true;
+  if (m_yaw_started < 0)
+    m_yaw_started = m_curr_time;
+  double heading = 0, yaw = 0, sample_time = -1;
+  if (!targetHeading(heading, yaw, sample_time)) {
+    m_yaw_state = "WAITING_FOR_ORIENTATION";
+    return false; // Never manufacture orientation or alignment from elapsed time.
+  }
+  const auto error = [](double a, double b) { return remainder(a - b, 360.0); };
+  if (m_yaw_request_id.empty()) {
+    m_yaw_goal = heading; // Freeze this transaction's true-north target heading.
+    m_yaw_error = error(yaw, m_yaw_goal);
+    m_yaw_request_id = m_session + "_yaw";
+    m_yaw_request_time = m_curr_time;
+    m_yaw_state = "COMMANDING";
+    Notify("YAW_ALIGN_REQUEST", "id=" + m_yaw_request_id +
+        "#heading=" + doubleToStringX(m_yaw_goal, 6) + "#rate=" + doubleToStringX(m_yaw_rate, 3));
+    return false;
+  }
+  if (fabs(error(heading, m_yaw_goal)) > m_yaw_tolerance) {
+    abort("yaw_target_heading_changed");
+    return false;
+  }
+  m_yaw_error = error(yaw, m_yaw_goal);
+  if (!m_yaw_accepted) {
+    m_yaw_state = "WAITING_FOR_FC_ACK";
+    return false;
+  }
+  if (sample_time < m_yaw_ack_time || sample_time > m_curr_time + 1) {
+    m_yaw_state = "WAITING_FOR_POST_ACK_ATTITUDE";
+    return false;
+  }
+  if (fabs(m_yaw_error) > m_yaw_tolerance) {
+    m_yaw_state = "ALIGNING";
+    return false;
+  }
+  m_yaw_state = "ALIGNED";
+  return true;
 }
 
 bool LandingCoordinator::Iterate()
@@ -236,25 +495,43 @@ bool LandingCoordinator::Iterate()
     const bool peer_fresh = m_peer_time >= 0 && m_curr_time - m_peer_time <= m_input_timeout;
     if (m_curr_time - m_session_time > m_timeout)
       abort("landing_timeout");
+    else if (m_role == "aircraft" && !m_command_accepted && landedAndDisarmed())
+      // An RTL/manual landing is not a successful coordinated recovery.
+      // Allow the supervisory FSM to follow its existing off-nominal edges.
+      abort("landed_without_authorized_autoland");
+    else if (m_align_yaw && m_role == "aircraft" && m_yaw_started >= 0 &&
+             m_state == "RENDEZVOUS" && m_curr_time - m_yaw_started > m_yaw_timeout)
+      abort("yaw_alignment_timeout");
+    else if (m_align_yaw && !m_yaw_request_id.empty() && m_state == "RENDEZVOUS" &&
+             (!peer_fresh || m_peer_phase != "CLEARED" || !permits("command") ||
+              !flag("UAV_GUIDED_MODE_ACTIVE")))
+      abort("yaw_alignment_permission_lost");
     else if (m_rv_phase == "ABORT")
       abort("rendezvous_aborted");
+    else if (m_role == "platform" && m_state == "REQUESTED" && peer_fresh && permits("agreement")) {
+      state("AGREED", "platform_permission_granted");
+      send();
+    } else if (peer_fresh &&
+               ((m_role == "aircraft" && m_state == "REQUESTED" && m_peer_phase == "AGREED") ||
+                (m_role == "platform" && m_state == "AGREED" && m_peer_phase == "RENDEZVOUS")))
+      startRendezvous();
     else if (m_role == "platform" && m_state == "RENDEZVOUS" && peer_fresh &&
              m_rv_phase == "COMPLETE" && m_peer_rv_phase == "COMPLETE" && fresh("NAV_X") &&
-             fresh("NAV_Y")) {
+             fresh("NAV_Y") && permits("clearance")) {
       Notify("LANDING_DECK_ENABLED", "true");
       state("CLEARED", "both_rendezvous_complete");
     } else if (m_role == "aircraft" && m_state == "RENDEZVOUS" && peer_fresh &&
                m_peer_phase == "CLEARED" && m_peer_rv_phase == "COMPLETE" &&
-               m_rv_phase == "COMPLETE" && checksReady()) {
-      state("COMMANDING", "clearance_and_checks_ready");
-      m_command_time = m_curr_time;
-      Notify("ARDU_COMMAND", "AUTOLAND");
+               m_rv_phase == "COMPLETE" && checksReady() && permits("command")) {
+      if (yawReady()) {
+        state("COMMANDING", m_align_yaw ? "clearance_checks_and_yaw_ready" : "clearance_and_checks_ready");
+        m_command_time = m_curr_time;
+        Notify("ARDU_COMMAND", "AUTOLAND");
+      }
     } else if (m_role == "aircraft" && m_state == "COMMANDING" && m_curr_time - m_command_time > 10)
       abort("landing_command_timeout");
     else if (m_role == "aircraft" && m_state == "LANDING" && m_command_accepted &&
-             flag("UAV_LANDED_STATE_AVAILABLE") && fresh("UAV_LANDED_STATE") &&
-             value("UAV_LANDED_STATE") == "ON_GROUND" && fresh("UAV_IS_ARMED") &&
-             !flag("UAV_IS_ARMED"))
+             landedAndDisarmed())
       state("COMPLETE", "landed_and_disarmed");
     else if (m_role == "platform" && (m_state == "CLEARED" || m_state == "LANDING") && peer_fresh) {
       if (m_peer_phase == "LANDING")
@@ -304,6 +581,8 @@ void LandingCoordinator::abort(const string &reason)
     Notify("RENDEZVOUS_ABORT", "true");
   if (!m_command_accepted)
     Notify("LANDING_DECK_ENABLED", "false");
+  if (m_align_yaw && !m_command_accepted)
+    m_yaw_state = "ABORTED";
   state("ABORTED", reason);
   send();
 }
@@ -313,8 +592,21 @@ void LandingCoordinator::publish()
   Notify("LANDING_OWN_PHASE", m_state);
   Notify("LANDING_OWN_REASON", m_reason);
   Notify("LANDING_OWN_SESSION", m_session.empty() ? "none" : m_session);
+  Notify("LANDING_OWN_RENDEZVOUS_PHASE", m_rv_phase);
+  Notify("LANDING_OWN_RENDEZVOUS_SESSION", m_rv_session.empty() ? "none" : m_rv_session);
+  const bool peer_fresh = m_peer_time >= 0 && m_curr_time - m_peer_time <= m_input_timeout;
+  Notify("LANDING_PEER_PHASE", peer_fresh ? m_peer_phase : "STALE");
+  Notify("LANDING_PEER_CLEARANCE",
+         peer_fresh && (m_peer_phase == "CLEARED" || m_peer_phase == "LANDING") ? "true" : "false");
   Notify("LANDING_OWN_CLEARANCE", m_state == "CLEARED" || m_state == "LANDING" ? "true" : "false");
   Notify("LANDING_OWN_CHECKS_READY", checksReady() ? "true" : "false");
+  Notify("LANDING_OWN_TARGET_FRESH", targetFresh() ? "true" : "false");
+  Notify("LANDING_OWN_YAW_STATE", m_yaw_state);
+  Notify("LANDING_OWN_YAW_INPUT_REASON", m_yaw_input_reason);
+  if (!m_yaw_request_id.empty()) {
+    Notify("LANDING_OWN_YAW_GOAL", m_yaw_goal);
+    Notify("LANDING_OWN_YAW_ERROR", m_yaw_error);
+  }
 }
 
 bool LandingCoordinator::isTrue(const CMOOSMsg &msg) const
@@ -354,6 +646,10 @@ bool LandingCoordinator::buildReport()
   replace(reason.begin(), reason.end(), '_', ' ');
   m_msgs << fixed << setprecision(2);
 
+  for (const auto &entry : m_condition_specs) {
+    label(entry.first + " permission");
+    m_msgs << (permits(entry.first) ? "allowed" : "BLOCKED") << " (" << entry.second << ")\n";
+  }
   m_msgs << "Landing session\n----------------------\n";
   label("Ownship / peer");
   m_msgs << show(m_ownship) << " / " << show(m_peer) << '\n';
@@ -407,6 +703,23 @@ bool LandingCoordinator::buildReport()
 
   if (m_role == "aircraft") {
     m_msgs << "\nAircraft readiness (before LAND)\n----------------------\n";
+    label("Yaw alignment");
+    m_msgs << m_yaw_state << " (option " << (m_align_yaw ? "enabled" : "disabled") << ")\n";
+    if (m_align_yaw) {
+      label("Yaw input status");
+      m_msgs << m_yaw_input_reason << '\n';
+      label("Yaw tolerance / rate");
+      m_msgs << m_yaw_tolerance << " deg / " << m_yaw_rate << " deg/s\n";
+      label("Yaw timeout");
+      m_msgs << m_yaw_timeout << " MOOS s\n";
+      label("Yaw request / FC ACK");
+      m_msgs << show(m_yaw_request_id) << " / " << (m_yaw_accepted ? "accepted" : "not accepted") << '\n';
+      label("Yaw goal / error");
+      if (m_yaw_request_id.empty())
+        m_msgs << "missing (requires fresh native attitude and received quaternion)\n";
+      else
+        m_msgs << m_yaw_goal << " / " << m_yaw_error << " deg (true)\n";
+    }
     label("Overall checks");
     m_msgs << (m_command_accepted ? "not required (LAND already accepted)"
                : checksReady()    ? "ready"

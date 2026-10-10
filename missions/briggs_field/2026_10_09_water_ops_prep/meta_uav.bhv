@@ -1,58 +1,146 @@
 //-------------------------------------------------
-// FILE: meta_uav.bhv
-// NAME: Charles Benjamin
-//-------------------------------------------------
+// Navigation is estimator-derived. The standalone FSM owns lifecycle actions.
+initialize ROUTE_DEPLOY = false
+initialize ROUTE_EXECUTE = false
+initialize ROUTE_READY = false
+initialize ROUTE_CLEAR = false
+initialize DESIRED_ALTITUDE = 8
+initialize RENDEZVOUS_OWN_ACTIVE = false
+initialize RENDEZVOUS_OWN_WAYPOINT_READY = false
+initialize RENDEZVOUS_OWN_WAYPOINT_REACHED = false
+initialize RENDEZVOUS_OWN_HANDOFF_REQUEST = false
 
-initialize ROUTE_DEPLOY          = false
-initialize ROUTE_EXECUTE         = false
-initialize ROUTE_READY          = false
-initialize ROUTE_CLEAR          = false
+Behavior = BHV_Waypoint
+{
+  name = uav_rendezvous
+  pwt = 110
+  perpetual = true
+  updates = RENDEZVOUS_OWN_UPDATE
+  condition = RENDEZVOUS_OWN_ACTIVE=true
+  condition = UAV_FSM_OPERATION_STATE=LANDING_OPERATIONS
+  condition = LANDING_OWN_PHASE=RENDEZVOUS
+  activeflag = RENDEZVOUS_OWN_WAYPOINT_READY=true
+  inactiveflag = RENDEZVOUS_OWN_WAYPOINT_READY=false
+  endflag = RENDEZVOUS_OWN_ACTIVE=false
+  endflag = ARDU_COMMAND=HOLD_POSITION
+  speed = 1.5
+  speed_alt = 1.5
+  use_alt_speed = true
+  end_spd = slow_dist=5, stop_dist=0
+  capture_radius = 0.2
+  slip_radius = 0.5
+  capture_line = false
+  points = empty
+  repeat = 0
+  order = normal
+  visual_hints = nextpt_color=yellow, nextpt_label_color=invisible
+  visual_hints = nextpt_vertex_size=8, vertex_color=yellow, edge_color=white
+}
 
-initialize DESIRED_ALTITUDE      = 8
+// Remain eligible through LAND acceptance until the bridge parks Helm.
+Behavior = BHV_StationKeep
+{
+  name = uav_recovery_hold
+  pwt = 90
+  condition = UAV_FSM_OPERATION_STATE=LANDING_OPERATIONS
+  condition = RENDEZVOUS_OWN_ACTIVE=false
+  condition = ((UAV_FSM_LANDING_OPERATIONS_STATE!=DEVIATING_TO_SECONDARY_LANDING_POSITION) and (UAV_FSM_LANDING_OPERATIONS_STATE!=TRANSITING_TO_SECONDARY_LOITER_LOCATION)) and (UAV_FSM_LANDING_OPERATIONS_STATE!=SECONDARY_LANDING)
+  center_activate = true
+  inner_radius = 0.5
+  outer_radius = 2
+  hibernation_radius = 4
+  outer_speed = 1.5
+  transit_speed = 1.5
+  swing_time = 3
+  // Hold guidance remains active; hide all stationkeeping rings/vertices.
+  visual_hints = vertex_size=0, edge_size=0, edge_color=invisible
+  visual_hints = vertex_color=invisible, label_color=invisible
+}
 
-//----------------------------------------------------
-// Each mediated DEPLOY supplies one complete, ordered route snapshot.
-// Completing or clearing the route removes the spawned behavior.
+Behavior = BHV_ConstantAltitude
+{
+  name = recovery_altitude
+  pwt = 100
+  condition = UAV_FSM_OPERATION_STATE=LANDING_OPERATIONS
+  condition = ((UAV_FSM_LANDING_OPERATIONS_STATE!=DEVIATING_TO_SECONDARY_LANDING_POSITION) and (UAV_FSM_LANDING_OPERATIONS_STATE!=TRANSITING_TO_SECONDARY_LOITER_LOCATION)) and ((UAV_FSM_LANDING_OPERATIONS_STATE!=LOITERING_AT_SECONDARY_ALTITUDE) and (UAV_FSM_LANDING_OPERATIONS_STATE!=SECONDARY_LANDING))
+  perpetual = true
+  altitude = 8
+  duration = -1
+}
+
+// Separate, actual waypoint evidence for the existing contingency states.
+// No pRendezvous secondary-controller status is invented or aliased.
+Behavior = BHV_Waypoint
+{
+  name = uav_secondary_transit
+  updates = RALLY_WAYPOINT_UPDATE
+  pwt = 120
+  condition = (UAV_FSM_LANDING_OPERATIONS_STATE=DEVIATING_TO_SECONDARY_LANDING_POSITION) or (UAV_FSM_LANDING_OPERATIONS_STATE=TRANSITING_TO_SECONDARY_LOITER_LOCATION)
+  endflag = SECONDARY_ARRIVED=true
+  endflag = ARDU_COMMAND=HOLD_POSITION
+  speed = 1.5
+  speed_alt = 1.5
+  use_alt_speed = true
+  end_spd = slow_dist=5, stop_dist=0
+  capture_radius = 1
+  slip_radius = 1
+  capture_line = false
+  points = $(SECONDARY_LANDING_X),$(SECONDARY_LANDING_Y)
+  visual_hints = nextpt_label_color=invisible, nextpt_color=yellow
+  visual_hints = label_color=invisible, vertex_color=yellow, edge_color=white
+}
+
+// Same frozen, verified altitude sent to FC rally storage, above Home.
+Behavior = BHV_ConstantAltitude
+{
+  name = rally_altitude
+  pwt = 100
+  updates = RALLY_ALTITUDE_UPDATE
+  condition = ((UAV_FSM_LANDING_OPERATIONS_STATE=DEVIATING_TO_SECONDARY_LANDING_POSITION) or (UAV_FSM_LANDING_OPERATIONS_STATE=TRANSITING_TO_SECONDARY_LOITER_LOCATION)) or (UAV_FSM_LANDING_OPERATIONS_STATE=LOITERING_AT_SECONDARY_ALTITUDE)
+  perpetual = true
+  altitude = 15
+  duration = -1
+}
+
+// Session-named, staged operator routes remain owned by pRouteBuffer.
 Behavior = BHV_Waypoint
 {
   templating = spawn
-  name       = operator_route_
-  pwt        = 100
-  updates    = ROUTE_UPDATE
-  spawnflag  = ROUTE_READY=true
-  spawnflag  = ROUTE_CLEAR=false
-
-  // Form the Helm decision before pArduBridge transfers control authority.
+  name = operator_route_
+  pwt = 100
+  updates = ROUTE_UPDATE
+  spawnflag = ROUTE_READY=true
+  spawnflag = ROUTE_CLEAR=false
   condition = (ROUTE_CLEAR=true) or (ROUTE_DEPLOY=true)
-
   endflag = ROUTE_DEPLOY=false
   endflag = ROUTE_READY=false
   endflag = ROUTE_CLEAR=false
-  endflag = ARDU_COMMAND=HOLD_POSITION
-
-  speed          = 3
-  // pArduBridge may publish speed=0 before the first Copter leg. Keep this
-  // operator mission's effective travel speed fixed while accepting points.
-  speed_alt      = 3
-  use_alt_speed  = true
-  capture_radius = 1.5
-  slip_radius    = 4
-  order           = normal
-  points         = empty
-
-  visual_hints = nextpt_color=yellow
-  visual_hints = nextpt_vertex_size=8
-  visual_hints = vertex_color=dodger_blue, edge_color=white
+  endflag = ARDU_COMMAND=BRAKE_AND_HOLD
+  speed = 3
+  speed_alt = 3
+  use_alt_speed = true
+  // Look ahead 5 m along the current leg, including the first leg.
+  // This improves line following, not anticipation onto the next leg.
+  lead = 5
+  lead_to_start = true
+  // Slow only over the last 8 m of the complete route (distances in metres).
+  // On final capture, brake with zero horizontal velocity before latching the
+  // native hold position. Keep the working fly-by radii and lead unchanged.
+  end_spd = slow_dist=6, stop_dist=0
+  capture_radius = 4
+  slip_radius = 5
+  order = normal
+  points = empty
+  visual_hints = nextpt_color=yellow, nextpt_label_color=invisible
+  visual_hints = nextpt_vertex_size=8, vertex_color=dodger_blue, edge_color=white
 }
 
-//----------------------------------------------------
-// Form vertical guidance with the route before control transfers to the Helm.
 Behavior = BHV_ConstantAltitude
 {
-  name      = operator_altitude
-  pwt       = 100
+  name = operator_altitude
+  pwt = 100
   condition = ROUTE_DEPLOY=true
   perpetual = true
-  altitude  = 8
-  duration  = -1
+  altitude = 8
+  duration = -1
 }

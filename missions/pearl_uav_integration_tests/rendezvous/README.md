@@ -5,8 +5,8 @@ There is no rendezvous role, request/response handshake, completion authority,
 landing clearance, or landing behavior in this app. Landing coordination is a
 separate concern owned by `pLandingCoordinator`.
 
-- **UAV**: ArduCopter SITL through `pArduBridge`. It arms, takes off to 8 m,
-  and flies south along its lane.
+- **UAV**: ArduCopter SITL through `pArduBridge`. SITL startup leaves it armed
+  and airborne at 8 m, then it flies south along its lane.
 - **PEARL**: `uSimMarineV22` starts at the south end and heads north.
 - **DEPLOY** (pMarineViewer button) publishes `RENDEZVOUS_START_ALL` at
   shoreside. `uFldShoreBroker` independently delivers local
@@ -39,7 +39,8 @@ start still works from a hover/hold.
 `launch.sh` owns the SITL container and all three communities. Quitting uMAC or
 interrupting the launcher stops everything. With `-x`, it skips uMAC and runs
 until SIGINT/SIGTERM. The launcher passes the computed SITL home, time warp, and
-`--no-rc` through CLI options; this mission needs no parameter-file overrides.
+`--airborne` home and time warp through CLI options; airborne startup enables
+no-RC defaults itself. This mission needs no parameter-file overrides.
 Simulator output is in `LOG_sitl/`, and pAntler output is in `LOG_antler/`.
 
 Requirements: the `ardupilot-sitl:local` image and wrapper, plus built

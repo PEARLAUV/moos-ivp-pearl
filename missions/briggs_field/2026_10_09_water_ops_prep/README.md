@@ -11,6 +11,191 @@ meeting point, the UAV validates it, both vehicles travel there, PEARL grants
 landing clearance, and the UAV acquires PEARL's landing target before it
 commits precision landing.
 
+## Shared route tasking
+
+Draw waypoints with the **route** left-click context. **TASK-PEARL** and
+**TASK-UAV** submit an immutable copy to the selected vehicle and remove only
+the shoreside drawing. **route-clear** clears that drawing without cancelling
+either vehicle; **uav-cancel** remains the separate UAV cancellation action.
+Empty/invalid submissions start nothing, and a second click without a new
+drawing cannot resubmit the consumed route.
+
+PEARL accepts tasks only with fresh NORMAL_OPERATION / IDLE / NO_ACTIVE_REQUEST
+state. Its existing FSM enters EXECUTING_MISSION after matching Helm route
+readiness, follows the route at the existing PEARL speed, and returns to the
+existing base `(10.6,4.8)` on actual waypoint completion. Support interruption
+suspends the route and preserves waypoint progress for history resumption.
+Busy/stale tasks are rejected, not queued for surprise execution later.
+
+UAV tasking retains its separate **uav-rally** selection and verified rally /
+takeoff / recovery workflow below. Editing the next drawing cannot mutate a
+submitted or executing route. Submission and mediator receipt do **not** prove
+vehicle acceptance or completion: inspect ROUTE_BUFFER_TASK_ID/DESTINATION,
+PEARL_ROUTE_BUFFER_STATE, PEARL_ROUTE_READY and the vehicle FSM states.
+
+The UAV FSM issues local `ROUTE_BUFFER_COMMAND=action=clear` on mission exit
+and IDLE entry, releasing the previous immutable task's buffer ownership as
+well as clearing Helm execution. A Helm flag alone does not release that
+ownership. UAV snapshots also carry an identity condition tied to
+`UAV_ROUTE_ACTIVE_ID`; a retained old Helm instance cannot run after a parked
+clearance denial and replacement. Busy task rejection and duplicate-ID
+suppression remain in force. `tests/test_uav_repeated_task.py` verifies normal
+completion/landing/second task and denied-clearance/replacement without
+restarting applications, using real FSM/Helm/buffer with synthetic evidence.
+
+These paths were exercised in owned isolated real-MOOS/Helm/FSM tests using
+synthetic navigation, not a new physical two-vehicle flight. Apply through the
+next safe normal launch; no running missions were restarted.
+
+## Rally selection and task commit
+
+Left-click **uav-rally** in the map context menu to stage the fallback point.
+Its orange marker has no label. Change the transit altitude on shoreside:
+
+```bash
+uPokeDB targ_shoreside.moos RALLY_ALTITUDE=20
+```
+
+The default is **15 m above flight-controller Home**; use whole metres.
+**TASK-UAV** freezes the current point and altitude while deploying the staged
+route. The UAV must be IDLE, freshly grounded and disarmed. Task execution is
+admitted immediately into TAKEOFF_OPERATIONS / ESTABLISHING_TAKEOFF_READINESS,
+not held in IDLE until rally verification. Progress beyond readiness requires
+`pArduBridge` to upload/read back the single FC rally, the rally-only selection
+policy and above-Home RTL altitude settings. Missing/failed verification blocks
+FLIGHT_PLAN readiness and ARM, not the task-received state transition.
+
+MOOS off-nominal waypoint guidance uses that same frozen point and altitude.
+Generic FC RTL/failsafe recovery uses the FC's stored rally, with
+`RALLY_INCL_HOME=0` and `RALLY_LIMIT_KM=0`: a closer Home is not considered
+while the selected rally remains valid. Current firmware receives
+`RTL_ALT_M`; legacy Copter uses `RTL_ALT` in centimetres, with
+`RTL_ALT_TYPE=0`. These persisted settings do not override ArduPilot safety
+limits, higher-current-altitude/minimum-climb behavior, or fallback if rally
+storage later becomes invalid. Validate the landing site and terrain yourself.
+
+Later map/altitude edits apply only to the **next task**. The staged marker is
+not proof of the committed point: inspect `RALLY_ACTIVE`,
+`RALLY_TASK_STATE/REASON`, `UAV_RALLY_STATE/ID/READY`.
+`--secondary_landing=X,Y` initializes the staged rally; the context selection
+supersedes it at tasking. No FSM states, edges, labels or layout were changed.
+
+The existing **FLIGHT_PLAN** check requires `ROUTE_READY=true`, current
+`RALLY_TASK_STATE=READY` and numeric `UAV_RALLY_READY=1`; there is no separate
+rally check. Verification can finish while the FSM is establishing readiness,
+and its result never issues a second TASK_EXECUTE trigger.
+With `helm_state_var=IVPHELM_STATE`, vehicle `pRouteBuffer` retains a
+snapshot received while Helm is parked, then delivers it on actual DRIVE.
+Parked Helm otherwise clears update deltas before spawning the operator route,
+leaving the received route with no `ROUTE_READY` evidence. CLEAR discards
+the deferred snapshot. This handoff does not synthesize readiness or depend
+on how long the FC rally upload takes.
+
+See [pRallyPoint](../../../src/pRallyPoint/README.md) for the protocol, parameter
+references and safety limitations. Isolated MOOS transaction tests and two
+actual SITL FC upload/replacement/readback transactions passed. Airborne RTL
+and a complete off-nominal landing have **not** been flight-validated here.
+Existing live missions were not moved or restarted.
+
+## Direct native pose for the SITL target emulator
+
+Next launch uses `vehicle_pose_source=mavlink` in the existing
+`pMavlinkLandingTarget`, receiving FC quaternion/position directly on its sensor
+TCP connection, not through bridge/EchoVar aircraft-pose relays. It requests
+50 Hz telemetry only, requires receive age <=100 ms and position/attitude FC
+timestamp skew <=20 ms, and never falls back to MOOS aircraft coordinates.
+Native sample windows feed the viewer's observation-time position/attitude and
+coordinator's exposure rotation; FC readiness and post-ACK yaw stay bridge-owned.
+PEARL target position still comes through MOOS. No `PLND_LAG` change or new app/
+FSM topology is involved. See [the source contract](../../../src/pMavlinkLandingTarget/README.md).
+This reduces relay latency, not proof of zero exposure-to-FC delay.
+
+## UAV heading and course over ground
+
+`pArduBridge` always publishes body orientation and travel direction separately;
+there is no heading-source configuration switch:
+
+| Publication | Source and reference | Units |
+| --- | --- | --- |
+| `UAV_YAW` | Received FC attitude yaw, true north (unchanged) | degrees clockwise, 0–360 |
+| `UAV_HEADING` | Received FC attitude yaw converted to mission-grid bearing | degrees clockwise, 0–360 |
+| `UAV_COG` | Received FC raw-GPS course over ground converted to mission grid | degrees clockwise, 0–360 |
+| `UAV_SPEED` | Received FC raw-GPS ground speed (unchanged) | m/s |
+
+The existing `UAV_HEADING -> NAV_HEADING` mapping now supplies actual body
+orientation to Helm and the existing node reporter/viewer. `UAV_COG -> NAV_COG`
+makes travel direction available separately; consumers needing COG must not
+treat `NAV_HEADING` as course anymore. This changes the Helm's measured heading
+input, not just the display; no behavior or flight-command algorithms were
+changed. PEARL and landing-target true-north yaw inputs remain unchanged.
+
+Bridge yaw and COG are received from the FC, not inferred from successive MOOS
+positions. COG can still flip at negligible speed: it is not body orientation.
+NodeReporter already uses `report_cog=true`; its optional node-report COG is
+separately position-derived, not a subscription to `NAV_COG`. No node reporter,
+contact-library, or viewer modifications are required.
+
+This is an unconditional bridge publication semantics change (including other
+missions using pArduBridge): old course consumers should use `*_COG` instead
+of `*_HEADING`. Native attitude/GPS validity and telemetry-loss limitations
+are not changed by this separation. Changes take effect on the next launch;
+running missions are not restarted.
+
+Isolated publication and mission-wiring regressions, from the repository root:
+`python3 ../moos-ivp-uav-base/src/pArduBridge/tests/test_heading_publications.py`.
+
+## Precision target frame and optional yaw alignment
+
+The emulator now uses native FC **roll, pitch and true yaw** to express target
+XYZ and orientation in actual BODY_FRD. Missing/stale attitude stops emulation;
+no level-pose substitution is made. The received viewer applies the full inverse
+mapping, including the vertical component's horizontal projection under tilt.
+Native attitude boot timestamps identify the exact pose used for the observation.
+
+This mission enables aircraft `pLandingCoordinator` **`align_yaw=true`** on the
+next launch (the reusable app default remains false). With fresh permission,
+clearance and existing checks, it freezes heading from the received target
+quaternion, sends one native yaw request during the established Guided hold,
+and requires both FC ACK and fresh **post-ACK native measured** yaw within
+5 degrees before AUTOLAND. Timeout is 60 MOOS seconds; yaw command rate is
+30 degrees/FC second. The existing FSM graph and coordinator phases are unchanged.
+Missing orientation/clock match, rejection, changed target, cancellation or lost
+permission cannot manufacture readiness or trigger a timed retry. ArduPilot owns
+LAND/descent/retries/touchdown/disarm; yaw is not continuously tracked during LAND.
+
+`PLND_YAW_ALIGN` is sensor mounting calibration, not this feature. ArduPilot ignores
+LANDING_TARGET quaternion for its own yaw control. See
+[pLandingCoordinator](../../../src/pLandingCoordinator/README.md) for option,
+freshness, protocol and real-camera synchronization limitations, and
+[pMavlinkLandingTarget](../../../src/pMavlinkLandingTarget/README.md) for the corrected
+angular signs. No live mission is regenerated, restarted or commanded by these edits.
+
+## Guided ownership diagnostics
+
+Bridge `HELM_PARKED` means **pArduBridge Helm authority is parked**, not
+that `pHelmIvP` reports PARK. An actual DRIVE Helm may still lack bridge
+flight authority during preflight/FC-owned takeoff.
+
+While the bridge is parked, fresh native ON_GROUND plus disarmed evidence
+makes Guided informational (`UAV_GUIDED_OWNERSHIP_STATE=GROUNDED_DISARMED`).
+An actual accepted FC TAKEOFF with a live activation/completion deadline is
+`FC_TAKEOFF_ACKNOWLEDGED`; its existing command confirmation and timeout
+reporting remain authoritative. A task/FSM intent alone grants no ownership.
+Completion, abort, or timeout revokes that diagnostic lease.
+
+Unowned Guided operation still warns after the existing **2 MOOS-second**
+grace; armed airborne Guided is not excused by a historical takeoff ACK.
+Disconnected, missing, UNKNOWN, or older-than-2-real-second native
+landed-state telemetry is `TELEMETRY_UNCERTAIN`, also warning after that grace.
+Inspect `UAV_GUIDED_OWNERSHIP_STATE/WARNING` and the bridge AppCast.
+This monitor does not arm, command flight/modes, grant Helm authority, change
+FSM topology, or synthesize readiness. Passive telemetry mode does not run it.
+
+Isolated policy/timer/ACK-lease regressions:
+`python3 ../../../../moos-ivp-uav-base/src/pArduBridge/tests/test_guided_ownership.py`
+(from the repository root, use the sibling path
+`../moos-ivp-uav-base/src/pArduBridge/tests/test_guided_ownership.py`).
+
 ## PEARL supervisory FSM source
 
 [`pearl_fsm.toml`](pearl_fsm.toml) is the source for the executable
@@ -191,20 +376,62 @@ render hierarchy, and generated node identity before writing any output.
 Generated files are deterministic, and `--check` fails when an output differs
 from its TOML source.
 
+## Recovery diagnostics and display
+
+- Every `uChecks` collection must declare both `result_var` and
+  `result_prefix`. Missing the prefix disables the collection; fresh airborne
+  telemetry alone then cannot advance the takeoff guard.
+- Point calculation accepts a current-session rendezvous phase of either
+  `RENDEZVOUS` or `COMPLETE`: a fast capture can finish between FSM ticks.
+- Fresh, disarmed ground contact before accepted coordinator `AUTOLAND`
+  aborts recovery with `landed_without_authorized_autoland`; it never reports
+  successful coordinated recovery. The existing secondary/off-nominal path
+  may finish on verified ground without inventing rally-point arrival.
+  `SECONDARY_LAND` is an FSM-owned entry/exit intent. Its conditional dispatcher
+  requires real `SECONDARY_ARRIVED` evidence and armed/in-air telemetry; an
+  already-grounded abort issues no additional flight command.
+- UAV stationkeeping rings, the bridge's `Loiter_point_uav` gateway marker,
+  control-vector arrows, and shoreside comms pulses are hidden. The bridge
+  marker is disabled with `show_loiter_visuals=false` in
+  `plug_uav_ardupilot.moos`; this also posts its inactive removal. Loiter/hold
+  guidance and communications remain enabled, and PEARL visuals are unchanged.
+  These settings apply on the next normal launch, not by restarting a live UAV.
+- The simulator marker retains last-known geometry when peer navigation is
+  stale; it is not proof of a fresh received target. The magenta received
+  footprint independently expires. Investigate sharing/heartbeat gaps before
+  blaming apparent target lag on vehicle estimation or widening freshness
+  limits. The 20:37:53 run had a 106–143-second UAV-side sharing-summary and
+  heartbeat gap, delayed recovery agreement, and a deadman RTL. An isolated
+  test reproduced a matching pShare starvation mechanism: comms-driven mail
+  continually reset the MOOS-core iteration deadline. The rebuilt pShare uses
+  fixed 40 Hz mail/iteration scheduling; no live mission was restarted and a
+  fresh full mission run still needs verification.
+
 ## UAV companion FSM and authority boundary
 
 [`uav_fsm.toml`](uav_fsm.toml) defines the sequential UAV lifecycle
 `IDLE → TAKEOFF_OPERATIONS → MISSION_EXECUTION → LANDING_OPERATIONS`. A nominal
 landing exits through the named `nominal` sink and returns to `IDLE`. The nominal
 landing detail proceeds through `ESTABLISHING_LANDING_READINESS →`
-`REQUESTING_RECOVERY → NEGOTIATING_RENDEZVOUS_POINT →`
+`REQUESTING_RECOVERY → CALCULATING_RENDEZVOUS_POINT →`
 `MOVING_TO_RENDEZVOUS_POINT → WAITING_FOR_LANDING_CLEARANCE → APPROACHING →`
 `LANDING`. Target loss during landing enters `RETRYING_LANDING_TARGET`; exhausted
-retries, request failure, negotiation failure, clearance failure, or approach
+retries, request failure, point-calculation failure, clearance failure, or approach
 failure divert through the rally point and `SECONDARY_LANDING` before exiting to
 `OFFNOMINAL`. Readiness failure instead transits to the secondary loiter
 location and exits through `LOITERING`. Neither root outcome has a takeoff exit,
-so both inhibit a new takeoff pending recovery intervention. It generates the
+so both inhibit a new takeoff pending recovery intervention.
+
+An external `MOOS_MANUAL_OVERRIDE=true` still parks Helm. The bridge skips its
+legacy automatic RTL side effect only when the FC is connected and native
+landed-state and armed samples, both at most 2 real seconds old, confirm
+`ON_GROUND` and disarmed. This prevents a nominal return to `IDLE` after
+touchdown from producing a spurious `RTL REJECTED: NOT_ARMED`. Unavailable,
+stale or indeterminate evidence retains the existing RTL behavior; explicit
+RTL/deadman requests and independently pending RTL are not cleared. Neither
+FSM state, low altitude nor simulator attachment is used as ground proof.
+
+The FSM generates the
 [`plug_uav_fsm_runtime.moos`](plug_uav_fsm_runtime.moos), pShare/scope fragments, JSON UI
 bindings, [`uav_fsm/overview.d2`](uav_fsm/overview.d2), and
 `uav_fsm/svg/index.svg`:
@@ -239,6 +466,11 @@ The cross-community contract has one writer per coordination fact:
   `UAV_SECONDARY_RECOVERY_STATE=ARRIVED|LANDING|LANDED|LOITERING`. The companion
   FSM observes these facts but never rewrites them. The landing-target retry
   contract still requires a production publisher.
+- PEARL's active recovery postchecks renew their evaluated result and
+  session diagnostics every 1 MOOS second (`result_interval=1`), within the
+  landing coordinator's 3-second permission lease. Unchanged success therefore
+  stays fresh while waiting for UAV rendezvous completion. Inactive or stale
+  checks cannot renew success; input-age limits and FSM topology are unchanged.
 - PEARL-only execution facts, including `RECOVERY_POSTCHECKS_STATE`, are never
   routed from or published by the UAV FSM. The UAV may report detailed landing
   progress and its authoritative root outcome, but only PEARL can report that
@@ -256,39 +488,212 @@ consumer of the JSON feed rather than individual MOOS scopes.
 
 ## Implemented rendezvous state machine
 
-PEARL is treated as having negligible turn radius. The coordinator therefore
-chooses a point on the straight line between the current vehicle positions.
-Its fractional distance from PEARL is:
+Both vehicles run the same role-free `RendezvousPlanner` implementation inside
+`pRendezvous`. Each starts with the geometric midpoint of its own fresh
+`NAV_X/Y` and the peer's fresh `NODE_REPORT`. Once both measured speeds are
+available, it recalculates once per simulated second:
 
 ```text
-pearl_speed / (pearl_speed + uav_speed)
+point = own_position + own_measured_speed /
+        (own_measured_speed + peer_measured_speed) * (peer_position - own_position)
 ```
 
-This equalizes nominal arrival times using the configured speeds. It is a
-demonstration policy, not a current-aware or obstacle-aware planner. Recovery
-routes use a 1.5 m/s speed with 0.5 m capture and slip radii: faster than the
-original 1 m/s stabilization setting, but with enough braking and settling margin to
-preserve the two-second landing-gate dwell. Both vehicles must remain within
-1.5 m of the rendezvous point, and within 3 m of each other. PEARL receives a
-fresh, session-named waypoint behavior for each recovery so a close-range
-request cannot be dropped as a non-spawning update. Operator mission routes
-remain independently configured.
+Each vehicle estimates its own speed from cumulative XY path length divided
+by elapsed time, starting at approach entry or the trailing 20-second boundary,
+whichever is newer. The window boundary is interpolated between observations;
+turns count as travelled distance, not net displacement. The session-tagged
+estimate is published locally and sent to the peer once per second.
+Missing/stale estimates or two stationary vehicles fall back to the geometric
+midpoint. There are no nominal vehicle speeds, turn-radius assumptions, proposed
+points, or point acceptance messages in this calculation.
+
+Each vehicle publishes its own `VIEW_POINT` with a unique
+`rendezvous_<ownship>` label and its own `<OWNSHIP>_RENDEZVOUS_POINT`.
+Its point freezes for the rest of that approach once it is within
+`point_freeze_radius` of the previously published point; moving away again
+does not unfreeze it. A new rendezvous resets the latch and speed history.
+
+### Startup history gate
+
+Both prep-mission planners now use `planning_history_window=3` seconds and
+`planning_max_positive_accel=0.5` m/s². Speed-based replanning, local freezing
+(including the capture shortcut), and local arrival require a usable recent
+window on **both** vehicles, entirely after this approach's initialization.
+Until it qualifies, the initial midpoint stays provisional; later loss of
+qualification retains the last candidate rather than moving it from bad data.
+
+Positive acceleration is the largest increase between consecutive one-second
+XY path-speed averages in that window; deceleration is allowed. Latest samples
+must be at most 1.5 MOOS seconds old, with no sample gaps above 1.5 seconds.
+Repeated timestamps, missing peer history, elapsed time alone, and stale
+previous success cannot qualify it. This gates decisions, not native telemetry
+values. The existing 20-second speed estimator and earliest canonical
+peer-freeze arbitration remain unchanged; a frozen canonical point never
+unfreezes, but local arrival still waits for qualified history.
+
+AppCast exposes usability, each side's blocking reason, and maximum positive
+acceleration. Local diagnostics: `RENDEZVOUS_OWN_HISTORY_USABLE`,
+`RENDEZVOUS_OWN/PEER_HISTORY_REASON`, and
+`RENDEZVOUS_OWN/PEER_MAX_POSITIVE_ACCEL`. Other missions retain legacy behavior
+unless they opt in (`planning_history_window=0` is the application default).
+A positive window must be a whole number of seconds from 3 through 20.
+
+Regression: `python3 src/pRendezvous/tests/test_history_gate.py` from the repo
+root uses owned MOOS processes and synthetic navigation only, never a flight
+controller or running mission. Apply the rebuilt app/templates through the next
+safe normal launch; no airborne bridge or community restarts.
+
+The three distances are independent:
+
+| Setting | UAV default | PEARL default | Meaning |
+| --- | --- | --- | --- |
+| `point_freeze_radius` in `meta_*.moos` | 4 m | 4 m | Stop recalculating this vehicle's point. |
+| `capture_radius` in the dedicated `meta_*.bhv` waypoint | 0.5 m | 1 m | Stop navigating to this vehicle's point. |
+| `rendezvous_distance` in `meta_*.moos` | 3 m | 3 m | Mark rendezvous reached from fresh vehicle-to-vehicle XY separation. |
+
+Both vehicles use dedicated, persistent `BHV_Waypoint` instances updated
+directly through `UAV_RENDEZVOUS_UPDATE` or `PEARL_RENDEZVOUS_UPDATE`;
+rendezvous never stages or waits for acceptance from `pRouteBuffer`.
+Capturing a waypoint does not publish rendezvous arrival. PEARL station-keeps
+after capture, while UAV control handoff is gated on actual waypoint readiness,
+airborne/armed telemetry, and the recovery phase. Operator routes and secondary
+recovery remain independent and continue using the route buffer.
+
+Platform permission is still required: the UAV requests recovery, PEARL runs
+its session-scoped checks and replies `ready` without specifying a point.
+This is clearance coordination, not rendezvous-point negotiation.
 
 | State | Action and transition |
 | --- | --- |
-| `IDLE` | Wait for an airborne operator request. |
-| `REQUESTING` | UAV sends position, speed, health, and available battery data. PEARL proposes one session-tagged point. UAV accepts only after its complete one-point route is staged locally. |
-| `RENDEZVOUS` | PEARL activates a fresh spawned rendezvous waypoint and the UAV follows its existing Helm route. Both must be inside the 5 m capture zone, no more than 3 m apart, and continuously satisfy the clearance gate for 2 s. If route capture leaves them on opposite sides of the nominal point, the UAV closes directly on PEARL until the separation gate is satisfied. |
-| `ACQUIRING_TARGET` | PEARL is in StationKeep. The UAV follows PEARL's fresh reported position horizontally at the existing mission altitude and waits for the landing-target gates below. It aborts after 30 s without a valid lock. |
-| `LANDING` | The target lock has remained valid for 2 s and the UAV has issued the internal precision-landing commit. ArduPilot now owns descent and target-loss handling. |
-| `COMPLETE` | UAV reports landed; both coordinators publish completion. PEARL restores the deploy, return, station-keep, and manual-override values saved before recovery, so the Helm behavior resumes consistently with FSM history. |
-| `ABORT` | Cancel the UAV route, put the UAV in its configured hold, and put PEARL in StationKeep. |
+| `IDLE` | Wait for an airborne recovery request. |
+| `REQUESTING` | Request recovery support and wait for PEARL's checks/permission. |
+| `RENDEZVOUS` | Independently update and follow local points. Arrival uses separation, not waypoint capture. PEARL also requires its fresh platform and separation gates continuously for 2 s before landing clearance. |
+| `ACQUIRING_TARGET` | PEARL station-keeps; the UAV's dedicated waypoint follows fresh platform reports at mission altitude while waiting for the visual-target gates. |
+| `LANDING` | The target lock has remained valid for 2 s; ArduPilot owns descent and target-loss handling. |
+| `COMPLETE` | Publish completion and restore PEARL's saved control state. |
+| `ABORT` | Disable dedicated guidance and use the existing secondary-recovery policy. |
 
-The UAV must have fresh navigation and must be armed, airborne, and healthy
-before it may start. PEARL rejects stale navigation,
-unhealthy requests, malformed proposals, invalid or stale battery data, and
-timeouts. A low valid UAV battery raises recovery priority rather than
-rejecting the aircraft; takeoff has the separate reserve gate described below.
+The UAV still requires fresh navigation and appropriate flight/health telemetry.
+Stale positions, invalid platform data, mismatched sessions and timeouts remain
+fail-closed. Low valid UAV battery raises recovery priority rather than rejecting
+the aircraft; takeoff has its separate reserve gate.
+
+## Explicit sharing behavior
+
+pShare output directives and uFldNodeBroker bridge directives can explicitly
+select a per-route behavior and rate. There is **no destination-wide 1 Hz
+policy** and no payload-specific interpretation of targets, graphics, clears,
+or AppCasts. The 21 `UAV_LANDING_TARGET_*` shore bridges explicitly use
+`frequency=2,behavior=latest` (up to 42 publications/sec across the fields).
+Additional approved shore policies are: altitude (`NAV_ALTITUDE` and
+`UAV_ALTITUDE_MSL`) latest at 5 Hz; all exported `VIEW_*` graphics coalesce at
+1 Hz; simulator/received-view flags, landing status, Helm state and check
+snapshots coalesce at 1 Hz; simulator distance latest at 2 Hz; UAV node reports
+latest at 4 Hz (matching the nominal unwarped producer rate); detailed ALFA
+signal/bitrate/retry counters latest at 1 Hz. ALFA
+link/validity/age fields remain unrestricted; hardware rates are unmeasured.
+See [telemetry_candidates.md](telemetry_candidates.md) for the exact groups.
+Unlisted exports retain their previous policy. Native local target
+telemetry, local landing checks/received-footprint reconstruction, peer traffic,
+and the target broadcaster's `publish_rate_hz = 10` are unchanged. Each field
+has its own rate clock; the shore exports are not an atomic target snapshot.
+
+```moos
+// pShare, static or PSHARE_CMD dynamic output:
+output = src_name=STATUS,route=localhost:9200,frequency=1,behavior=coalesce
+
+// uFldNodeBroker passes these options to pShare:
+bridge = src=STATUS,alias=STATUS,frequency=1,behavior=coalesce
+```
+
+- `forward` (default without a frequency): sends every message.
+- `drop`: deliberately ignores any message arriving inside the rate period.
+- `coalesce`: ignores only identical repeats inside the period. Every changed
+  payload passes immediately, including a one-shot clearing command after a
+  draw. Equality includes opaque data/type/source metadata, excluding only
+  transport timestamp and message ID. Thus fresh observations with unchanged
+  values can be suppressed **only when the owner opts in**.
+- `latest`: explicitly retains only the newest pending message inside the
+  period. It is sent at the previous-send deadline even if no more mail arrives.
+  Updating the pending value does not slide the deadline. **It can discard
+  intermediate changed values and visual clears**, so use only when the owner
+  declares those latest-state semantics safe; never apply it blindly to a
+  shared VIEW_* key containing multiple objects.
+
+Frequencies use MOOS time by default, including the configured time warp;
+`rate_clock=wall` selects monotonic real time for an individual route.
+Forwarding and pending sends preserve original source timestamps. `frequency`
+and shorthand `@Hz` keep their existing lossy/drop semantics when no behavior
+is specified. Defaults are not changed by the broker. Timing is enforced in
+pShare, not the broker or the target producer. Ordinary UDP delivery is still
+unacknowledged.
+
+The former implicit shore coalescer has been removed. The pre-change inventory
+and removal proposals remain in [telemetry_inventory.md](telemetry_inventory.md)
+and [telemetry_inventory.csv](telemetry_inventory.csv); no proposed topic
+removals were applied. Configuration/binary changes take effect at the next
+safe normal relaunch, not by restarting an airborne mission. Isolated
+regressions are in `moos-ivp/MOOS/MOOSEssentials/Essentials/pShare/tests`.
+
+## Normal UAV route guidance
+
+The `operator_route_` waypoint template uses `lead=5` metres and
+`lead_to_start=true` to follow a look-ahead point on the current leg, including
+the initial leg. `lead_damper` remains unset. Lead is capped at the current
+waypoint: it does not anticipate a turn onto the following leg or slow the UAV.
+
+`end_spd = slow_dist=8, stop_dist=0` linearly reduces desired speed over the
+final 8 metres of remaining route distance. At 3 m/s cruise, 6 m remaining
+requests 2.25 m/s. Capture/slip remain the current 4/5 m fly-by settings.
+
+Only the normal route's final capture posts `BRAKE_AND_HOLD`. Existing
+`pArduBridge` takes ownership from Helm and streams zero horizontal Guided
+velocity while preserving the native relative altitude at the request. It
+latches a native position hold only after three distinct post-request FC
+`GLOBAL_POSITION_INT` samples show horizontal NED speed <=0.15 m/s. Coherent
+position/velocity receipt age must be <=0.5 real seconds; connected, fresh
+armed/IN_AIR and existing Guided evidence are required. Duplicate FC timestamps
+never renew freshness or count as stopped evidence. No five-second sleep or
+new MOOS application is involved.
+
+`UAV_BRAKE_HOLD_PHASE`, `_REASON`, `_SPEED`, `_MOTION_AGE`, `_SAMPLES` and `_ID`
+(and the bridge AppCast) expose progress and blocking facts, on change with
+1 Hz diagnostic refresh. `HOLD_TARGET_SENT`
+means a position packet was queued after measured stopping, not a MAVLink ACK
+or proof of FC execution. A 10-real-second timeout, stale/invalid telemetry or
+send failure reports failure and suppresses old Helm replay; it never installs
+a stale hold. Explicit LAND/RTL/deadman/park and newer guidance cancel the old
+transaction. Some forward braking travel is expected: the captured hold is
+where the aircraft stopped, not where braking was requested. Precise endpoint
+arrival still depends on final-approach guidance.
+
+Rendezvous, secondary guidance, intermediate points and PEARL retain their
+existing behavior/`HOLD_POSITION` commands. Apply through a safe normal relaunch;
+do not restart an airborne bridge.
+
+Opt-in physical regression (fresh owned landing-mission copy, independent ports,
+no recovery request or pokes to running missions):
+
+```bash
+python3 tests/test_route_brake_sitl.py
+python3 tests/test_route_brake_sitl.py --legacy
+```
+
+At warp 1, the isolated 3 m/s / 4 m capture / 8 m slowdown baseline reversed
+2.155 m after entering hold at 2.68 m/s. Brake-then-hold entered at 2.72 m/s,
+queued its hold after native speed fell to 0.06 m/s, and reversed only 0.044 m.
+Relative-altitude deviation was 0.011 m and yaw deviation 0.102 degrees during
+that stop. Artifacts: `/tmp/route-brake-native-oxrxztve` and
+`/tmp/route-brake-legacy-l0vl4jpo`. A repeat with the final binary
+(`/tmp/route-brake-native-6g92ntj7`) also reversed 0.044 m, with native speed
+0.03 m/s when the hold was queued. This isolates stopping physics; it does not
+certify every full-FSM recovery/preemption combination or exact endpoint arrival.
+
+This uses the upstream post-24.8 `BHV_Waypoint` feature described in the
+[development notes](https://oceanai.mit.edu/moos-ivp/pmwiki/pmwiki.php?n=Memo.DevNotesByMod)
+under `250810 VERY-MENU`. These settings are an initial trial, not validated
+flight-performance guarantees. Apply through regenerated configs at the next
+safe normal launch; no live airborne guidance is changed.
 
 ## Reliable versus periodic transport
 
@@ -297,7 +702,7 @@ datagram:
 
 - UAV-directed operator ARM, DISARM, TAKEOFF, route DEPLOY, and route CLEAR;
 - UAV takeoff request, PEARL takeoff clearance, UAV rendezvous request, PEARL
-  proposal, UAV acceptance/completion, and PEARL landing clearance;
+  recovery-ready response, measured motion estimates, UAV completion, and PEARL landing clearance;
 - acknowledgements and retries at one-second mission-time intervals, up to ten
   retries.
 
@@ -319,10 +724,38 @@ broker rather than `pMediator`. Periodic state such
 as node reports, health, rendezvous status, and navigation uses ordinary
 broker/pShare routing. RealmCast bridging is disabled.
 
-UAV and PEARL pMediator envelopes and node reports also use direct unicast
-pShare routes on their shared vehicle network. Shoreside uses the UAV's
-Tailnet address directly. There is no PEARL UDP relay or automatic alternate
-runtime path.
+Mediated messages and ACKs are dispatched **only on the sending side** by
+`pMediatorRouter` onto `MEDIATED_TX_<DEST>` and `ACK_TX_<DEST>`. pShare sends
+each channel directly to its named recipient's native `MEDIATED_MESSAGE` or
+`ACK_MESSAGE` inbox. The receiving pMediator consumes it directly; no incoming
+dispatcher pass, `*_IN` transport channels, or transit forwarding is used.
+Relay is disabled on UAV, PEARL and shoreside. Source-wide protocol bridges,
+mediated/ACK qbridges, brokered protocol bridges and ACK-name echoes are absent;
+pShare never parses payloads.
+
+All six directed message/ACK paths are static and direct, including
+shoreside-to-PEARL. They do not wait for broker enrollment. The vehicle launcher
+`DIRECT_PEER` flag now controls only the existing optional peer telemetry and
+authority facts; it never switches mediated traffic through shore. Peer hosts
+default to localhost for local simulation. Distributed deployments must set
+`--pearl_ip` on UAV, `--uav_ip` on PEARL, and both `--uav_ip`/`--pearl_ip`
+on shoreside, with their matching `--*_pshare` ports. The whole-mission launcher
+passes both vehicle ports to shoreside. There is no central protocol relay,
+route discovery, or automatic alternate-path selection.
+
+Static paths are not remote-readiness evidence. A peer may still be starting
+or disconnected when a request consumes pMediator's retry budget. Producer-side
+startup readiness gating remains separate work; no arbitrary startup sleep or
+retry-budget increase was added.
+
+The dispatcher preserves raw payloads, IDs, ACK policy and timestamps. Retries,
+duplicate suppression and receipt tracking remain in pMediator. Unknown or
+ambiguous destinations fail closed; protocol channels have no rate policy.
+Node-report and other telemetry routing, safety/FSM topology and approved
+sharing rates are unchanged. See
+[`pMediatorRouter`](../../../src/pMediatorRouter/README.md) for interfaces,
+limitations and isolated all-direction/lost-ACK/cancellation regressions.
+Changes apply on the next safe normal launch, never a live airborne restart.
 
 PEARL and the UAV intentionally use different platform groups, so
 `uFldNodeComms` group filtering is disabled for this mission; otherwise PEARL
@@ -426,7 +859,7 @@ not alternate authorization facts.
 PEARL also runs session-scoped `uChecksRecovery` while its support FSM is in
 `RECOVERY_PRE_INTERRUPTION_CHECKS`. It requires valid GPS, battery, and wind
 inputs plus `PEARL_DRONEPORT_BAY_COVER_STATE=open`; the recovery FSM cannot
-advance to `AGREEING_RENDEZVOUS` until the aggregate succeeds for the current
+advance to `CALCULATING_RENDEZVOUS` until the aggregate succeeds for the current
 `PEARL_RENDEZVOUS_SESSION`. This is a passive telemetry check: entering recovery
 never posts an opening command and does not activate the takeoff cover mock.
 Takeoff-support Helm controls are not
@@ -514,11 +947,12 @@ and their current horizontal separation is no more than 3 m for 2 continuous
 seconds. Arrival is recomputed on every iteration; moving apart resets the
 dwell instead of leaving an old decision latched.
 
-In SITL and REAL modes the same pre-commit gate also requires PEARL process
-health, fresh valid PEARL battery and wind telemetry, at least 15% PEARL
-battery, and wind no greater than 4 m/s. SITL supplies those inputs from the
-PEARL simulator; REAL uses live PEARL telemetry. These conditions are evaluated
-again during target acquisition; passing the takeoff gate is not treated as
+In SITL, REAL, and GRASS modes the same pre-commit gate also requires PEARL
+process health, fresh valid PEARL battery and wind telemetry, at least 15%
+PEARL battery, and wind no greater than 4 m/s. SITL and GRASS use the shared
+synthetic platform-input script for battery and wind; REAL uses live PEARL
+telemetry. GRASS still obtains GPS and UAV-relative facts from physical inputs.
+These conditions are evaluated again during target acquisition; passing the takeoff gate is not treated as
 proof that the conditions are still safe at landing time. Deck motion and
 automatic landing-area clearance are not currently measured and are therefore
 not claimed as software predicates.
@@ -585,10 +1019,14 @@ and [MAVLink `LANDING_TARGET`](https://mavlink.io/en/messages/common.html#LANDIN
 
 SITL and REAL keep ArduPilot authoritative for UAV navigation. In SITL,
 PEARL's `uSimMarineV22` remains authoritative for PEARL's Helm-driven trajectory.
-The UAV community runs `pMavlinkShipBridge`, taking `PEARL_NAV_*` from
-PEARL's navigation-only pShare routes and native UAV telemetry via `pEchoVar`.
-The C++ MOOS app sends that trajectory as MAVLink 2
-`GLOBAL_POSITION_INT` (system 17) to TCP `127.0.0.1:5763`.
+The UAV community runs two independent C++ MOOS apps. `pMavlinkShipBridge`
+takes `PEARL_NAV_*` from PEARL's navigation-only pShare routes and sends that
+trajectory as MAVLink 2 `GLOBAL_POSITION_INT` (system 17) to TCP
+`127.0.0.1:5763`. `pMavlinkLandingTarget` independently connects to that same
+multi-client simulation port, using PEARL position and native UAV telemetry via
+`pEchoVar`. The SITL Compose stack routes both clients through **mavp2p v1.3.3**,
+the version observed on landmark-1.
+Neither app sends flight-control commands or overwrites UAV navigation.
 
 The ArduPilot Docker build applies `patches/external-ship.patch` to its pinned,
 clean upstream submodule. With `SIM_SHIP_ENABLE=1` and `SIM_SHIP_EXT=1`,
@@ -613,13 +1051,16 @@ off-deck start. Between state entries, an operator can also set the fact with
 landing, allowing the one-second SITL expiry window. If the fact is incorrectly
 left true, **any** grounded UAV will intentionally be moved to the ship.
 
-PEARL defaults to its original `-4,-22,0` start. Override it with
+PEARL defaults to **42.356424, -71.098393**, corresponding to local UTM
+`51.033305,-56.215822,0` (heading unchanged at 0°). The map datum and
+loiter center remain unchanged. Override the start with
 `./launch.sh --pearl_start=X,Y,H` or `./launch_pearl.sh --start_pos=X,Y,H`. The grounded UAV is attached to
 that ship position; PEARL is not relocated. Configure the deck's absolute MSL
 altitude with `ship_altitude_msl` in `meta_uav.moos` (default 0 m MSL, not height
 above SITL home). For live height/heave input, set `ship_altitude_var` in that
-block and refresh it within `input_timeout`. Landmark geometry uses the same
-deck height. Deck roll/pitch are not modeled.
+block and refresh it within `input_timeout`. Match the independent landmark
+app's `target_altitude_msl` to that deck height, or configure the same live
+variable as `target_altitude_var`. Deck roll/pitch are not modeled.
 
 Time warp above 1 is supported. In SITL mode, `launch_uav.sh`
 automatically passes the mission warp to the simulator as **SITL speedup**:
@@ -632,7 +1073,7 @@ Use the same factor for split community launches, for example
 `./launch_uav.sh --mode=SITL 5`. Freshness and publish periods are in simulated
 seconds; CPU/network capacity must sustain the accelerated update rates.
 
-`pMavlinkShipBridge` also emulates the landmark camera: it sends
+`pMavlinkLandingTarget` independently emulates the landmark camera: it sends
 `LANDING_TARGET` at 10 Hz only while fresh UAV/PEARL navigation is within the
 configured **3-D** detection range (12 m default). It uses the UAV's attitude
 yaw—not ground course—and MSL altitude to encode body-forward/right/down
@@ -641,20 +1082,26 @@ second or separation beyond the range stop target transmission. ArduPilot's
 precision-landing target-loss policy then owns recovery.
 
 Landmark range (`detection_range=12`), deck height, and takeoff altitude (8 m)
-remain in their respective MOOS/BHV app configs, not launcher arguments. Edit the `pMavlinkShipBridge` block in
-`meta_uav.moos` for range, height, connection, rate, IDs, and freshness settings.
+remain in their respective MOOS/BHV app configs, not launcher arguments. Edit
+`pMavlinkShipBridge` in `meta_uav.moos` for attachment, and
+`pMavlinkLandingTarget` for visual range/geometry. Each has independent
+connection, rate, source IDs, and freshness settings. Three host TCP ports are
+exposed: **5760** directly for pArduBridge, **5762** directly for ground control,
+and **5763** through the multi-client simulation router. The router uses the
+existing private SERIAL2 link; GPS SERIAL3/4 are unchanged. `SITL_TARGET_PORT`
+overrides the shared simulation port and is propagated into both producer
+configs. The launcher waits for its owned simulator and router before ANTLER;
+cleanup removes both. REAL launch does not start either simulation component.
 The native takeoff altitude is in `plug_uav_ardupilot.moos`; route altitude is
 in `meta_uav.bhv`. Secondary recovery coordinates are supplied to
 `meta_uav.moos` with `--secondary_landing=X,Y` (default `10,15`). Bridge state is posted
 as `MAVLINK_SHIP_BRIDGE_CONNECTED`, `MAVLINK_SHIP_POSE_ACTIVE`,
-`LANDMARK_EMULATOR_ACTIVE`, and
+`MAVLINK_LANDING_TARGET_CONNECTED`, `LANDMARK_EMULATOR_ACTIVE`, and
 `LANDMARK_EMULATOR_DISTANCE`. REAL mode does not run this emulator.
 
 Regression checks: `python3 tests/test_ship_coupling.py` verifies the actual
 mission-owned coupling policy across primary/secondary recovery cycles;
-`python3 ../../../src/pMavlinkShipBridge/tests/test_bridge.py` verifies wire
-format, range/condition independence, and constant/live deck height. The SITL
-repository's `make test-deck` validates physical deck following, stale release,
+the SITL repository's `make test-deck` validates physical deck following, stale release,
 and two isolated takeoff/landing cycles (not precision-landing guidance).
 
 ## Layout and launch modes
@@ -710,19 +1157,121 @@ its own isolated Compose project, and port conflicts fail rather than adopting
 or stopping another simulator. `launch_sitl.sh` remains available for standalone
 simulator diagnostics, but is no longer a prerequisite for mission launch.
 
-`launch_sitl.sh` delegates to
-`~/workspace/mit/pearl/ardupilot-sitl/bin/ardupilot-sitl`, passing `sitl.parm`
-as an additional startup defaults file through `SITL_PARAM_FILE`. No Python
-helper or host-side MAVLink package is required. Rebuild the Docker image after
-installing the external-ship patch, and build `pMavlinkShipBridge` and
-`pArduBridge` before launching. Use fresh SITL state: persisted parameter values
+`launch_sitl.sh` delegates to the shared `moos-ivp-pearl/scripts/launch_ardupilot_sitl.sh`
+helper, which passes optional ordered drone → mode → mission files to
+`ardupilot-sitl` via repeated `--param-file`. Defaults are:
+
+| Layer | File | Purpose |
+|---|---|---|
+| Drone | `../../../config/ardupilot/drones/x500.parm` (default model `x500`) | Physical downward sensor: minimum 0.15 m, maximum 12 m, clearance 0.17 m; installed hardware driver preserved |
+| Mode | `sitl.parm` or `real.parm` | SITL backend 100 overrides minimum/clearance to **0/0**; REAL inherits physical values |
+| Mission | `mission.parm` | Shared precision policy, including `PLND_ALT_MIN=0`, `PLND_ALT_MAX=4`, `PLND_STRICT=2` |
+
+Mode files are mission-local/selectable so water-operations ship simulation
+settings do not silently become universal settings for unrelated missions.
+Drone profiles are reusable and selectable; no host-side MAVLink package is
+required (the uploader uses Python's standard library). Missing default role
+files are omitted. Explicit paths must exist; use `none` to omit a role:
+
+```bash
+./launch.sh --mode=SITL --model=x500
+./launch_uav.sh --mode=REAL --model=x500 --just_make
+./launch.sh --mode=SITL --model=x500 --drone-params=/path/to/drone.parm
+./launch_uav.sh --mode=SITL --mode-params=none --mission-params=/path/to/mission.parm
+```
+
+`--model=NAME` on both `launch.sh` and `launch_uav.sh` selects
+`config/ardupilot/drones/NAME.parm`; default **x500**. Names are case-sensitive,
+start with a letter/digit and otherwise contain only letters, digits, `_`, or
+`-` (no path or `.parm` extension). An explicitly selected missing model is an
+error before simulator/MOOS startup, unless an explicit `--drone-params` or
+`DRONE_PARAM_FILE` override supplies/omits that layer. Such overrides take
+precedence regardless of CLI argument order. Model selection chooses **only
+the parameter profile**, not SITL airframe physics, vehicle name, FC identity,
+readiness or permission to upload. Layer order remains drone → mode → mission.
+
+These three profile options also work on `launch_uav.sh`. For standalone
+`launch_sitl.sh`, use `DRONE_MODEL=x500` to select a model, or `DRONE_PARAM_FILE`,
+`MODE_PARAM_FILE`, and `MISSION_PARAM_FILE` for explicit role files; empty/`none`
+file values omit a role. `DRONE_MODEL` also supplies the mission-launcher default;
+`--model` overrides it, but explicit drone-file overrides still win.
+Shared helpers accept arbitrary repeated `--param-file` options in caller order;
+extra standalone SITL files follow the default three layers. Preview effective
+values and winning file/line provenance without opening an FC connection:
+
+```bash
+python3 ../../../scripts/ardupilot_params.py \
+  --param-file ../../../config/ardupilot/drones/x500.parm \
+  --param-file real.parm --param-file mission.parm
+```
+
+#### Explicit REAL upload
+
+Ordinary launch and `--just_make` do not write live parameters. Explicitly
+request automatic verified upload **before MOOS/bridge startup**:
+
+```bash
+./launch_uav.sh --mode=REAL --upload-params \
+  --ap_protocol=serial --ap_url=/dev/ttyACM0:115200
+# Or select an existing trusted TCP MAVLink endpoint:
+./launch_uav.sh --mode=REAL --upload-params \
+  --ap_protocol=tcp --ap_url=127.0.0.1:5760
+```
+
+Select native FC IDs with `--param-system-id` and `--param-component-id` (both
+default 1). An endpoint/profile name is not authenticated aircraft identity.
+Close other serial readers first: exclusive open does not evict a process that
+already held the device. UDP endpoints are **local bind** host:port, like the
+bridge, not remote destinations; a native FC heartbeat selects the peer. Do
+not share an active bridge UDP listener. CRC is checked; signatures are not
+authenticated, so use trusted links.
+
+The uploader requires fresh native ArduPilot heartbeat (disarmed) and native
+`EXTENDED_SYS_STATE=ON_GROUND` throughout. It requests that message with command
+512, reads/types/checks the entire effective stack before mutation, then uses
+ArduPilot C-cast PARAM_SET, consumes its echo, issues separate readback requests,
+and checks the whole stack again. No ARM, flight-mode, mission, reboot or
+estimator-reset commands are sent. Unknown parameters, wrong source, invalid
+native type, missing/stale ground/disarm, mismatched readback or an observed
+arming/airborne transition stop launch. REAL rejects SIM_* entries, rangefinder
+backend 100 and zero sensor minimum/clearance. A selected rangefinder profile
+requires an already installed nonzero, non-SITL hardware backend.
+
+Known boot-instantiated differences (`PLND_ENABLED/TYPE/ORIENT`, rangefinder
+TYPE/ORIENT and SERIALn_PROTOCOL) are **refused before any writes**. Provision
+those manually, perform any required reboot, then rerun. This avoids mistaking
+stored-but-not-active driver settings for success on a second invocation. New
+parameters still require review of their own reboot semantics. Readback proves
+configuration only—not active sensor health, precision acquisition, GPS
+readiness, landing clearance or arming permission. Existing native/FSM checks
+remain authoritative.
+
+Audit files in `LOG_params/` preserve effective values/provenance, initial values,
+attempted and verified writes, final readback, and errors. Upload is not atomic:
+failure can leave earlier values applied. There is **no automatic rollback**;
+review the snapshot and restore deliberately while grounded/disarmed. Without
+`--upload-params`, REAL warns that this launch did not verify configuration.
+Retry-exhaustion → RTL remains a separate pending policy; these files do not
+implement it.
+
+Ground-only validation covered native ordered startup and the uploader with an
+isolated analog-backend SITL fixture. It did **not** contact hardware or validate
+flight/target loss. Reproduce explicitly:
+
+```bash
+RUN_PARAM_STACK_SITL=1 python3 ../../../scripts/tests/test_param_stack_sitl.py
+```
+ Rebuild the Docker image after
+installing the external-ship patch, and build
+`pMavlinkShipBridge`, `pMavlinkLandingTarget`, and `pArduBridge` before launching. Use fresh SITL state: persisted parameter values
 can override defaults. `PLND_TYPE=1` selects the MAVLink target backend and
 `SIM_PLD_ENABLE=0` disables the competing stationary target simulator.
 
 SITL uses PEARL's simulated battery, wind, and process-health telemetry to
 exercise the same pre-commit platform gate enabled in REAL.
 
-Field operation uses the sublaunchers independently:
+`launch.sh` is the local SITL-only orchestrator. Physical REAL and GRASS
+operation uses the sublaunchers independently:
 
 The deployed Alfa topology is routed through Sherlock rather than attaching
 both radios directly to the two mission computers. See
@@ -734,7 +1283,8 @@ Tailnet camera path.
 # Shoreside
 ./launch_shoreside.sh --auto --mode=REAL \
   --ip=100.127.231.65 \
-  --uav_ip=100.70.189.91 --uav_pshare=9201
+  --uav_ip=100.70.189.91 --uav_pshare=9201 \
+  --pearl_ip=100.69.111.61 --pearl_pshare=9202
 
 # UAV vehicle computer
 ./launch_uav.sh --auto --mode=REAL \
@@ -748,6 +1298,26 @@ Tailnet camera path.
   --shore=100.127.231.65 --shore_pshare=9200 \
   --uav_ip=172.22.90.2 --uav_pshare=9201
 ```
+
+For the manually moved grass test, keep the UAV and shoreside in REAL and start
+only PEARL in GRASS:
+
+```bash
+./launch_pearl.sh --auto --mode=GRASS \
+  --ip=100.69.111.61 \
+  --shore=100.127.231.65 --shore_pshare=9200 \
+  --uav_ip=172.22.90.2 --uav_pshare=9201
+```
+
+GRASS runs the unchanged FSM, takeoff/recovery checks, rendezvous planner, and
+landing coordinator. It uses one physical receiver through `iDualGPS` with
+`DUAL_GPS=false` (process alias `iSingleGPS`). It does not run `pHelmIvP`,
+`pRouteBuffer`, `uSimMarineV22`, PID, or thrust mixing. The missing route buffer
+means the main-activity transition cannot receive a legitimate `ROUTE_READY`,
+while support-state coordination remains available. PEARL's `NODE_REPORT` is
+sent directly to the UAV so both rendezvous planners continue to converge near
+the stationary platform. The SITL-only `PEARL_NAV_*` target-emulation feed is
+not sent.
 
 PEARL REAL mode also runs `iSherlockTelemetry`. By default it reads Sherlock's
 Telegraf endpoint over the direct PEARL Ethernet network at
@@ -805,11 +1375,13 @@ All applications connect to their same-host MOOSDB through
 `ServerHost=localhost`. Each sublauncher's `--ip` is its advertised pShare
 address; `--shore` is independently the shoreside address reachable from that
 vehicle. `--pearl_ip` and `--uav_ip` are the other vehicle's directly reachable
-addresses through the routed backhaul. Supplying them enables the direct
-pShare outputs;
-omitting them leaves mediated traffic on the ordinary vehicle-to-shoreside
-broker path. The direct addresses and ports are launch-time inputs, not
-hardcoded Wi-Fi configuration.
+addresses through the routed backhaul. Mediated message and ACK outputs are
+always direct; omitting peer hosts defaults to localhost for local simulation,
+not a shore relay. Set the peer hosts explicitly for distributed REAL operation.
+Supplying vehicle peer hosts also enables the existing optional direct peer
+telemetry outputs. Shoreside needs both vehicle hosts and ports for its static
+protocol paths. These addresses and ports are launch-time inputs, not hardcoded
+Wi-Fi configuration.
 
 The preferred traffic paths are:
 

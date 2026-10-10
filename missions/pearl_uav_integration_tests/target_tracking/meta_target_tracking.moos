@@ -1,0 +1,142 @@
+// Passive, single-community bench mission for a real UAV landing-target stream.
+ServerHost = localhost
+ServerPort = $(MOOS_PORT)
+Community  = target_tracking
+
+MOOSTimeWarp = 1
+LatOrigin    = $(LAT_ORIGIN)
+LongOrigin   = $(LON_ORIGIN)
+
+ProcessConfig = ANTLER
+{
+  MSBetweenLaunches = 100
+  // MOOS treats // as an inline comment; the wrapper expands udp: to udp://.
+  QGCParams = --endpoint=udp:$(UDP_BIND):$(UDP_PORT)
+
+  Run = MOOSDB @ NewConsole = false
+  Run = pLogger @ NewConsole = false
+  Run = pArduBridge @ NewConsole = false
+  Run = pLandingTargetViewer @ NewConsole = false
+  Run = pWebSocketServer @ NewConsole = false
+#ifdef LAUNCH_GUI yes
+  Run = moos-vnc-session @ NewConsole = false ~ pMarineViewer
+  Run = qgc-vnc-session @ NewConsole = false,ExtraProcessParams=QGCParams ~ qGroundControl
+#endif
+}
+
+ProcessConfig = pLogger
+{
+  AppTick = 5
+  CommsTick = 5
+  File = LOG_TARGET_TRACKING
+  PATH = ./
+  AsyncLog = true
+  FileTimeStamp = true
+  WildCardLogging = true
+  WildCardOmitPattern = *_STATUS
+  WildCardOmitPattern = DB_VARSUMMARY
+  WildCardOmitPattern = DB_RWSUMMARY
+}
+
+// Receive-only MAVLink observer. In passive mode pArduBridge does not register
+// flight-command inputs, perform mission setup, arm, or send setpoints.
+ProcessConfig = pArduBridge
+{
+  AppTick = 20
+  CommsTick = 20
+  term_report_interval = 1
+
+  url          = $(UDP_BIND):$(UDP_PORT)
+  url_protocol = udp
+  vehicle_type = copter
+
+  vname   = uav
+  prefix  = UAV
+  passive = true
+  is_sim  = false
+  geodesy = utm
+  logger  = false
+}
+
+// Display only LANDING_TARGET packets received and relayed by pArduBridge.
+// No synthetic target source is present in this mission.
+ProcessConfig = pWebSocketServer
+{
+  AppTick = 4
+  CommsTick = 4
+  WSPort = 9090
+  AllowSubmissions = false
+}
+
+ProcessConfig = pLandingTargetViewer
+{
+  AppTick = 20
+  CommsTick = 20
+  term_report_interval = 1
+
+  target_prefix = UAV_LANDING_TARGET
+  vehicle_prefix = UAV
+  // GPS-free bench view: the vehicle is fixed at the map origin and received
+  // BODY_FRD vectors are rotated into north/east offsets around that anchor.
+  projection_mode = relative
+  relative_anchor_x = 0
+  relative_anchor_y = 0
+  observation_timeout = $(OBSERVATION_TIMEOUT)
+  input_timeout = 2
+  target_size = $(TARGET_SIZE)
+  use_received_size = true
+  fallback_heading = 0
+  label = received_landing_target
+  color = magenta
+}
+
+ProcessConfig = pMarineViewer
+{
+  AppTick = 10
+  CommsTick = 10
+
+  // Blank local frame centered on the fixed relative-mode UAV at (0,0).
+  null_tiff = true
+  tiff_viewable = false
+  hash_viewable = true
+  hash_delta = 10
+  hash_shade = 0.30
+  center_view = average
+  zoom = 32
+  vehicles_name_mode = names
+  appcast_viewable = true
+  appcast_height = 70
+  appcast_width = 38
+  appcast_color_scheme = indigo
+  appcast_font_size = large
+  procs_font_size = large
+  nodes_font_size = large
+
+  scope = PARDUBRIDGE_PASSIVE_STATE
+  scope = PARDUBRIDGE_PASSIVE_CONNECTED
+  scope = UAV_IS_ARMED
+  scope = UAV_ROLL
+  scope = UAV_PITCH
+  scope = UAV_YAW
+  scope = UAV_ATTITUDE_AVAILABLE
+  scope = UAV_ATTITUDE_AGE
+  scope = UAV_RANGEFINDER_AVAILABLE
+  scope = UAV_RANGEFINDER_AGE
+  scope = UAV_RANGEFINDER_DISTANCE
+  scope = UAV_RANGEFINDER_MIN_DISTANCE
+  scope = UAV_RANGEFINDER_MAX_DISTANCE
+  scope = UAV_RANGEFINDER_ORIENTATION_ROLL
+  scope = UAV_RANGEFINDER_ORIENTATION_PITCH
+  scope = UAV_RANGEFINDER_ORIENTATION_YAW
+  scope = UAV_LANDING_TARGET_AVAILABLE
+  scope = UAV_LANDING_TARGET_AGE
+  scope = UAV_LANDING_TARGET_FRAME
+  scope = UAV_LANDING_TARGET_POSITION_VALID
+  scope = UAV_LANDING_TARGET_X
+  scope = UAV_LANDING_TARGET_Y
+  scope = UAV_LANDING_TARGET_Z
+  scope = UAV_LANDING_TARGET_DISTANCE
+  scope = UAV_LANDING_TARGET_SIZE_X
+  scope = UAV_LANDING_TARGET_SIZE_Y
+  scope = LANDING_TARGET_VIEW_ACTIVE
+}

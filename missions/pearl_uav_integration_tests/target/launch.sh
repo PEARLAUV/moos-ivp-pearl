@@ -15,6 +15,7 @@ TARGET_Y=-115
 TARGET_YAW=30
 HALF_LENGTH=25
 UAV_SPEED=1.5
+ALTITUDE=8
 TARGET_RANGE=12
 SHORE_MPORT=9000
 UAV_MPORT=9001
@@ -138,22 +139,21 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# No mission parameter overlay: just the shared no-RC profile and CLI runtime settings.
-SITL_HOME="$HOME_LAT,$HOME_LON,0,180"
-SITL_WRAPPER_ARGS=(--no-rc --home "$SITL_HOME" --speedup "$TIME_WARP" \
+# Start with the UAV already airborne at the first-pass altitude.
+SITL_HOME="$HOME_LAT,$HOME_LON,$ALTITUDE,180"
+SITL_WRAPPER_ARGS=(--airborne --home "$SITL_HOME" --speedup "$TIME_WARP" \
   --port "$SITL_PORT" --sim-port "$SITL_TARGET_PORT" --diagnostic-port "$SITL_DIAGNOSTIC_PORT")
 COMPOSE_PROJECT_NAME="moos-sitl-target-$(id -u)-$$"
 export COMPOSE_PROJECT_NAME
 mkdir -p LOG_sitl LOG_antler
 SITL_LOG_FILE="$MISSION_DIR/LOG_sitl/$COMPOSE_PROJECT_NAME.log"
 STARTUP_TIMEOUT=${SITL_STARTUP_TIMEOUT:-60}
-DEADLINE=$((SECONDS + STARTUP_TIMEOUT))
-echo "$ME: Starting SITL at $SITL_HOME; log: $SITL_LOG_FILE"
-timeout "$STARTUP_TIMEOUT" launch_ardupilot_sitl.sh "${SITL_WRAPPER_ARGS[@]}" up -d --no-build > "$SITL_LOG_FILE" 2>&1
-until timeout 1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/"$1"' _ "$SITL_PORT" 2>/dev/null; do
-  (( SECONDS < DEADLINE )) || { echo "$ME: SITL controller startup timed out." >&2; exit 1; }
-  sleep 0.2
-done
+echo "$ME: Starting SITL airborne at $SITL_HOME; log: $SITL_LOG_FILE"
+if ! timeout "$STARTUP_TIMEOUT" launch_ardupilot_sitl.sh \
+    "${SITL_WRAPPER_ARGS[@]}" up -d --no-build > "$SITL_LOG_FILE" 2>&1; then
+  echo "$ME: SITL airborne startup failed; see $SITL_LOG_FILE" >&2
+  exit 1
+fi
 for COMMUNITY in uav shoreside; do
   pAntler "targ_$COMMUNITY.moos" > "LOG_antler/$COMMUNITY.log" 2>&1 &
   ANTLER_PIDS+=("$!")

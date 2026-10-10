@@ -25,10 +25,11 @@ ProcessConfig = ANTLER
   Run = pLogger         @ NewConsole = false
   Run = uFldShoreBroker @ NewConsole = false
   Run = uFldNodeComms   @ NewConsole = false
+  Run = pMediatorRouter @ NewConsole = false
   Run = pMediator       @ NewConsole = false
   Run = uTimerScript    @ NewConsole = false ~ uMediatorPrime
   Run = pRouteBuffer    @ NewConsole = false
-  Run = pEchoVar        @ NewConsole = false ~ uFieldRelay
+  Run = pRallyPoint     @ NewConsole = false
 #ifdef LAUNCH_GUI yes
   Run = moos-vnc-session  @ NewConsole=false ~ pMarineViewer
   Run = qgc-vnc-session   @ NewConsole=false,ExtraProcessParams=QGCParams ~ qGroundControl
@@ -52,12 +53,12 @@ ProcessConfig = pShare
   CommsTick = 4
 
   input = route = localhost:$(PSHARE_PORT)
-#ifdef UAV_DIRECT_ENABLE yes
-  // Keep a deterministic shoreside-to-UAV path on the UAV's Tailnet address.
-  // This is ordinary pShare unicast, not a PEARL relay.
-  output = src_name=MEDIATED_MESSAGE_LOCAL, dest_name=MEDIATED_MESSAGE, route=$(UAV_IP):$(UAV_PSHARE)
-  output = src_name=ACK_MESSAGE_LOCAL, dest_name=ACK_MESSAGE, route=$(UAV_IP):$(UAV_PSHARE)
-#endif
+  // Static, direct message/ACK paths to both native mediator inboxes.
+  // Return paths do not depend on broker enrollment; there is no peer transit.
+  output = src_name=MEDIATED_TX_UAV, dest_name=MEDIATED_MESSAGE, route=$(UAV_IP):$(UAV_PSHARE)
+  output = src_name=ACK_TX_UAV, dest_name=ACK_MESSAGE, route=$(UAV_IP):$(UAV_PSHARE)
+  output = src_name=MEDIATED_TX_PEARL, dest_name=MEDIATED_MESSAGE, route=$(PEARL_IP):$(PEARL_PSHARE)
+  output = src_name=ACK_TX_PEARL, dest_name=ACK_MESSAGE, route=$(PEARL_IP):$(PEARL_PSHARE)
 }
 
 //----------------------------------------------------
@@ -133,6 +134,19 @@ ProcessConfig = pLogger
 //----------------------------------------------------
 // pMediator carries both the existing UAV operator commands and the new
 // vehicle-to-vehicle rendezvous protocol.
+// Outgoing-only mediated dispatch; transport delivers directly to peer pMediator.
+// No routes deliver to *_IN and relay is disabled; pShare stays payload-opaque.
+ProcessConfig = pMediatorRouter
+{
+  AppTick = 40
+  CommsTick = 40
+  vname = shoreside
+  peer = uav
+  peer = pearl
+  allow_relay = false
+}
+
+//----------------------------------------------------
 ProcessConfig = pMediator
 {
   AppTick   = 4
@@ -167,20 +181,14 @@ ProcessConfig = pRouteBuffer
 
   role             = shoreside
   source_node      = shoreside
-  destination_node = uav
+  destination_node = uav // Legacy DEPLOY/CLEAR only; task requests carry their target.
+  task_destination = uav
+  task_destination = pearl
+  task_submit_flag = uav:RALLY_TASK_COMMIT=true
+  task_submit_flag = pearl:PEARL_ALLSTOP_PEARL=false
+  stage_clear_request_var = ROUTE_BUFFER_CLEAR_STAGED
   max_points       = 50
   contact_max_age  = 3
-}
-
-//----------------------------------------------------
-// Normalize ACK destination names for addressed qbridge routing.
-ProcessConfig = uFieldRelay
-{
-  AppTick   = 4
-  CommsTick = 4
-
-  Echo = ACK_MESSAGE_uav   -> ACK_MESSAGE_UAV
-  Echo = ACK_MESSAGE_pearl -> ACK_MESSAGE_PEARL
 }
 
 //----------------------------------------------------
@@ -192,13 +200,8 @@ ProcessConfig = uFldShoreBroker
   auto_bridge_appcast  = true
   auto_bridge_realmcast = false
 
-  bridge = src=MEDIATED_MESSAGE_LOCAL, alias=MEDIATED_MESSAGE
-  bridge = src=ACK_MESSAGE_LOCAL, alias=ACK_MESSAGE
-
-  // uFldNodeComms produces addressed *_UAV and *_PEARL variables for
-  // vehicle-to-vehicle mediated traffic and acknowledgements.
-  qbridge = MEDIATED_MESSAGE
-  qbridge = ACK_MESSAGE
+  // Mediated protocol/ACK routes are static in pShare above, not brokered.
+  // No *_ALL protocol fan-out, canonical inbox exports, or peer transit.
 
   qbridge = HEARTBEAT
   qbridge = NODE_REPORT
@@ -206,7 +209,7 @@ ProcessConfig = uFldShoreBroker
   // Destination suffixes address canonical task triggers to either vehicle;
   // the remaining Helm controls are addressed to PEARL.
   qbridge = TASK_EXECUTE
-  qbridge = RENDEZVOUS_ABORT
+  qbridge = LANDING_CANCEL
   qbridge = DEPLOY
   qbridge = RETURN
   qbridge = STATION_KEEP
@@ -228,6 +231,18 @@ ProcessConfig = uFldNodeComms
   groups           = false
 
   view_node_rpt_pulses = false
+  pulse_duration = 0
+}
+
+//----------------------------------------------------
+ProcessConfig = pRallyPoint
+{
+  AppTick = 10
+  CommsTick = 10
+  role = shoreside
+  destination_node = uav
+  initial_point = x=$(RALLY_X=10),y=$(RALLY_Y=15)
+  initial_altitude = 15
 }
 
 //----------------------------------------------------
@@ -238,13 +253,14 @@ ProcessConfig = pMarineViewer
 
   beat_flag = HEARTBEAT_ALL=true
 
-  // Same Charles River map and framing used by may_test_run.
-  tiff_file           = MIT_SP.tif
-  set_pan_x           = 0
-  set_pan_y           = -400
-  zoom                = 1
+  // Briggs Field imagery; its .info datum matches plug_origin_warp.moos.
+  tiff_file           = ../../images/briggs_test/briggs_test.tif
+  set_pan_x           = 50
+  set_pan_y           = 200
+  zoom                = 2
   vehicle_shape_scale = 1.5
-  vehicles_name_mode  = names
+  vehicles_name_mode  = off
+  vehicles_layer      = bottom
   trails_length       = 100
 
   appcast_viewable     = true
@@ -255,12 +271,31 @@ ProcessConfig = pMarineViewer
   procs_font_size      = large
   nodes_font_size      = large
 
-  comms_pulse_viewable_all = true
+  // Hide control-vector arrows and link flashes, not navigation/communications.
+  vector_viewable_all = false
+  comms_pulse_viewable_all = false
   stale_report_thresh      = 10
   stale_remove_thresh      = 30
 
   scope = NAV_ALTITUDE
+  scope = UAV_ALTITUDE_MSL
+  scope = LANDING_UAV_PHASE
+  scope = LANDING_UAV_SESSION
+  scope = LANDING_UAV_CHECKS_READY
+  scope = LANDING_UAV_TARGET_FRESH
+  scope = LANDING_PEARL_PHASE
+  scope = LANDING_PEARL_SESSION
+  scope = LANDING_PEARL_CLEARANCE
+  scope = LANDING_TARGET_VIEW_ACTIVE
+  scope = LANDMARK_EMULATOR_ACTIVE
+  scope = MAVLINK_SHIP_POSE_ACTIVE
+  scope = MAVLINK_SHIP_BRIDGE_CONNECTED
+  scope = PEARL_RECOVERY_POSTCHECKS_SNAPSHOT
   scope = UAV_IS_ARMED
+  scope = TAKEOFF_AIRBORNE
+  scope = TAKEOFF_AIRBORNE_STATE
+  scope = LANDING_AIRBORNE_CHECKS
+  scope = LANDING_GROUND_CHECKS
   scope = UAV_LANDED_STATE
   scope = UAV_COMMAND_RESULT
   scope = UAV_BATTERY_SOC
@@ -279,9 +314,21 @@ ProcessConfig = pMarineViewer
   scope = VEHICLE_PROC_WATCH_ALL_OK
   scope = PEARL_PROC_WATCH_ALL_OK
   scope = ROUTE_BUFFER_STATE
+  scope = ROUTE_BUFFER_TASK_ID
+  scope = ROUTE_BUFFER_TASK_DESTINATION
+  scope = PEARL_ROUTE_BUFFER_STATE
+  scope = PEARL_ROUTE_READY
   scope = ROUTE_BUFFER_COUNT
   scope = ROUTE_BUFFER_VEHICLE_STATE
   scope = TASK_EXECUTE
+  scope = RALLY_ALTITUDE
+  scope = RALLY_STAGED_POINT
+  scope = RALLY_STAGED_STATE
+  scope = RALLY_TASK_STATE
+  scope = RALLY_ACTIVE
+  scope = UAV_RALLY_READY
+  scope = UAV_RALLY_ID
+  scope = UAV_RALLY_STATE
   scope = RENDEZVOUS_ABORT
   scope = DEPLOY
   scope = RETURN
@@ -325,30 +372,17 @@ ProcessConfig = pMarineViewer
   scope = PEARL_HELM_RETURN
   scope = PEARL_HELM_STATION_KEEP
   scope = PEARL_HELM_MANUAL_OVERRIDE
-  scope = PEARL_RENDEZVOUS_ACTIVE
-  scope = PEARL_RENDEZVOUS_ARRIVED
+  scope = RENDEZVOUS_PEARL_ACTIVE
+  scope = RENDEZVOUS_PEARL_ARRIVED
   scope = PEARL_CONTROL_HISTORY
   scope = PEARL_CONTROL_RESTORED
-  scope = UAV_RENDEZVOUS_STATE
-  scope = PEARL_RENDEZVOUS_STATE
-  scope = UAV_RENDEZVOUS_PHASE
-  scope = PEARL_RENDEZVOUS_PHASE
-  scope = UAV_RENDEZVOUS_SESSION
-  scope = PEARL_RENDEZVOUS_SESSION
-  scope = UAV_RENDEZVOUS_ARRIVED
-  scope = UAV_LANDING_TARGET_STATE
-  scope = UAV_SECONDARY_RECOVERY_STATE
-  scope = UAV_SECONDARY_RECOVERY_POINT
-  scope = UAV_SECONDARY_RECOVERY_DISTANCE
-  scope = UAV_LANDING_GATE_READY
-  scope = UAV_LANDING_GATE_REASON
-  scope = UAV_LANDING_TARGET_LOCK_AGE
-  scope = UAV_LANDING_APPROACH_POINT
-  scope = UAV_PEER_DISTANCE
-  scope = UAV_PREC_LAND_RESULT
-  scope = PEARL_LANDING_GATE_READY
-  scope = PEARL_LANDING_GATE_REASON
-  scope = PEARL_UAV_SEPARATION
+  scope = RENDEZVOUS_UAV_STATE
+  scope = RENDEZVOUS_PEARL_STATE
+  scope = RENDEZVOUS_UAV_PHASE
+  scope = RENDEZVOUS_PEARL_PHASE
+  scope = RENDEZVOUS_UAV_SESSION
+  scope = RENDEZVOUS_PEARL_SESSION
+  scope = RENDEZVOUS_UAV_ARRIVED
   scope = UAV_LANDING_TARGET_AVAILABLE
   scope = UAV_LANDING_TARGET_AGE
   scope = UAV_LANDING_TARGET_TIME_USEC
@@ -394,14 +428,18 @@ ProcessConfig = pMarineViewer
   scope = ALFA_DATA_AGE
   scope = ALFA_SIGNAL_DATA_VALID
 
-  // Precision landing is committed only by pRendezvous after clearance and
-  // target-lock gates pass; there is intentionally no direct landing button.
-  left_context[uav-route] = ROUTE_POINT = "x=$[XPOS],y=$[YPOS]"
-  right_context[uav-clear] = ROUTE_BUFFER_CLEAR=true
-  right_context[uav-clear] = NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_TASK_CANCEL,string_val=true"
+  // The FSM-authorized coordinator commits generic AUTOLAND after clearance
+  // and actual received-target checks. There is no direct landing button.
+  left_context[route] = ROUTE_POINT = "x=$[XPOS],y=$[YPOS]"
+  left_context[uav-rally] = RALLY_POINT = "x=$[XPOS],y=$[YPOS]"
+  right_context[route-clear] = ROUTE_BUFFER_CLEAR_STAGED=true
+  right_context[uav-cancel] = ROUTE_BUFFER_CLEAR=true
+  right_context[uav-cancel] = NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_TASK_CANCEL,string_val=true"
 
-  button_1 = TASK-PEARL # TASK_EXECUTE_PEARL=true # PEARL_ALLSTOP_PEARL=false
-  button_2 = TASK-UAV # TASK_EXECUTE_UAV=true # ROUTE_BUFFER_DEPLOY=true # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_TASK_REQUEST,string_val=true"
+  button_1 = TASK-PEARL # ROUTE_BUFFER_TASK=pearl
+  button_2 = TASK-UAV # ROUTE_BUFFER_TASK=uav
+  button_4 = RECOVER-UAV # RETURN_UAV=true
+  button_5 = CANCEL-RECOVERY # LANDING_CANCEL_UAV=true # color=yellow
   button_3 = LOCK-DRONEPORT # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=pearl,var_name=PEARL_DRONEPORT_BAY_COVER_STATE,string_val=closed" # color=yellow
 
   // button_4 = UAV DISARM # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_DISARM_REQUEST,string_val=true" # NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_TASK_CANCEL,string_val=true" # color=red

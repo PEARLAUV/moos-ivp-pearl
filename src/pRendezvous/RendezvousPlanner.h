@@ -16,10 +16,74 @@ public:
     double window = 0;
   };
 
+  struct History
+  {
+    bool usable = false;
+    double window = 0;
+    double max_positive_accel = 0;
+    const char *reason = "missing_history";
+  };
+
+  // This is a qualification check, not a modification of measured speeds.
+  // One-second path-speed averages avoid differentiating individual GPS steps.
+  History history(double now, double window, double max_positive_accel,
+                  double not_before = -1) const
+  {
+    History result;
+    if (window == 0) {
+      result.usable = true;
+      result.reason = "disabled";
+      return result;
+    }
+    if (!std::isfinite(now) || !std::isfinite(window) || window < 3 || window > 20 ||
+        !std::isfinite(max_positive_accel) || max_positive_accel < 0)
+      return result;
+    if (m_samples.empty())
+      return result;
+    const double end = m_samples.back().time;
+    result.window =
+        std::max(0.0, std::min(window, end - std::max(m_samples.front().time, not_before)));
+    constexpr double max_sample_gap = 1.5; // supports nominal 1 Hz peer motion
+    if (end > now || now - end > max_sample_gap) {
+      result.reason = "stale_history";
+      return result;
+    }
+    const double start = end - window;
+    if (m_samples.front().time > start + 1e-6 || start < not_before - 1e-6) {
+      result.reason = "short_history";
+      return result;
+    }
+    for (size_t i = 1; i < m_samples.size(); ++i) {
+      if (m_samples[i].time > start && m_samples[i - 1].time < end &&
+          m_samples[i].time - m_samples[i - 1].time > max_sample_gap) {
+        result.reason = "history_gap";
+        return result;
+      }
+    }
+    double previous_speed = 0;
+    bool have_speed = false;
+    for (int seconds = static_cast<int>(window); seconds > 0; --seconds) {
+      const double t = end - seconds;
+      const double speed = distanceAt(t + 1) - distanceAt(t);
+      if (!std::isfinite(speed) || speed < 0) {
+        result.reason = "invalid_history";
+        return result;
+      }
+      if (have_speed)
+        result.max_positive_accel = std::max(result.max_positive_accel, speed - previous_speed);
+      previous_speed = speed;
+      have_speed = true;
+    }
+    result.usable = result.max_positive_accel <= max_positive_accel + 1e-9;
+    result.reason = result.usable ? "usable" : "positive_acceleration";
+    return result;
+  }
+
   void reset(double time, double x, double y)
   {
     m_samples.clear();
-    m_samples.push_back({time, x, y, 0});
+    if (std::isfinite(time) && std::isfinite(x) && std::isfinite(y))
+      m_samples.push_back({time, x, y, 0});
   }
 
   void sample(double time, double x, double y, double max_gap)
@@ -71,6 +135,18 @@ private:
     double y;
     double distance;
   };
+  double distanceAt(double time) const
+  {
+    for (size_t i = 1; i < m_samples.size(); ++i) {
+      if (time <= m_samples[i].time) {
+        const Sample &before = m_samples[i - 1], &after = m_samples[i];
+        const double fraction = (time - before.time) / (after.time - before.time);
+        return before.distance + fraction * (after.distance - before.distance);
+      }
+    }
+    return m_samples.back().distance;
+  }
+
   std::deque<Sample> m_samples;
 };
 
@@ -98,6 +174,12 @@ public:
     return m_speed_estimator.speed();
   }
 
+  RendezvousSpeedEstimator::History history(double now, double window, double max_accel,
+                                            double not_before = -1) const
+  {
+    return m_speed_estimator.history(now, window, max_accel, not_before);
+  }
+
   // Adopt a peer's earlier freeze as the canonical point, even if this
   // planner had already frozen its own candidate.
   bool adoptFrozenPoint(double x, double y)
@@ -113,7 +195,8 @@ public:
 
   // Return true only when a new point must be published to the local Helm.
   bool update(double time, double x, double y, double peer_x, double peer_y,
-              const Speed &peer_speed, double freeze_radius, bool own_captured = false)
+              const Speed &peer_speed, double freeze_radius, bool own_captured = false,
+              bool history_usable = true)
   {
     if (!m_has_point) {
       m_x = (x + peer_x) / 2;
@@ -122,6 +205,10 @@ public:
       m_last_update = time;
       return true;
     }
+    // Bootstrap and unstable history cannot turn cached zero speed or capture
+    // into a local freeze. A canonical peer freeze is never undone.
+    if (m_frozen || !history_usable)
+      return false;
     // Once ownship captures the point, keep it fixed through arrival dwell.
     // Also freeze slightly early within the configured capture buffer.
     if (own_captured || std::hypot(x - m_x, y - m_y) <= freeze_radius)

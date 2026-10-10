@@ -38,6 +38,8 @@ void showExampleConfigAndExit()
   blk("  nav_stale_thresh    = 10");
   blk("  transit_timeout     = 300");
   blk("  point_freeze_radius = 3");
+  blk("  planning_history_window = 3 // seconds; default 0 disables gate");
+  blk("  planning_max_positive_accel = 0.5 // m/s^2; positive only");
   blk("  rendezvous_distance = 1");
   blk("  arrival_dwell       = 0");
   blk("  point_shape         = disc");
@@ -60,6 +62,8 @@ void showInterfaceAndExit()
   blk("  NODE_MESSAGE_LOCAL (peer motion history)");
   blk("  RENDEZVOUS_OWN_UPDATE/ACTIVE/STATE/PHASE/SESSION/POINT");
   blk("  RENDEZVOUS_OWN_SPEED/SPEED_VALID/SPEED_WINDOW");
+  blk("  RENDEZVOUS_OWN_HISTORY_USABLE");
+  blk("  RENDEZVOUS_OWN/PEER_HISTORY_REASON, MAX_POSITIVE_ACCEL");
   blk("  RENDEZVOUS_PEER_PHASE/SESSION/SPEED/SPEED_VALID/SPEED_WINDOW");
   blk("  VIEW_POINT or VIEW_CIRCLE and RENDEZVOUS_OWN_POINT");
   exit(0);

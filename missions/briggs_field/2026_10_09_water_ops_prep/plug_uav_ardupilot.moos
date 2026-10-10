@@ -29,6 +29,28 @@ ProcessConfig = uRouteSequence
 }
 
 //----------------------------------------------------
+// Dedicated recovery waypoint handoff; never changes operator route flags.
+ProcessConfig = uRendezvousSequence
+{
+  AppTick   = 10
+  CommsTick = 10
+  condition = RENDEZVOUS_OWN_HANDOFF_REQUEST=true
+  condition = RENDEZVOUS_OWN_ACTIVE=true
+  condition = RENDEZVOUS_OWN_WAYPOINT_READY=true
+  condition = UAV_FSM_OPERATION_STATE=LANDING_OPERATIONS
+  condition = LANDING_OWN_PHASE=RENDEZVOUS
+  condition = UAV_IS_ARMED=1
+  condition = UAV_LANDED_STATE=IN_AIR
+  upon_awake = restart
+  script_atomic = false
+  reset_max = unlimited
+  paused = false
+  event = var=HELM_STATUS, val=true, time=0
+  event = var=ARDU_COMMAND, val=FLY_WAYPOINT, time=0.80
+  event = var=RENDEZVOUS_OWN_HANDOFF_REQUEST, val=false, time=0.90
+}
+
+//----------------------------------------------------
 ProcessConfig = pDeadManPost
 {
   AppTick   = 4
@@ -54,17 +76,58 @@ ProcessConfig = pArduBridge
   url          = $(AP_URL)
   url_protocol = $(AP_PROTOCOL)
   vehicle_type = copter
+  // Match USE_UTM in the marine simulator/viewer; leave native estimation intact.
+  geodesy = utm
 
   vname  = $(VNAME)
   vcolor = $(COLOR)
   // Native health/landing telemetry uses UAV_*. pEchoVar maps navigation to NAV_*.
   prefix = UAV
-  // Zero disables peer-ship telemetry in REAL mode.
-  ship_system_id = $(SHIP_SYSTEM_ID)
 
   takeoff_altitude              = 8
   helm_setpoint_timeout         = 2
+  guided_mode_timeout           = 30
   command_groundspeed           = true
+  // Refuse ARM unless this connection has verified the tasked rally point.
+  require_verified_rally         = true
+  show_loiter_visuals            = false
   is_sim                        = $(IS_SIM)
   logger                        = false
+}
+
+ProcessConfig = uSecondarySequence
+{
+  AppTick = 10
+  CommsTick = 10
+  condition = (UAV_FSM_LANDING_OPERATIONS_STATE=DEVIATING_TO_SECONDARY_LANDING_POSITION) or (UAV_FSM_LANDING_OPERATIONS_STATE=TRANSITING_TO_SECONDARY_LOITER_LOCATION)
+  condition = SECONDARY_ARRIVED=false
+  condition = UAV_IS_ARMED=1
+  condition = UAV_LANDED_STATE=IN_AIR
+  condition = UAV_GPS_AVAILABLE=1
+  upon_awake = restart
+  script_atomic = false
+  reset_max = unlimited
+  paused = false
+  // This short delay allows the Helm to publish the new waypoint decision.
+  // It is a control handoff, never a fabricated arrival/retry/touchdown timer.
+  event = var=HELM_STATUS, val=true, time=0
+  event = var=ARDU_COMMAND, val=FLY_WAYPOINT, time=0.80
+}
+
+// Conditional dispatch only: the FSM owns request/cleanup, and real waypoint
+// completion owns arrival. Time zero is not arrival or touchdown evidence.
+ProcessConfig = uSecondaryLand
+{
+  AppTick = 10
+  CommsTick = 10
+  condition = UAV_FSM_LANDING_OPERATIONS_STATE=SECONDARY_LANDING
+  condition = SECONDARY_LAND=true
+  condition = SECONDARY_ARRIVED=true
+  condition = UAV_IS_ARMED=1
+  condition = UAV_LANDED_STATE=IN_AIR
+  upon_awake = restart
+  script_atomic = false
+  reset_max = unlimited
+  paused = false
+  event = var=ARDU_COMMAND, val=AUTOLAND, time=0
 }

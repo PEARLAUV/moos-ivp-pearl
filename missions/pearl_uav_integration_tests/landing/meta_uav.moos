@@ -33,10 +33,6 @@ ProcessConfig = ANTLER
   Run = pLandingTargetViewer @ NewConsole = false
 
   Run = pEchoVar           @ NewConsole = false
-  Run = uTimerScript       @ NewConsole = false ~ uPrepareTakeoff
-  Run = uTimerScript       @ NewConsole = false ~ uAutoStartReady
-  Run = uTimerScript       @ NewConsole = false ~ uAutoArm
-  Run = uTimerScript       @ NewConsole = false ~ uAutoTakeoff
   Run = uTimerScript       @ NewConsole = false ~ uLaneStart
   Run = uTimerScript       @ NewConsole = false ~ uRendezvousSequence
 }
@@ -190,8 +186,15 @@ ProcessConfig = pLandingCoordinator
   ownship = uav
   peer_node = pearl
   role = aircraft
+  // Exposure rotation only. Readiness/post-ACK yaw still use bridge native telemetry.
+  observation_pose_samples_var = UAV_NAV_MAVLINK_POSES
   landing_timeout = 450
   input_timeout = 3
+
+  align_yaw = true
+  yaw_tolerance = 5
+  yaw_rate = 30
+  yaw_timeout = 60
 }
 
 // Pure 3-D range gate; no recovery/session/clearance inputs.
@@ -201,7 +204,12 @@ ProcessConfig = pMavlinkLandingTarget
   CommsTick = 20
   mavlink_port = $(SITL_TARGET_PORT)
   target_nav_prefix = PEARL_NAV
-  vehicle_nav_prefix = UAV_NAV
+  vehicle_nav_prefix  = UAV_NAV
+  // Native FC packets on the sensor endpoint; no relayed aircraft-pose fallback.
+  vehicle_pose_source = mavlink
+  native_pose_rate_hz = 50
+  native_pose_timeout = 0.10 // real receive seconds; also caps FC timestamp age
+  native_pose_max_skew = 0.02 // FC seconds between position and attitude
   target_altitude_msl = $(DECK_ALTITUDE)
   detection_range = $(TARGET_RANGE)
   input_timeout = 2
@@ -217,6 +225,7 @@ ProcessConfig = pLandingTargetViewer
   CommsTick = 20
   target_prefix = UAV_LANDING_TARGET
   vehicle_prefix = UAV
+  observation_pose_samples_var = UAV_NAV_MAVLINK_POSES
   observation_timeout = 0.5
   input_timeout = 2
   target_size = 1
@@ -283,90 +292,17 @@ ProcessConfig = pEchoVar
   Echo = UAV_LAT      -> UAV_NAV_LAT
   Echo = UAV_LON      -> UAV_NAV_LONG
   Echo = UAV_YAW      -> UAV_NAV_HEADING
+  Echo = UAV_ROLL -> UAV_NAV_ROLL
+  Echo = UAV_PITCH -> UAV_NAV_PITCH
+  Echo = UAV_ATTITUDE_AVAILABLE -> UAV_NAV_ATTITUDE_AVAILABLE
+  Echo = UAV_ATTITUDE_AGE -> UAV_NAV_ATTITUDE_AGE
+  Echo = UAV_ATTITUDE_TIME_USEC -> UAV_NAV_ATTITUDE_TIME_USEC
+  Echo = UAV_ATTITUDE_SAMPLES -> UAV_NAV_ATTITUDE_SAMPLES
   Echo = UAV_ALTITUDE_MSL -> UAV_NAV_ALTITUDE_MSL
 }
 
 //----------------------------------------------------
-// Health and armability become true before Guided can obtain horizontal
-// position. Probe Guided mode while disarmed until ArduPilot accepts it.
-ProcessConfig = uPrepareTakeoff
-{
-  AppTick       = 10
-  CommsTick     = 10
-  condition     = UAV_HEALTH_ALL_OK = 1
-  condition     = UAV_IS_ARMABLE = 1
-  condition     = UAV_IS_ARMED = 0
-  condition     = UAV_LANDED_STATE = ON_GROUND
-  condition     = UAV_GUIDED_POSITION_READY = 0
-  upon_awake    = restart
-  reset_max     = unlimited
-  reset_time    = 2
-  paused        = false
-  script_name   = PREPARE_TAKEOFF
-
-  event = var=ARDU_COMMAND, val=PREPARE_TAKEOFF, time=0
-}
-
-// Release auto-arm immediately after the Guided-mode probe succeeds.
-ProcessConfig = uAutoStartReady
-{
-  AppTick       = 10
-  CommsTick     = 10
-  script_atomic = true
-  reset_max     = 0
-  paused        = false
-  script_name   = AUTO_START_READY
-  condition     = UAV_GUIDED_POSITION_READY = 1
-
-  event = var=UAV_AUTOSTART_READY, val=true, time=0
-}
-
-//----------------------------------------------------
-// Auto start, step 1: arm 3 s after ArduPilot reports armable and healthy,
-// and every 5 s after that while disarmed on the ground.
-ProcessConfig = uAutoArm
-{
-  AppTick   = 10
-  CommsTick = 10
-
-  condition   = UAV_AUTO_START = pending
-  condition   = UAV_AUTOSTART_READY = true
-  condition   = UAV_HEALTH_ALL_OK = 1
-  condition   = UAV_IS_ARMABLE = 1
-  condition   = UAV_IS_ARMED = 0
-  condition   = UAV_LANDED_STATE = ON_GROUND
-  upon_awake  = restart
-  reset_max   = unlimited
-  reset_time  = 5
-  paused      = false
-  script_name = AUTO_ARM
-
-  event = var=ARM_UAV, val=true, time=3
-}
-
-//----------------------------------------------------
-// Auto start, step 2: take off 5 seconds after reporting armed. pArduBridge
-// rejects takeoff while the Helm is active, so the Helm stays off until
-// step 3.
-ProcessConfig = uAutoTakeoff
-{
-  AppTick   = 10
-  CommsTick = 10
-
-  condition   = UAV_AUTO_START = pending
-  condition   = UAV_IS_ARMED = 1
-  condition   = UAV_LANDED_STATE = ON_GROUND
-  upon_awake  = restart
-  reset_max   = unlimited
-  reset_time  = 5
-  paused      = false
-  script_name = AUTO_TAKEOFF
-
-  event = var=ARDU_COMMAND, val=DO_TAKEOFF, time=5
-}
-
-//----------------------------------------------------
-// Auto start, step 3: near takeoff altitude, form the lane decision and hand
+// SITL startup returns with the aircraft airborne; form the lane decision and hand
 // control to the Helm (same ordering as the field mission's route handoff).
 ProcessConfig = uLaneStart
 {
@@ -376,7 +312,7 @@ ProcessConfig = uLaneStart
   condition     = UAV_AUTO_START = pending
   condition     = UAV_LANDED_STATE = IN_AIR
   upon_awake    = restart
-  // Step 3 clears its own gate; it must still run to completion.
+  // This script clears its own gate, so it must still run to completion.
   script_atomic = true
   reset_max     = 0
   paused        = false

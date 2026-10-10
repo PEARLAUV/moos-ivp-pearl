@@ -22,31 +22,43 @@ direction = "down"
 # - UAV_FSM_* state, status, transition, aggregate, and count variables are
 #   published authoritatively by this UAV Helm.
 [facts]
+# Native observations are never initialized or synthesized by the FSM.
 uav_landed_state = { initial = "UNKNOWN", initialize = false }
+takeoff_airborne = { initial = "inactive", initialize = false }
+landing_airborne_checks = { initial = "inactive", initialize = false }
+landing_ground_checks = { initial = "inactive", initialize = false }
 uav_health_all_ok = { initial = "UNKNOWN", initialize = false }
 uav_gps_available = { initial = "UNKNOWN", initialize = false }
 uav_is_armed = { initial = "UNKNOWN", initialize = false }
-# Shoreside triggers each UAV task; the runtime consumes the request on entry.
-task_execute = { initial = false, initialize = false }
-# Wake Helm planning on takeoff entry without changing ArduBridge authority.
-# Do not reset an operator/flight-controller override when this runtime starts.
-moos_manual_override = { initial = true, initialize = false }
-# Attachment intent is latched by state entry; only the SITL bridge consumes it.
-sim_uav_on_ship = { initial = true, initialize = true }
-# One local uChecks process owns the aggregate and all named check results.
+uav_landing_target_available = { initial = 0, initialize = false }
+landing_own_target_fresh = { initial = false, initialize = false }
+# No upstream retry-exhaustion telemetry is currently exposed. Fail closed;
+# an actual FC/mission adapter must own this fact, not a MOOS retry timer.
+uav_landing_target_retries_exhausted = { initial = false, initialize = false }
 takeoff_prechecks = { initial = "inactive", initialize = false }
-# The FSM publishes a new token on each entry to TAKEOFF_OPERATIONS.
 uav_fsm_operation_state_takeoff_operations_epoch = { initial = "none", initialize = false }
 takeoff_request_result = { initial = "UNKNOWN", initialize = false }
-route_buffer_vehicle_state = { initial = "UNKNOWN", initialize = false }
-uav_rendezvous_phase = { initial = "IDLE", initialize = false }
-uav_rendezvous_arrived = { initial = 0, initialize = false }
-uav_landing_gate_ready = { initial = 0, initialize = false }
-uav_prec_land_result = { initial = "UNKNOWN", initialize = false }
-# Published by the landing-target retry controller.
-uav_landing_target_state = { initial = "UNKNOWN", initialize = false }
-# Published by pRendezvous's fixed-point secondary-recovery controller.
-uav_secondary_recovery_state = { initial = "UNKNOWN", initialize = false }
+landing_own_phase = { initial = "IDLE", initialize = false }
+landing_own_rendezvous_phase = { initial = "IDLE", initialize = false }
+landing_peer_clearance = { initial = false, initialize = false }
+landing_own_checks_ready = { initial = false, initialize = false }
+route_ready = { initial = false, initialize = false }
+route_deploy = { initial = false, initialize = false }
+task_execute = { initial = false, initialize = false }
+moos_manual_override = { initial = true, initialize = false }
+ardu_command = { initial = "NONE", initialize = false }
+# UAV-owned coupling intent gates only the SITL ship-pose producer.
+sim_uav_on_ship = true
+recover = false
+landing_cancel = false
+route_execute = false
+route_clear = false
+# Clear both Helm execution and the buffer\'s immutable-task ownership.
+route_buffer_command = { initial = "action=clear", initialize = false }
+uav_task_active = false
+uav_task_cancel = false
+secondary_arrived = false
+secondary_land = false
 deploy = false
 return = false
 
@@ -58,7 +70,7 @@ initial_layout = { left = 0, top = 514 }
 [states.idle]
 label = "Idle on deck"
 layout = { left = 120, top = 500, width = 200 }
-entry_effects = { sim_uav_on_ship = true }
+entry_effects = { sim_uav_on_ship = true, moos_manual_override = true, recover = false, landing_cancel = false, return = false, uav_task_active = false, route_execute = false, route_deploy = false, route_buffer_command = "action=clear" }
 
 [states.idle.transitions.begin_takeoff_operations]
 to = "takeoff_operations"
@@ -71,7 +83,7 @@ layout = { left = 400, top = 280, width = 250 }
 initial = "establishing_takeoff_readiness"
 diagram = true
 entry_epoch = true
-entry_effects = { task_execute = false, moos_manual_override = false }
+entry_effects = { task_execute = false, moos_manual_override = false, uav_task_cancel = false, landing_cancel = false }
 
 [states.takeoff_operations.sinks.completed_successfully]
 label = "Completed"
@@ -80,6 +92,7 @@ label = "Completed"
 label = "Aborted"
 
 [states.takeoff_operations.states.establishing_takeoff_readiness]
+entry_effects = { ardu_command = "ENTER_GUIDED" }
 label = "Establishing takeoff readiness"
 layout = { top = 170, left = 0, width = 250}
 
@@ -114,7 +127,7 @@ exit_effects = { sim_uav_on_ship = false }
 
 [states.takeoff_operations.states.takeoff.transitions.takeoff_completed]
 to = "sink.completed_successfully"
-when = "uav_landed_state==IN_AIR"
+when = "check_result(takeoff_airborne, success)"
 label = "Confirmed"
 
 [states.takeoff_operations.states.takeoff.transitions.takeoff_failed]
@@ -131,15 +144,19 @@ to = "idle"
 exit = "aborted"
 
 [states.mission_execution]
+entry_effects = { route_execute = true, uav_task_active = true }
+exit_effects = { route_execute = false, route_deploy = false, route_clear = true, route_buffer_command = "action=clear", uav_task_active = false, return = false }
 label = "Executing mission"
 layout = { left = 400, top = 500, width = 250 }
 
 [states.mission_execution.transitions.mission_completed]
 to = "landing_operations"
-when = "(return==true) || (uav_rendezvous_phase==REQUESTING)"
+when = "(return==true) || ((uav_task_active==true) && (uav_task_cancel==false) && (route_deploy==false) && (route_ready==false) && (uav_landed_state==IN_AIR))"
 label = "Mission complete"
 
 [states.landing_operations]
+entry_epoch = true
+entry_effects = { landing_cancel = false, sim_uav_on_ship = false }
 label = "Landing operations"
 diagram = true
 initial = "establishing_landing_readiness"
@@ -175,7 +192,7 @@ layout = { left = 150, top = 80, width = 300 }
 
 [states.landing_operations.states.establishing_landing_readiness.transitions.readiness_established]
 to = "requesting_recovery"
-when = "((uav_health_all_ok==1) && (uav_gps_available==1) && (uav_is_armed==1) && (uav_landed_state==IN_AIR)) || (uav_rendezvous_phase==REQUESTING) || (uav_rendezvous_phase==RENDEZVOUS) || (uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)"
+when = "check_result(landing_airborne_checks, success)"
 label = "Ready"
 
 [states.landing_operations.states.establishing_landing_readiness.transitions.readiness_failed]
@@ -184,32 +201,33 @@ when = "(uav_health_all_ok==0) || (uav_gps_available==0)"
 label = "Readiness failed"
 
 [states.landing_operations.states.requesting_recovery]
+entry_effects = { recover = true }
 label = "Requesting recovery"
 layout = { left = 150, top = 230, width = 300 }
 
 [states.landing_operations.states.requesting_recovery.transitions.recovery_requested]
-to = "negotiating_rendezvous_point"
-when = "(uav_rendezvous_phase==REQUESTING) || (uav_rendezvous_phase==RENDEZVOUS) || (uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)"
+to = "calculating_rendezvous_point"
+when = "(landing_own_phase==REQUESTED) || (landing_own_phase==RENDEZVOUS)"
 label = "Request sent"
 
 [states.landing_operations.states.requesting_recovery.transitions.recovery_request_failed]
 to = "deviating_to_secondary_landing_position"
-when = "uav_rendezvous_phase==ABORT"
+when = "landing_own_phase==ABORTED"
 label = "Request failed"
 
-[states.landing_operations.states.negotiating_rendezvous_point]
-label = "Negotiating rendezvous point"
+[states.landing_operations.states.calculating_rendezvous_point]
+label = "Calculating rendezvous point"
 layout = { left = 150, top = 380, width = 300 }
 
-[states.landing_operations.states.negotiating_rendezvous_point.transitions.rendezvous_agreed]
+[states.landing_operations.states.calculating_rendezvous_point.transitions.rendezvous_point_ready]
 to = "moving_to_rendezvous_point"
-when = "((uav_rendezvous_phase==RENDEZVOUS) && (route_buffer_vehicle_state==DEPLOY_ACCEPTED)) || (uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)"
-label = "Rendezvous agreed"
+when = "(landing_own_rendezvous_phase==RENDEZVOUS) || (landing_own_rendezvous_phase==COMPLETE)"
+label = "Point calculated"
 
-[states.landing_operations.states.negotiating_rendezvous_point.transitions.rendezvous_negotiation_failed]
+[states.landing_operations.states.calculating_rendezvous_point.transitions.rendezvous_calculation_failed]
 to = "deviating_to_secondary_landing_position"
-when = "uav_rendezvous_phase==ABORT"
-label = "Negotiation\nfailed"
+when = "landing_own_phase==ABORTED"
+label = "Calculation\nfailed"
 
 [states.landing_operations.states.moving_to_rendezvous_point]
 label = "Moving to rendezvous point"
@@ -217,12 +235,12 @@ layout = { left = 150, top = 530, width = 300 }
 
 [states.landing_operations.states.moving_to_rendezvous_point.transitions.rendezvous_reached]
 to = "waiting_for_landing_clearance"
-when = "(uav_rendezvous_arrived==1) || (uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)"
+when = "landing_own_rendezvous_phase==COMPLETE"
 label = "Rendezvous reached"
 
 [states.landing_operations.states.moving_to_rendezvous_point.transitions.rendezvous_transit_failed]
 to = "deviating_to_secondary_landing_position"
-when = "uav_rendezvous_phase==ABORT"
+when = "landing_own_phase==ABORTED"
 label = "Rendezvous transit failed"
 
 [states.landing_operations.states.waiting_for_landing_clearance]
@@ -231,46 +249,47 @@ layout = { left = 150, top = 680, width = 300 }
 
 [states.landing_operations.states.waiting_for_landing_clearance.transitions.landing_clearance_granted]
 to = "approaching"
-when = "(uav_rendezvous_phase==ACQUIRING_TARGET) || (uav_rendezvous_phase==LANDING) || (uav_rendezvous_phase==COMPLETE)"
+when = "(landing_peer_clearance==true) && (landing_own_phase==RENDEZVOUS) && check_result(landing_airborne_checks, success)"
 label = "Clearance granted"
 
 [states.landing_operations.states.waiting_for_landing_clearance.transitions.landing_clearance_failed]
 to = "deviating_to_secondary_landing_position"
-when = "uav_rendezvous_phase==ABORT"
+when = "landing_own_phase==ABORTED"
 label = "Clearance failed"
 
 [states.landing_operations.states.approaching]
+entry_effects = { sim_uav_on_ship = true }
 label = "Approaching"
 layout = { left = 150, top = 830, width = 300 }
 
 [states.landing_operations.states.approaching.transitions.landing_committed]
 to = "landing"
-when = "((uav_landing_gate_ready==1) && (uav_prec_land_result!=UNKNOWN) && (uav_rendezvous_phase==LANDING)) || (uav_rendezvous_phase==COMPLETE)"
+when = "(landing_own_phase==LANDING) || (landing_own_phase==COMPLETE)"
 label = "Landing committed"
 
 [states.landing_operations.states.approaching.transitions.approach_failed]
 to = "deviating_to_secondary_landing_position"
-when = "uav_rendezvous_phase==ABORT"
+when = "landing_own_phase==ABORTED"
 label = "Approach failed"
 
 [states.landing_operations.states.landing]
 label = "Landing"
 layout = { left = 150, top = 980, width = 300 }
-exit_effects = { moos_manual_override = false }
+exit_effects = { recover = false }
 
 [states.landing_operations.states.landing.transitions.landing_completed]
 to = "sink.nominal"
-when = "(uav_rendezvous_phase==COMPLETE) && (uav_landed_state==ON_GROUND) && (uav_is_armed==0)"
+when = "(landing_own_phase==COMPLETE) && check_result(landing_ground_checks, success)"
 label = "Landed and disarmed"
 
 [states.landing_operations.states.landing.transitions.landing_target_lost]
 to = "retrying_landing_target"
-when = "uav_landing_target_state==LOST"
+when = "(landing_own_phase==LANDING) && (uav_landed_state!=ON_GROUND) && (landing_own_target_fresh==false)"
 label = "Target lost"
 
 [states.landing_operations.states.landing.transitions.landing_failed]
 to = "deviating_to_secondary_landing_position"
-when = "(uav_rendezvous_phase==ABORT) && (uav_landing_target_state!=LOST)"
+when = "landing_own_phase==ABORTED"
 label = "Primary landing failed"
 
 [states.landing_operations.states.retrying_landing_target]
@@ -279,54 +298,63 @@ layout = { left = 620, top = 1110, width = 230 }
 
 [states.landing_operations.states.retrying_landing_target.transitions.target_reacquired]
 to = "landing"
-when = "uav_landing_target_state==TRACKED"
+when = "((landing_own_phase==LANDING) && (landing_own_target_fresh==true)) || ((landing_own_phase==COMPLETE) && check_result(landing_ground_checks, success))"
 label = "Target reacquired"
 
 [states.landing_operations.states.retrying_landing_target.transitions.target_retries_exhausted]
 to = "deviating_to_secondary_landing_position"
-when = "uav_landing_target_state==RETRIES_EXHAUSTED"
+when = "uav_landing_target_retries_exhausted==true"
 label = "Retries exhausted"
 
 [states.landing_operations.states.deviating_to_secondary_landing_position]
+entry_effects = { landing_cancel = true, recover = false, sim_uav_on_ship = false, secondary_arrived = false }
 label = "Transiting to rally point"
 layout = { left = 600, top = 680, width = 250 }
 
 [states.landing_operations.states.deviating_to_secondary_landing_position.transitions.secondary_landing_position_reached]
 to = "secondary_landing"
-when = "(uav_secondary_recovery_state==ARRIVED) || (uav_secondary_recovery_state==LANDING) || (uav_secondary_recovery_state==LANDED)"
+# An already-grounded abort follows the same off-nominal exit without claiming
+# arrival at the rally point or authorizing another flight.
+when = "(secondary_arrived==true) || ((landing_own_phase==ABORTED) && check_result(landing_ground_checks, success))"
 label = "Rally point\nreached"
 
 [states.landing_operations.states.secondary_landing]
+entry_effects = { secondary_land = true }
+exit_effects = { secondary_land = false }
 label = "Secondary landing"
 layout = { left = 980, top = 680, width = 250 }
 
 [states.landing_operations.states.secondary_landing.transitions.secondary_landing_completed]
 to = "sink.offnominal"
-when = "(uav_secondary_recovery_state==LANDED) && (uav_landed_state==ON_GROUND) && (uav_is_armed==0)"
+when = "check_result(landing_ground_checks, success)"
 label = "Secondary\nlanding\ncomplete"
 
 [states.landing_operations.states.transiting_to_secondary_loiter_location]
+entry_effects = { landing_cancel = true, recover = false, sim_uav_on_ship = false, secondary_arrived = false }
 label = "Transiting to rally point"
 layout = { left = 600, top = 80, width = 250 }
 
 [states.landing_operations.states.transiting_to_secondary_loiter_location.transitions.secondary_loiter_location_reached]
 to = "loitering_at_secondary_altitude"
-when = "(uav_secondary_recovery_state==ARRIVED) || (uav_secondary_recovery_state==LOITERING)"
+when = "secondary_arrived==true"
 label = "Rally point\nreached"
 
 [states.landing_operations.states.loitering_at_secondary_altitude]
+entry_effects = { ardu_command = "HOLD_POSITION" }
 label = "Loitering at secondary altitude"
 layout = { left = 980, top = 80, width = 250 }
 
 [states.landing_operations.states.loitering_at_secondary_altitude.transitions.secondary_loiter_established]
 to = "sink.loitering"
-when = "uav_secondary_recovery_state==LOITERING"
+when = "(secondary_arrived==true) && check_result(landing_airborne_checks, success)"
 label = "Loiter\nestablished"
 
 [states.offnominal]
+entry_effects = { moos_manual_override = true, sim_uav_on_ship = false, uav_task_active = false }
 label = "Off-nominal landing\nTakeoff inhibited"
 layout = { left = 400, top = 900, width = 250 }
 
 [states.loitering]
+entry_effects = { uav_task_active = false }
 label = "Loitering at secondary altitude\nAwaiting recovery"
 layout = { left = 700, top = 900, width = 300 }

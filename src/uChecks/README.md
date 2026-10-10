@@ -39,6 +39,20 @@ requires `on_mismatch=fail|wait`. No implicit string-to-double conversion.
 Configuration lines can appear in any order; each `require` identifies its
 check explicitly. Invalid configurations fail closed.
 
+Optional `result_interval` is a finite, non-negative number of **MOOS seconds**,
+defaulting to 0 (change-only results, preserving existing publication rates).
+A positive interval refreshes the aggregate and named result variables together
+with their session-bearing `_STATE` diagnostics while the instance is active.
+Every renewal follows the normal evaluation of input freshness, types,
+requirements, success holds and failure latches; it does not extend input
+expiry or echo a cached success. Inactive instances never renew result leases.
+A changed session resets the renewal deadline and the existing check state.
+Snapshots have their own independent `snapshot_interval`.
+
+For a consumer with a three-second permission lease, use `result_interval=1`.
+Consumers must still verify the appropriate session and lifecycle conditions;
+a fresh result timestamp alone is not proof of arrival or successful execution.
+
 While the condition is true, checks re-evaluate inputs independently.
 `wait` mismatches and missing/stale inputs stay pending until that check's
 timeout, while `fail` mismatches latch immediately. A success hold requires

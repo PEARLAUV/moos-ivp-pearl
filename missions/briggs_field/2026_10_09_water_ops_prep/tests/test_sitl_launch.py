@@ -4,6 +4,7 @@
 import contextlib
 import json
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -19,25 +20,47 @@ UAV_BASE = MISSION / "../../uav_solo/briggs_test"
 FAKE_SIMULATOR = '''#!/usr/bin/env python3
 import json, os, pathlib, signal, socket, subprocess, sys, time
 root = pathlib.Path(os.environ["TEST_ROOT"])
-command = sys.argv[1]
+args = sys.argv[1:]
+if args and args[0] == "serve":
+    command = args[0]
+else:
+    param_files = []
+    speedup = os.environ["SITL_SPEEDUP"]
+    while args and args[0].startswith("--"):
+        option = args.pop(0)
+        if option == "--no-rc":
+            continue
+        value = args.pop(0)
+        if option == "--param-file": param_files.append(value)
+        elif option == "--speedup": speedup = value
+    command = args[0]
 if command == "serve":
     (root / "running").touch()
     time.sleep(0.4)
     if os.environ.get("TEST_NO_TCP"):
         while True: time.sleep(0.1)
-    with socket.socket() as server:
-        server.bind(("127.0.0.1", int(os.environ["SITL_PORT"])))
+    servers = []
+    for port in {int(os.environ["SITL_PORT"]), int(os.environ["SITL_TARGET_PORT"])}:
+        server = socket.socket()
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", port))
         server.listen()
-        (root / "ready").touch()
-        while True:
-            connection, _ = server.accept()
-            connection.close()
+        server.settimeout(0.1)
+        servers.append(server)
+    (root / "ready").touch()
+    while True:
+        for server in servers:
+            try:
+                connection, _ = server.accept()
+                connection.close()
+            except socket.timeout:
+                pass
 if command == "ps":
     if (root / "running").exists(): print("owned-container")
     sys.exit(0)
 if command == "logs": sys.exit(0)
-record = {"args": sys.argv[1:], "speedup": os.environ["SITL_SPEEDUP"],
-          "params": os.environ["SITL_PARAM_FILE"],
+record = {"args": args, "speedup": speedup,
+          "params": param_files,
           "project": os.environ["COMPOSE_PROJECT_NAME"]}
 if command == "up" and not os.environ.get("TEST_START_FAIL"):
     server = subprocess.Popen([sys.executable, __file__, "serve"],
@@ -72,9 +95,9 @@ def generate_target(directory, mode, warp):
         "DIRECT_PEER": "false", "PEARL_IP": "unused", "PEARL_PSHARE": "9202",
         "VNAME": "uav", "COLOR": "yellow", "PLATFORM_LENGTH": "1.5",
         "AP_URL": "127.0.0.1:5760", "AP_PROTOCOL": "tcp",
+        "SITL_ROUTER_PORT": "5763",
         "SECONDARY_LANDING_X": "10", "SECONDARY_LANDING_Y": "15",
         "MIN_STATE_TIME": "0", "XMODE": mode, "IS_SIM": str(mode == "SITL").lower(),
-        "SHIP_SYSTEM_ID": "17" if mode == "SITL" else "0",
         "PEARL_LIB_DIR": str(MISSION.parents[2] / "lib"),
     }
     subprocess.run(
@@ -96,8 +119,10 @@ class SITLLaunchTest(unittest.TestCase):
                 self.assertNotIn("SITL_ARGS", source)
 
     def exercise_launcher(self, *, mode="SITL", warp=5, just_make=False,
-                          overrides=None, expected_exit=0):
-        targets = [MISSION / "targ_uav.moos", MISSION / "targ_uav.bhv"]
+                          overrides=None, expected_exit=0, extra_args=(), expected_drone=None):
+        targets = [MISSION / "targ_uav.moos", MISSION / "targ_uav.bhv",
+                   *MISSION.glob("plug_uav_fsm_*.moos"),
+                   *(path for path in (MISSION / "uav_fsm").rglob("*") if path.is_file())]
         originals = {path: path.read_bytes() if path.exists() else None for path in targets}
         with tempfile.TemporaryDirectory(prefix="sitl-launch-") as directory:
             root = Path(directory)
@@ -108,14 +133,22 @@ class SITLLaunchTest(unittest.TestCase):
             with socket.socket() as reservation:
                 reservation.bind(("127.0.0.1", 0))
                 port = reservation.getsockname()[1]
+            with socket.socket() as reservation:
+                reservation.bind(("127.0.0.1", 0))
+                target_port = reservation.getsockname()[1]
             env = dict(os.environ, TEST_ROOT=directory, SITL_WRAPPER=str(root / "simulator"),
                        PATH=str(root) + os.pathsep + os.environ["PATH"],
                        SITL_LOG_DIR=str(root / "logs"), SITL_PORT=str(port),
+                       SITL_TARGET_PORT=str(target_port),
                        SITL_STARTUP_TIMEOUT="4", SITL_SPEEDUP="99")
             if mode == "SITL":
                 env["TEST_REQUIRE_READY"] = "1"
+            for name in ("DRONE_MODEL", "DRONE_PARAM_FILE", "MODE_PARAM_FILE",
+                         "MISSION_PARAM_FILE"):
+                env.pop(name, None)
             env.update(overrides or {})
-            command = [str(MISSION / "launch_uav.sh"), "--auto", f"--mode={mode}", str(warp)]
+            command = [str(MISSION / "launch_uav.sh"), "--auto", f"--mode={mode}", str(warp),
+                       *extra_args]
             if just_make:
                 command.append("--just_make")
             antler = None
@@ -133,12 +166,16 @@ class SITLLaunchTest(unittest.TestCase):
                     os.kill(antler["pid"], signal.SIGTERM)
                 if mode == "REAL" or just_make:
                     self.assertFalse((root / "up.json").exists())
-                else:
+                elif expected_exit == 0 or (root / "up.json").exists():
                     self.wait_for(root / "down.json")
                     up = json.loads((root / "up.json").read_text())
                     down = json.loads((root / "down.json").read_text())
                     self.assertEqual(up["speedup"], str(warp))
-                    self.assertEqual(up["params"], str(MISSION / "sitl.parm"))
+                    drone = (str(MISSION.parents[2] / "config/ardupilot/drones/x500.parm")
+                             if expected_drone is None else expected_drone)
+                    self.assertEqual(up["params"], [
+                        *([drone] if drone else []),
+                        str(MISSION / "sitl.parm"), str(MISSION / "mission.parm")])
                     self.assertTrue(up["project"].startswith("moos-sitl-"))
                     self.assertEqual(down["project"], up["project"])
                     self.assertEqual(up["args"], ["up", "-d", "--no-build"])
@@ -165,6 +202,52 @@ class SITLLaunchTest(unittest.TestCase):
                 self.fail(f"Timed out waiting for {path}")
             time.sleep(0.05)
 
+    def test_top_level_forwards_model_and_profile_options(self):
+        with tempfile.TemporaryDirectory(prefix="model-forwarding-") as directory:
+            root = Path(directory)
+            shutil.copyfile(MISSION / "launch.sh", root / "launch.sh")
+            child = ('#!/usr/bin/env python3\n'
+                     'import json, pathlib, sys\n'
+                     'pathlib.Path(__file__).with_suffix(".json").write_text('
+                     'json.dumps(sys.argv[1:]))\n')
+            for name in ("launch_uav.sh", "launch_pearl.sh", "launch_shoreside.sh"):
+                path = root / name
+                path.write_text(child)
+                path.chmod(0o755)
+            result = subprocess.run(
+                ["bash", str(root / "launch.sh"), "--just_make", "--model=quad-test_2",
+                 "--drone-params=none"], capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            uav = json.loads((root / "launch_uav.json").read_text())
+            self.assertIn("--model=quad-test_2", uav)
+            self.assertIn("--drone-params=none", uav)
+            for name in ("launch_pearl.json", "launch_shoreside.json"):
+                args = json.loads((root / name).read_text())
+                self.assertFalse(any(arg.startswith("--model=") for arg in args))
+
+    def test_explicit_model_selects_profile_and_default_is_x500(self):
+        self.exercise_launcher(extra_args=("--model=x500",))
+
+    def test_model_file_override_wins_in_either_cli_order(self):
+        with tempfile.TemporaryDirectory(prefix="model-override-") as directory:
+            profile = Path(directory) / "drone file.parm"
+            profile.write_text("# Empty override fixture; no parameters to mutate.\n")
+            for args in (("--model=missing", "--drone-params=" + str(profile)),
+                         ("--drone-params=" + str(profile), "--model=missing")):
+                self.exercise_launcher(extra_args=args, expected_drone=str(profile))
+        self.exercise_launcher(extra_args=("--model=missing", "--drone-params=none"),
+                               expected_drone="")
+
+    def test_missing_or_invalid_model_prevents_startup(self):
+        for model in ("no-such-test-model", "../x500", ""):
+            self.exercise_launcher(extra_args=("--model=" + model,), expected_exit=1)
+        self.exercise_launcher(mode="REAL", extra_args=("--model=no-such-test-model",),
+                               expected_exit=1)
+
+    def test_model_selection_just_make_still_does_not_upload(self):
+        self.exercise_launcher(mode="REAL", just_make=True,
+                               extra_args=("--model=x500", "--upload-params"))
+
     def test_startup_order_speedup_and_auto_cleanup(self):
         for warp in (1, 5):
             with self.subTest(warp=warp):
@@ -172,6 +255,15 @@ class SITLLaunchTest(unittest.TestCase):
 
     def test_real_does_not_start_simulator(self):
         self.exercise_launcher(mode="REAL")
+
+    def test_real_refuses_sitl_parameter_stack_before_antler(self):
+        self.exercise_launcher(mode="REAL", expected_exit=1,
+                               extra_args=("--upload-params",
+                                           "--mode-params=" + str(MISSION / "sitl.parm")))
+
+    def test_just_make_does_not_upload_real_parameters(self):
+        self.exercise_launcher(mode="REAL", just_make=True,
+                               extra_args=("--upload-params",))
 
     def test_just_make_does_not_start_simulator(self):
         self.exercise_launcher(just_make=True)

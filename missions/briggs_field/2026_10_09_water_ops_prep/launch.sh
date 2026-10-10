@@ -27,11 +27,15 @@ XLAUNCHED="no"
 NOGUI="no"
 
 MODE="SITL"
-PEARL_START="-4,-22,0"
+# 42.356424, -71.098393, UTM offsets from the existing mission datum.
+PEARL_START="51.033305,-56.215822,0"
 SECONDARY_LANDING="10,15"
 MIN_STATE_TIME="0"
+DECK_ALTITUDE="1"
+TARGET_RANGE="12"
 AP_URL=""
 AP_PROTOCOL=""
+PARAM_ARGS=()
 
 SHORE_MPORT="9000"
 UAV_MPORT="9001"
@@ -49,7 +53,7 @@ for ARGI; do
     echo "$ME [OPTIONS] [time_warp]"
     echo
     echo "Modes:"
-    echo "  --mode=<SITL|REAL>            Whole-mission operating mode (default: SITL)"
+    echo "  --mode=<SITL>                 Local all-community launcher (default: SITL)"
     echo
     echo "Options:"
     echo "  --help, -h                    Show this help message"
@@ -60,9 +64,17 @@ for ARGI; do
     echo "  --nogui, -ng                  No pMarineViewer"
     echo "  --pearl_start=<X,Y,H>         PEARL simulator start position"
     echo "  --secondary_landing=<X,Y>     Contingency landing point (default: 10,15)"
+    echo "  --deck_altitude=<1>     Shared target/deck height, metres MSL"
+    echo "  --target_range=<12>     Landing-target 3-D detection range, metres"
     echo "  --min_state_time=<0>          Minimum FSM state dwell, seconds"
     echo "  --ap_url=<endpoint>           UAV ArduPilot endpoint"
     echo "  --ap_protocol=<proto>         UAV udp, tcp, or serial"
+    echo "  --model=<x500>               Drone parameter profile basename (not SITL frame)"
+    echo "  --drone-params=<PATH|none>    Override model-selected drone profile"
+    echo "  --mode-params=<PATH|none>     Optional UAV mode profile"
+    echo "  --mission-params=<PATH|none>  Optional UAV mission profile"
+    echo "  --upload-params               REAL: guarded upload before UAV MOOS"
+    echo "  --param-system-id=<1> --param-component-id=<1> Native FC identity"
     echo
     echo "Ports:"
     echo "  --shore_mport=<9000>          Shoreside MOOSDB port"
@@ -94,12 +106,20 @@ for ARGI; do
     PEARL_START="${ARGI#*=}"
   elif [[ "${ARGI}" == --secondary_landing=* ]]; then
     SECONDARY_LANDING="${ARGI#*=}"
+  elif [[ "${ARGI}" == --deck_altitude=* ]]; then
+    DECK_ALTITUDE="${ARGI#*=}"
+  elif [[ "${ARGI}" == --target_range=* ]]; then
+    TARGET_RANGE="${ARGI#*=}"
   elif [[ "${ARGI}" == --min_state_time=* ]]; then
     MIN_STATE_TIME="${ARGI#*=}"
   elif [[ "${ARGI}" == --ap_url=* ]]; then
     AP_URL="${ARGI#*=}"
   elif [[ "${ARGI}" == --ap_protocol=* ]]; then
     AP_PROTOCOL="${ARGI#*=}"
+  elif [[ "${ARGI}" == --model=* || "${ARGI}" == --drone-params=* || "${ARGI}" == --mode-params=* ||
+          "${ARGI}" == --mission-params=* || "${ARGI}" == --upload-params ||
+          "${ARGI}" == --param-system-id=* || "${ARGI}" == --param-component-id=* ]]; then
+    PARAM_ARGS+=("$ARGI")
   elif [[ "${ARGI}" == --shore_mport=* ]]; then
     SHORE_MPORT="${ARGI#*=}"
   elif [[ "${ARGI}" == --uav_mport=* ]]; then
@@ -118,9 +138,14 @@ for ARGI; do
   fi
 done
 
+if [[ ! "$DECK_ALTITUDE" =~ ^[0-9]+([.][0-9]+)?$ || ! "$TARGET_RANGE" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
+   ! awk -v d="$DECK_ALTITUDE" -v r="$TARGET_RANGE" 'BEGIN {exit !(d>=0 && d<=5 && r>0)}'; then
+  echo "$ME: require deck_altitude in [0,5] m MSL and target_range > 0." >&2
+  exit 1
+fi
 MODE=$(echo "$MODE" | tr '[:lower:]' '[:upper:]')
-if [[ "$MODE" != "SITL" && "$MODE" != "REAL" ]]; then
-  echo "$ME: --mode must be SITL or REAL. Exit Code 1."
+if [[ "$MODE" != "SITL" ]]; then
+  echo "$ME: launch.sh is SITL-only; use the split launchers for REAL or GRASS. Exit Code 1."
   exit 1
 fi
 if [[ ! "$MIN_STATE_TIME" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -133,11 +158,8 @@ if [[ ! "$SECONDARY_LANDING" =~ ^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+),[+-]?([0-9]
   exit 1
 fi
 
-UAV_MODE="$MODE"
-PEARL_MODE="$MODE"
-if [ "$MODE" = "SITL" ]; then
-  PEARL_MODE="SIM"
-fi
+UAV_MODE="SITL"
+PEARL_MODE="SIM"
 
 #------------------------------------------------------------
 #  Part 4: Show launch summary.
@@ -175,11 +197,11 @@ fi
 #------------------------------------------------------------
 #  Part 6: Launch the two vehicle communities.
 #------------------------------------------------------------
-UARGS=(--auto "$TIME_WARP" --mode="$UAV_MODE")
+UARGS=(--auto "$TIME_WARP" --mode="$UAV_MODE" "${PARAM_ARGS[@]}")
 UARGS+=(--mport="$UAV_MPORT" --pshare="$UAV_PSHARE")
 UARGS+=(--shore_pshare="$SHORE_PSHARE")
 UARGS+=(--pearl_ip=localhost --pearl_pshare="$PEARL_PSHARE")
-UARGS+=(--secondary_landing="$SECONDARY_LANDING")
+UARGS+=(--secondary_landing="$SECONDARY_LANDING" --deck_altitude="$DECK_ALTITUDE" --target_range="$TARGET_RANGE")
 UARGS+=(--min_state_time="$MIN_STATE_TIME")
 [ -n "$AP_URL" ] && UARGS+=(--ap_url="$AP_URL")
 [ -n "$AP_PROTOCOL" ] && UARGS+=(--ap_protocol="$AP_PROTOCOL")
@@ -206,6 +228,8 @@ vecho "Launching PEARL: ${PARGS[*]}"
 SARGS=(--auto "$TIME_WARP" --mode="$MODE")
 SARGS+=(--mport="$SHORE_MPORT" --pshare="$SHORE_PSHARE")
 SARGS+=(--uav_ip=localhost --uav_pshare="$UAV_PSHARE")
+SARGS+=(--pearl_ip=localhost --pearl_pshare="$PEARL_PSHARE")
+SARGS+=(--secondary_landing="$SECONDARY_LANDING")
 [ "$JUST_MAKE" = "yes" ] && SARGS+=(--just_make)
 [ "$VERBOSE" = "yes" ] && SARGS+=(--verbose)
 [ "$NOGUI" = "yes" ] && SARGS+=(--nogui)

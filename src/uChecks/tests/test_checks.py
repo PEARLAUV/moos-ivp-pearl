@@ -32,6 +32,12 @@ class ChecksIntegrationTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="uchecks-")
         self.path = Path(self.temp.name)
         self.mission = self.path / "checks.moos"
+        lease = self._testMethodName.startswith("test_result_lease_")
+        extra_apps = (
+            f"Run = {MOOS_BIN / 'pLogger'} @ NewConsole=false\n"
+            f"  Run = {MOOS_BIN / 'uTimerScript'} @ NewConsole=false ~ uLeaseInputs"
+            if lease else ""
+        )
         self.mission.write_text(f"""
 ServerHost=127.0.0.1
 ServerPort={free_port()}
@@ -42,6 +48,7 @@ ProcessConfig=ANTLER
   Run = {MOOS_BIN / 'MOOSDB'} @ NewConsole=false
   Run = {CHECK_BINARY} @ NewConsole=false
   Run = {CHECK_BINARY} @ NewConsole=false ~ uChecksSession
+  {extra_apps}
 }}
 ProcessConfig=uChecksSession
 {{
@@ -61,12 +68,33 @@ ProcessConfig=uChecks
   condition=CHECK_ENABLE=true
   result_var=TEST_ALL
   result_prefix=TEST_
+  {"result_interval=0.2" if lease else ""}
   check=name=GPS,timeout=12,max_age=3,success_hold=1
   require=check=GPS,var=GPS_FIX,type=double,min=3,on_mismatch=wait
   check=name=FLIGHT_PLAN,timeout=12
   require=check=FLIGHT_PLAN,var=ROUTE_READY,type=string,equals=true,on_mismatch=wait
   check=name=BATTERY,timeout=12,max_age=30
   require=check=BATTERY,var=BATTERY_VALID,type=double,equals=1,on_mismatch=fail
+}}
+ProcessConfig=uLeaseInputs
+{{
+  AppTick=20
+  CommsTick=20
+  condition=REFRESH_GPS=true
+  paused=false
+  reset_max=unlimited
+  reset_time=0.1
+  event=var=GPS_FIX,val=3,time=0
+}}
+ProcessConfig=pLogger
+{{
+  AppTick=20
+  CommsTick=20
+  File=LOG
+  PATH=./
+  AsyncLog=true
+  FileTimeStamp=false
+  WildCardLogging=true
 }}
 """, encoding="utf-8")
         self.log = (self.path / "antler.log").open("w", encoding="utf-8")
@@ -114,6 +142,54 @@ ProcessConfig=uChecks
         raw = (self.path / ".checkvars").read_text(encoding="utf-8").strip()
         self.assertTrue(raw.startswith(variable + "="), raw[:300])
         return json.loads(raw[len(variable) + 1:])
+
+    def result_records(self, variable: str) -> list[tuple[float, str]]:
+        records = []
+        for path in self.path.glob("**/*.alog"):
+            for line in path.read_text().splitlines():
+                fields = line.split(None, 3)
+                if len(fields) != 4 or fields[1] != variable:
+                    continue
+                try:
+                    records.append((float(fields[0]), fields[3].strip()))
+                except ValueError:
+                    continue
+        return records
+
+    def test_result_lease_refreshes_active_evaluation_not_retained_success(self) -> None:
+        self.poke("CHECK_ENABLE:=true", "REFRESH_GPS:=true",
+                  "ROUTE_READY:=true", "BATTERY_VALID=1")
+        self.query("TEST_ALL==success")
+        time.sleep(0.8)
+        for variable in ("TEST_ALL", "TEST_GPS", "TEST_ALL_STATE", "TEST_GPS_STATE"):
+            with self.subTest(variable=variable):
+                records = self.result_records(variable)
+                successes = [r for r in records if r[1] == "success" or
+                             r[1].startswith("status=success,")]
+                self.assertGreaterEqual(len(successes), 3, records)
+                self.assertGreater(successes[-1][0], successes[0][0] + 0.4)
+
+        self.poke("CHECK_ENABLE:=false")
+        state = self.snapshot("TEST_ALL_SNAPSHOT", "CHECK_ENABLE==false")
+        self.assertFalse(state["active"])
+        time.sleep(0.3)
+        frozen = {key: len(self.result_records(key))
+                  for key in ("TEST_ALL", "TEST_GPS")}
+        time.sleep(0.8)
+        self.assertEqual(frozen, {key: len(self.result_records(key)) for key in frozen})
+
+        # Re-enable, then stop telemetry. Heartbeats must publish the newly
+        # evaluated non-success, never renew success using stale GPS input.
+        self.poke("CHECK_ENABLE:=true", "REFRESH_GPS:=false")
+        time.sleep(3.5)
+        self.query("TEST_ALL!=success")
+        state = self.snapshot("TEST_ALL_SNAPSHOT", "TEST_ALL!=success")
+        self.assertFalse(state["checks"]["GPS"]["requirements"][0]["fresh"])
+        self.assertNotEqual(state["aggregate"]["status"], "success")
+        time.sleep(0.3)
+        records = self.result_records("TEST_ALL")
+        last_non_success = max(t for t, v in records if v != "success")
+        self.assertFalse(any(t > last_non_success and v == "success" for t, v in records))
 
     def test_snapshot_periodic_and_final_inactive(self) -> None:
         self.poke("CHECK_ENABLE=true", "ROUTE_READY:=true", "BATTERY_VALID=1")

@@ -5,7 +5,7 @@ observations, and physical deck simulation kept separate.
 
 ## Recovery sequence
 
-1. UAV automatically arms, takes off to 8 m, and flies south along x=15;
+1. SITL startup returns with the UAV armed and airborne at 8 m; it then flies south along x=15;
    simulated PEARL loiters clockwise on a 15 m radius circle centered at
    (-15,-115), entirely west (left on the map) of the drone's lane. PEARL starts
    at (-15,-130), heading west. The circle is approximated by 12 loiter vertices.
@@ -46,8 +46,8 @@ mediated. The coordinator checks the target received over MAVLink by
 `--deck_altitude` defaults to **1 m MSL**; SITL home is 0 m MSL. The same
 configured height feeds both target geometry and `pMavlinkShipBridge`. The
 patched simulator uses PEARL's external poses to establish the physical deck
-surface. Deck-pose streaming is enabled at clearance, not at startup, so the
-initial grounded UAV is not moved to PEARL before takeoff. It remains enabled
+surface. Deck-pose streaming is enabled at clearance, not during airborne
+startup, so it cannot move the UAV to PEARL prematurely. It remains enabled
 following touchdown so the recovered drone moves with the deck.
 
 The external deck patch applies its surface without a proximity gate; enable
@@ -91,9 +91,10 @@ patched `ardupilot-sitl:local` image.
 UAV lane endpoints. The launcher requires the entire circle to lie west of
 `--uav_x` and PEARL speed to remain within (0, 0.5] m/s.
 
-The launcher owns SITL and all three communities. It passes `--home`,
-`--speedup`, `--no-rc`, ports (`--port`, `--sim-port`, `--diagnostic-port`), and
-`--param-file` through CLI options. `--sitl_diagnostic_port` allows isolated
+The launcher owns SITL and all three communities. It passes `--airborne`,
+`--home`, `--speedup`, ports (`--port`, `--sim-port`, `--diagnostic-port`), and
+`--param-file` through CLI options; airborne startup enables no-RC defaults.
+`--sitl_diagnostic_port` allows isolated
 observer connections without claiming the default diagnostics port. Logs are
 in `LOG_sitl`, `LOG_antler`, and each vehicle's `LOG_*` directory.
 

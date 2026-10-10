@@ -7,12 +7,14 @@ usage() {
 Usage: $0 [--param-file PATH] [--no-rc] [--home LOCATION] [--speedup FACTOR]
           [--port ENDPOINT] [--diagnostic-port ENDPOINT] [--sim-port ENDPOINT]
           [time_warp] [STATE_DIRECTORY] [COMPOSE_COMMAND ...]
-Passes mission and runtime options to the ardupilot-sitl wrapper by CLI flags.
+Repeat --param-file for ordered overlays (drone, mode, mission; later wins).
+Omit optional layers; explicitly named missing files are errors.
+Passes parameter and runtime options to the ardupilot-sitl wrapper by CLI flags.
 Use SITL_WRAPPER to select a non-default wrapper executable.
 EOF
 }
 
-param_file=""
+param_files=()
 wrapper_options=()
 speedup_set=false
 while (($#)); do
@@ -23,11 +25,11 @@ while (($#)); do
         usage >&2
         exit 2
       fi
-      param_file=$2
+      param_files+=("$2")
       shift 2
       ;;
     --param-file=*)
-      param_file=${1#*=}
+      param_files+=("${1#*=}")
       shift
       ;;
     --no-rc)
@@ -63,13 +65,14 @@ while (($#)); do
   esac
 done
 
-if [[ -n "$param_file" ]]; then
+for index in "${!param_files[@]}"; do
+  param_file=${param_files[$index]}
   if [[ ! -f "$param_file" ]]; then
     echo "$0: parameter file not found: $param_file" >&2
     exit 1
   fi
-  param_file="$(cd -- "$(dirname -- "$param_file")" && pwd -P)/$(basename -- "$param_file")"
-fi
+  param_files[$index]="$(cd -- "$(dirname -- "$param_file")" && pwd -P)/$(basename -- "$param_file")"
+done
 
 SITL_WRAPPER="${SITL_WRAPPER:-$HOME/workspace/mit/pearl/ardupilot-sitl/bin/ardupilot-sitl}"
 if [[ ! -x "$SITL_WRAPPER" ]]; then
@@ -89,7 +92,7 @@ if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
 fi
 
 wrapper_args=()
-if [[ -n "$param_file" ]]; then
+for param_file in "${param_files[@]}"; do
   wrapper_args+=(--param-file "$param_file")
-fi
+done
 exec "$SITL_WRAPPER" "${wrapper_args[@]}" "${wrapper_options[@]}" "$@"

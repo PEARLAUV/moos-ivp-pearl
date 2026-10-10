@@ -6,9 +6,12 @@
 initialize MOOS_MANUAL_OVERRIDE = false
 initialize PEARL_ALLSTOP        = false
 initialize MAIN_TASK_STATUS         = none
-initialize PEARL_RENDEZVOUS_ACTIVE  = false
-initialize PEARL_RENDEZVOUS_ARRIVED = false
+initialize RENDEZVOUS_OWN_ACTIVE  = false
+initialize RENDEZVOUS_OWN_WAYPOINT_REACHED = false
 initialize PEARL_TAKEOFF_STATIONKEEP_ACTIVE = false
+initialize ROUTE_READY = false
+initialize ROUTE_DEPLOY = false
+initialize ROUTE_CLEAR = false
 
 //----------------------------------------------------
 Behavior = BHV_StationKeep
@@ -28,7 +31,7 @@ Behavior = BHV_StationKeep
   transit_speed      = $(SPEED)
   swing_time         = 3
 
-  visual_hints = vertex_size=0, edge_color=blue
+  visual_hints = vertex_size=0, edge_color=blue, label_color=invisible, nextpt_label_color=invisible
 }
 
 //----------------------------------------------------
@@ -49,34 +52,37 @@ Behavior = BHV_StationKeep
   transit_speed      = $(SPEED)
   swing_time         = 3
 
-  visual_hints = vertex_size=0, edge_color=red, edge_size=2
+  visual_hints = vertex_size=0, edge_color=red, edge_size=2, label_color=invisible, nextpt_label_color=invisible
 }
 
 //----------------------------------------------------
 Behavior = BHV_Waypoint
 {
-  name      = pearl_main_task
-  pwt       = 100
-  condition = PEARL_FSM_MAIN_ACTIVITY_STATE=EXECUTING_MISSION
-  perpetual = true
-  endflag   = MAIN_TASK_STATUS=completed
-  updates   = PEARL_WPT_UPDATE
-
-  lead           = 2
-  lead_damper    = 1
-  speed          = $(SPEED)
-  capture_line   = true
-  capture_radius = 3
-  slip_radius    = 10
-  points         = 22,-9:32,-35:14,-44
-  repeat         = 2
-  order          = normal
-
-  visual_hints = nextpt_color=yellow
-  visual_hints = nextpt_vertex_size=8
-  visual_hints = nextpt_lcolor=gray70
-  visual_hints = vertex_color=dodger_blue, edge_color=white
-  visual_hints = vertex_size=5, edge_size=1
+  templating = spawn
+  name = pearl_main_task_
+  pwt = 100
+  updates = ROUTE_UPDATE
+  spawnflag = ROUTE_READY=true
+  spawnflag = ROUTE_READY_NAME=$[BHVNAME]
+  spawnflag = ROUTE_CLEAR=false
+  // Parent suspension preserves the current waypoint index for history resume.
+  condition = (ROUTE_CLEAR=true) or (PEARL_FSM_OPERATION_STATE=NORMAL_OPERATION)
+  condition = (ROUTE_CLEAR=true) or (PEARL_FSM_MAIN_ACTIVITY_STATE=EXECUTING_MISSION)
+  condition = (ROUTE_CLEAR=true) or (RENDEZVOUS_OWN_ACTIVE=false)
+  condition = (ROUTE_CLEAR=true) or (ROUTE_DEPLOY=true)
+  endflag = MAIN_TASK_STATUS=completed
+  endflag = ROUTE_READY=false
+  endflag = ROUTE_READY_NAME=none
+  endflag = ROUTE_DEPLOY=false
+  endflag = ROUTE_CLEAR=false
+  speed = $(SPEED)
+  capture_radius = 1
+  slip_radius = 2
+  order = normal
+  repeat = 0
+  points = empty
+  visual_hints = label_color=invisible, nextpt_label_color=invisible
+  visual_hints = edge_color=dodger_blue, vertex_color=dodger_blue
 }
 
 //----------------------------------------------------
@@ -95,20 +101,41 @@ Behavior = BHV_Waypoint
 }
 
 //----------------------------------------------------
-// A dedicated waypoint instance prevents a rendezvous update from changing
-// PEARL's fixed route. Completion hands PEARL to its existing StationKeep.
+// Hold after capturing the local point, even before the vehicles are close.
+Behavior = BHV_StationKeep
+{
+  name      = pearl_recovery_station_keep
+  pwt       = 100
+  condition = PEARL_FSM_OPERATION_STATE=RECOVERY_SUPPORT
+  condition = RENDEZVOUS_OWN_ACTIVE=false
+  condition = MOOS_MANUAL_OVERRIDE=false
+
+  center_activate    = true
+  inner_radius       = 0.25
+  outer_radius       = 0.5
+  hibernation_radius = 0.75
+  outer_speed        = $(SPEED)
+  transit_speed      = $(SPEED)
+  swing_time         = 3
+  visual_hints = vertex_size=0, edge_color=magenta, label_color=invisible, nextpt_label_color=invisible
+}
+
+//----------------------------------------------------
+// A dedicated waypoint instance prevents rendezvous updates from changing
+// PEARL's fixed route. Its capture radius is independent of point freezing
+// and vehicle-to-vehicle arrival distance.
 Behavior = BHV_Waypoint
 {
-  name       = pearl_rendezvous_
+  name       = pearl_rendezvous
   pwt        = 110
-  templating = spawn
-  condition = DEPLOY=true
+  perpetual  = true
   condition = MOOS_MANUAL_OVERRIDE=false
-  condition = PEARL_RENDEZVOUS_ACTIVE=true
-  updates   = PEARL_RENDEZVOUS_UPDATE
+  condition = RENDEZVOUS_OWN_ACTIVE=true
+  updates   = RENDEZVOUS_OWN_UPDATE
 
-  endflag = PEARL_RENDEZVOUS_ACTIVE=false
-  endflag = PEARL_RENDEZVOUS_ARRIVED=true
+  endflag = RENDEZVOUS_OWN_ACTIVE=false
+  // Capturing a waypoint is NOT rendezvous arrival; pRendezvous owns that.
+  endflag = RENDEZVOUS_OWN_WAYPOINT_REACHED=true
   endflag = RETURN=false
   endflag = STATION_KEEP=true
 
@@ -123,7 +150,7 @@ Behavior = BHV_Waypoint
   repeat         = 0
   order          = normal
 
-  visual_hints = nextpt_color=magenta
+  visual_hints = nextpt_color=magenta, label_color=invisible, nextpt_label_color=invisible
   visual_hints = nextpt_vertex_size=8
-  visual_hints = vertex_color=magenta, edge_color=white
+  visual_hints = vertex_color=magenta, edge_color=white, label_color=invisible, nextpt_label_color=invisible
 }

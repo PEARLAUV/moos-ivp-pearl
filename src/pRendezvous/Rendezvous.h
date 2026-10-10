@@ -68,6 +68,11 @@ private:
   double m_nav_stale_thresh = 10;
   double m_transit_timeout = 300;
   double m_point_freeze_radius = 3;
+  double m_planning_started_time = 0;
+  double m_planning_history_window = 0; // opt-in; legacy behavior elsewhere
+  double m_planning_max_positive_accel = 0.5;
+  bool m_history_usable = true;
+  RendezvousSpeedEstimator::History m_own_history, m_peer_history;
   double m_arrival_radius = 1;
   double m_arrival_dwell = 0;
   double m_state_post_interval = 1;

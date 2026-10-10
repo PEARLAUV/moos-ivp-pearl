@@ -28,9 +28,6 @@ ProcessConfig = ANTLER
 
   Run = pRendezvous        @ NewConsole = false
   Run = pEchoVar           @ NewConsole = false
-  Run = uTimerScript       @ NewConsole = false ~ uAutoStartReady
-  Run = uTimerScript       @ NewConsole = false ~ uAutoArm
-  Run = uTimerScript       @ NewConsole = false ~ uAutoTakeoff
   Run = uTimerScript       @ NewConsole = false ~ uLaneStart
   Run = uTimerScript       @ NewConsole = false ~ uRendezvousSequence
 }
@@ -222,67 +219,7 @@ ProcessConfig = pEchoVar
 }
 
 //----------------------------------------------------
-// SITL reports healthy/armable before its takeoff command path is ready.
-// Wait until the simulator has completed startup before arming; otherwise the
-// short armed-on-ground window can expire before takeoff is accepted.
-ProcessConfig = uAutoStartReady
-{
-  AppTick       = 10
-  CommsTick     = 10
-  script_atomic = true
-  reset_max     = 0
-  paused        = false
-  script_name   = AUTO_START_READY
-
-  event = var=UAV_AUTOSTART_READY, val=true, time=45
-}
-
-//----------------------------------------------------
-// Auto start, step 1: arm 3 s after ArduPilot reports armable and healthy,
-// and every 5 s after that while disarmed on the ground.
-ProcessConfig = uAutoArm
-{
-  AppTick   = 10
-  CommsTick = 10
-
-  condition   = UAV_AUTO_START = pending
-  condition   = UAV_AUTOSTART_READY = true
-  condition   = UAV_HEALTH_ALL_OK = 1
-  condition   = UAV_IS_ARMABLE = 1
-  condition   = UAV_IS_ARMED = 0
-  condition   = UAV_LANDED_STATE = ON_GROUND
-  upon_awake  = restart
-  reset_max   = unlimited
-  reset_time  = 5
-  paused      = false
-  script_name = AUTO_ARM
-
-  event = var=ARM_UAV, val=true, time=3
-}
-
-//----------------------------------------------------
-// Auto start, step 2: take off 5 seconds after reporting armed. pArduBridge
-// rejects takeoff while the Helm is active, so the Helm stays off until
-// step 3.
-ProcessConfig = uAutoTakeoff
-{
-  AppTick   = 10
-  CommsTick = 10
-
-  condition   = UAV_AUTO_START = pending
-  condition   = UAV_IS_ARMED = 1
-  condition   = UAV_LANDED_STATE = ON_GROUND
-  upon_awake  = restart
-  reset_max   = unlimited
-  reset_time  = 5
-  paused      = false
-  script_name = AUTO_TAKEOFF
-
-  event = var=ARDU_COMMAND, val=DO_TAKEOFF, time=5
-}
-
-//----------------------------------------------------
-// Auto start, step 3: near takeoff altitude, form the lane decision and hand
+// SITL startup returns with the aircraft airborne; form the lane decision and hand
 // control to the Helm (same ordering as the field mission's route handoff).
 ProcessConfig = uLaneStart
 {
@@ -292,7 +229,7 @@ ProcessConfig = uLaneStart
   condition     = UAV_AUTO_START = pending
   condition     = UAV_LANDED_STATE = IN_AIR
   upon_awake    = restart
-  // Step 3 clears its own gate; it must still run to completion.
+  // This script clears its own gate, so it must still run to completion.
   script_atomic = true
   reset_max     = 0
   paused        = false

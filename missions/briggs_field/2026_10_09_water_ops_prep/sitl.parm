@@ -1,26 +1,195 @@
-# ArduCopter SITL parameters for the default Charles River rendezvous.
-# The moving target is supplied over MAVLink by pMavlinkShipBridge.
-PLND_ENABLED      1
-PLND_TYPE         1
-PLND_OPTIONS      1
-PLND_STRICT       2
+# Water-operations SITL MODE layer. Apply drone -> this file -> mission.parm.
+# Simulation-only: NEVER upload this layer to a real aircraft. It overrides the
+# physical drone profile for idealized rangefinder behavior. Shared precision
+# landing settings now live in mission.parm, not this file. --no-rc provides an
+# earlier baseline; later explicit user overlays can override that baseline.
+# Native type-100 data goes through ArduPilot's real rangefinder frontend, not
+# invented MOOS navigation/readiness. No EKF source/arming/flight-mode changes.
+# Real protocol, noise, latency, glare, water response and dead zones are NOT
+# replicated; successful SITL results cannot certify the installed sensor.
+# Type-100 source:
+# https://github.com/ArduPilot/ardupilot/blob/dbe792162d06cab66c3475fd5556bf7a120f119e/libraries/AP_RangeFinder/AP_RangeFinder_SITL.cpp
+# Metadata: https://github.com/ArduPilot/ardupilot/blob/dbe792162d06cab66c3475fd5556bf7a120f119e/libraries/AP_RangeFinder/AP_RangeFinder_Params.cpp
+
+# RNGFND1_TYPE -- enum: 0 disabled, 1 analog, 100 native SITL (selected).
+# Read the simulator's range through ArduPilot's native backend. No additional
+# app, analog pin/scaling or serial endpoint is needed. Do not copy to hardware.
+# This is independent of PLND_TYPE=1 (external MAVLink target) in mission.parm.
+# https://ardupilot.org/copter/docs/parameters.html#rngfnd1-type
+RNGFND1_TYPE 100
+
+# SIM_SONAR_ROT -- simulated beam orientation enum, 25 = PITCH_270 (down).
+# Match the drone's downward RNGFND1_ORIENT=25. Simulator attitude and mounting
+# geometry determine measured slant range to the surface; this is not UAV yaw,
+# a precision-target mounting correction, or deck-edge detection.
+# https://ardupilot.org/copter/docs/parameters.html#sim-sonar-rot
+SIM_SONAR_ROT 25
+
+# RNGFND1_MIN -- reliable minimum range, metres. User-approved SITL override 0
+# replaces the physical 0.15 m minimum, so zero/near-ground simulated readings
+# can become Good after native validation samples. This deliberately removes
+# the hardware dead zone; it is not a physical mounting/surface correction.
+# PLND_ALT_MIN=0 separately disables a blind-finish height exception. Native
+# health, freshness and geometry checks still apply; nothing fabricates flight
+# readiness. MAX=12 m remains inherited from the selected physical drone file.
+# https://ardupilot.org/copter/docs/parameters.html#rngfnd1-min
+RNGFND1_MIN 0
+
+# RNGFND1_GNDCLR -- expected grounded range, metres. User-approved SITL value 0
+# replaces physical 0.17 m, matching the zero-height idealized fixture rather
+# than real landing-gear/sensor mounting. It does not move the beam or tell LAND
+# to stop at zero. Although metadata lists 0.05..1.5 m, zero is a deliberate
+# simulation-only override; EKF3 still floors its on-ground assumption at 0.05 m.
+# Real sensor clearance remains in the drone profile. No frontend/estimator
+# readiness is manufactured, and the zero override MUST NOT reach REAL.
+# https://ardupilot.org/copter/docs/parameters.html#rngfnd1-gndclr
+# EKF floor: libraries/AP_NavEKF3/AP_NavEKF3_Measurements.cpp::readRangeFinder
+RNGFND1_GNDCLR 0
+
+# Precision-target virtual sensor mounting: upstream PLND_CAM_POS_X/Y/Z are
+# body-frame offsets in metres, each documented -5..5 m (0.01 m increments).
+# pMavlinkLandingTarget's synthetic observation uses the native vehicle position
+# as its virtual sensor origin; no separate camera translation is modeled.
+# User-approved zero offsets belong ONLY in this SITL mode layer, not the
+# shared mission: REAL mounting is unmeasured and must remain inherited.
+# These offsets are not Home/deck heights, rangefinder GNDCLR/beam mounting,
+# UAV yaw alignment, desired landing offsets or permission to land. They do
+# not move the physical simulator/ship, repair timing, manufacture health or
+# imply a real camera is at the vehicle origin. Origin/axis conventions must
+# agree with the observation producer to avoid missing/double compensation.
+# No custom patch is introduced by these upstream precision-sensor parameters.
+# Source: libraries/AC_PrecLand/AC_PrecLand.cpp, var_info/construct_pos_meas/
+# run_output_prediction, reviewed companion ArduPilot 4.7.1.
+
+# PLND_CAM_POS_X -- forward offset, metres; upstream: "Positive X is forward
+# of the origin." Set 0 because the virtual camera has no forward translation.
+# A nonzero guess would alter native target-position compensation, not physically
+# mount a camera. Only the simulation convention is selected by this choice.
+# https://ardupilot.org/copter/docs/parameters.html#plnd-cam-pos-x
+PLND_CAM_POS_X 0
+
+# PLND_CAM_POS_Y -- right offset, metres; upstream: "Positive Y is to the right
+# of the origin." Set 0 for the same vehicle-origin virtual sensor, with no
+# lateral translation. This is not PEARL's relative bearing or lateral landing
+# clearance; zero neither centers the aircraft nor proves target acquisition.
+# https://ardupilot.org/copter/docs/parameters.html#plnd-cam-pos-y
+PLND_CAM_POS_Y 0
+
+# PLND_CAM_POS_Z -- down offset, metres; upstream: "Positive Z is down from
+# the origin." Set 0 because no vertical virtual-camera translation is modeled.
+# This does not change deck MSL, rangefinder mounting/clearance, target slant
+# range or touchdown detection. REAL camera height must be measured separately.
+# https://ardupilot.org/copter/docs/parameters.html#plnd-cam-pos-z
+PLND_CAM_POS_Z 0
+
+# Desired landing offsets are upstream PLND_LAND_OFS_X/Y, in CENTIMETRES,
+# unlike metre-valued PLND_CAM_POS_*. Each is documented -20..20 cm, 1 cm steps.
+# These select camera-to-target landing displacement, not camera mounting.
+# User-approved SITL-only zeros request the virtual camera directly over the
+# simulated target, without a deliberate forward/right landing displacement.
+# Native output prediction rotates any nonzero body-frame offset into NED
+# using aircraft attitude, not PEARL's yaw, and adds it to the landing estimate.
+# That estimate is also used for the horizontal descent gate and remembered
+# target retry location. Zero adds no such displacement; it does not repair
+# geometry/timing errors, force accurate touchdown, create deck containment or
+# bypass native target/height validity, FSM clearance or landing authority.
+# This is upstream behavior, not a simulator geometry or recovery-policy patch.
+# Source: libraries/AC_PrecLand/AC_PrecLand.cpp, var_info/run_output_prediction,
+# reviewed companion Copter 4.7.1. REAL offsets remain unselected/commented.
+
+# PLND_LAND_OFS_X -- desired forward landing displacement, cm; upstream:
+# "Desired landing position of the camera forward of the target in vehicle
+# body frame." Set 0 for a centered virtual-camera objective. Positive selects
+# forward, negative aft; this is not a Home/deck coordinate or a mount offset.
+# https://ardupilot.org/copter/docs/parameters.html#plnd-land-ofs-x
+PLND_LAND_OFS_X 0
+
+# PLND_LAND_OFS_Y -- desired right landing displacement, cm; upstream:
+# "desired landing position of the camera right of the target in vehicle
+# body frame." Set 0 for the same centered objective. Positive selects right,
+# negative left; zero adds no lateral objective but does not guarantee physical
+# touchdown alignment or prove the real aircraft should use this same value.
+# https://ardupilot.org/copter/docs/parameters.html#plnd-land-ofs-y
+PLND_LAND_OFS_Y 0
+
+# SIM_PLD_ENABLE -- enable the native SITL precision-landing device (boolean).
+# Official parameter metadata: "Allows you to enable (1) or disable (0) the
+# Preland simulation". Keep 0: this mission's synthetic camera is the separate
+# MOOS pMavlinkLandingTarget process, using the MAVLink backend above.
+# This disables the built-in simulated beacon/device, NOT precision landing
+# itself and NOT the external MAVLink stream. Range/stale-geometry failures
+# should be visible through that stream rather than hidden by a native target.
+# Native simulated-beacon position, radiance and range parameters are therefore
+# not part of this mission's target geometry configuration.
+# Official metadata / implementation:
+# https://github.com/ArduPilot/ardupilot/blob/master/libraries/SITL/SIM_Precland.cpp
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#sim-pld-enable
 SIM_PLD_ENABLE    0
 
-# PEARL publishes system 17 GLOBAL_POSITION_INT through SERIAL2. The external
-# ship mode consumes that pose while ArduPilot remains authoritative for
-# landed-aircraft position/height forcing and takeoff detachment. MOOS owns
-# coupling intent through SIM_UAV_ON_SHIP; no external-mode distance gate.
+# SIM_SHIP_ENABLE -- enable SITL's ship/deck model (boolean).
+# Official parameter metadata: "Enable ship landing simulation"; 0 disables,
+# 1 enables. Use 1 so the patched simulator can provide an elevated physical
+# surface and carry the grounded UAV with PEARL; target observations alone
+# cannot create that surface or simulate elevated contact.
+# With SIM_SHIP_EXT=1 below, the patch requires a valid fresh external pose:
+# enabling this parameter alone does not activate a deck at startup.
+# The UAV-owned pMavlinkShipBridge streams while SIM_UAV_ON_SHIP=true:
+# initially disarmed/on deck, disabled on takeoff exit, reenabled on cleared
+# approach, and retained after touchdown. Deck and target share --deck_altitude,
+# in MSL metres, while the mission's SITL home is 0 m MSL.
+# Official metadata / implementation:
+# https://github.com/ArduPilot/ardupilot/blob/master/libraries/SITL/SIM_Ship.cpp
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#sim-ship-enable
+# Modified behavior: companion ardupilot-sitl/patches/external-ship.patch.
 SIM_SHIP_ENABLE   1
+
+# SIM_SHIP_EXT -- CUSTOM PATCH parameter, not an upstream ArduPilot option.
+# Patch description: "Use GLOBAL_POSITION_INT from SIM_SHIP_SYSID instead of
+# the internal circular trajectory". Value 1 selects external MAVLink deck
+# position, MSL altitude, velocity and heading; 0 uses the native trajectory.
+# pMavlinkShipBridge supplies these poses from PEARL, independently of the
+# precision-target broadcaster. No valid pose, or a pose older than 1000 ms
+# of ArduPilot simulated time, makes the external deck surface unavailable.
+# SAFETY/LIMITATION: the patch has NO horizontal proximity gate. While active,
+# its MSL height replaces the ground surface even off-deck, and grounded UAVs
+# are attached to the supplied ship center. Do not enable pose streaming for
+# an off-deck contingency landing. Initial pre-takeoff streaming is intentional
+# here: this mission begins grounded on PEARL, not detached on shore. Disable
+# it for any off-deck start; do not treat enablement as actual attachment proof.
+# Fresh poses must continue
+# after recovery to retain the raised deck and carry the recovered aircraft.
+# No official documentation exists for this extension. Authoritative source:
+# companion ardupilot-sitl/patches/external-ship.patch (ShipSim::var_info,
+# get_external_location/get_location, and Aircraft::update_dynamics).
+# Relative source: ../../../../ardupilot-sitl/patches/external-ship.patch
 SIM_SHIP_EXT      1
+
+# SIM_SHIP_SYSID -- ship's MAVLink system ID (integer; use a distinct vehicle ID).
+# Official parameter metadata: "System ID of the ship"; upstream default is 17.
+# The custom external-pose patch also uses this ID to filter incoming
+# GLOBAL_POSITION_INT senders. Set 17 to match pMavlinkShipBridge's
+# ship_system_id=17 in meta_uav.moos. UAV target observations use system 1
+# and must not be mistaken for deck poses. A mismatch silently prevents valid
+# external deck acquisition, even if the TCP simulation link is connected.
+# This is sender selection, NOT authentication or a MOOS community name.
+# Official metadata / implementation:
+# https://github.com/ArduPilot/ardupilot/blob/master/libraries/SITL/SIM_Ship.cpp
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#sim-ship-sysid
+# Additional receive-filter behavior: ardupilot-sitl/patches/external-ship.patch,
+# ShipSim::handle_external_position.
 SIM_SHIP_SYSID    17
+
+# SIM_SHIP_SPEED -- speed of the native ship trajectory, in metres/second.
+# Official parameter metadata: "Speed of the ship"; native default is 3 m/s.
+# Set 0 so an internal trajectory, if deliberately selected, does not drive
+# an independently moving synthetic boat. This is NOT PEARL's mission speed.
+# With SIM_SHIP_EXT=1, the patch bypasses the native trajectory and derives
+# ship speed/ground motion from external pose velocity instead; PEARL can
+# still move at --speed and drift during its hold despite this value 0.
+# This value neither freezes MOOS PEARL nor cancels external deck motion.
+# Official metadata / implementation:
+# https://github.com/ArduPilot/ardupilot/blob/master/libraries/SITL/SIM_Ship.cpp
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#sim-ship-speed
+# External-mode override: ardupilot-sitl/patches/external-ship.patch,
+# ShipSim::update and ShipSim::apply_external_position.
 SIM_SHIP_SPEED    0
-
-# Center yaw without overriding the default low throttle.
-FS_THR_ENABLE     0
-FLTMODE_CH        0
-GUID_OPTIONS      4
-
-# Direct TCP is serial link 0; request navigation/state streams explicitly.
-SR0_EXT_STAT       2
-SR0_EXTRA1         5
-SR0_POSITION       5

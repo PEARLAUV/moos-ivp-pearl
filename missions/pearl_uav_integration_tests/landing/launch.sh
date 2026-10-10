@@ -223,8 +223,8 @@ if ! read -r HOME_LAT HOME_LON < <(local_to_latlon.py \
   echo "$ME: Could not compute the SITL home position. Exit Code 1." >&2
   exit 1
 fi
-SITL_HOME="$HOME_LAT,$HOME_LON,0,180"
-SITL_WRAPPER_ARGS=(--no-rc --home "$SITL_HOME" --param-file "$MISSION_DIR/sitl.parm" \
+SITL_HOME="$HOME_LAT,$HOME_LON,$ALTITUDE,180"
+SITL_WRAPPER_ARGS=(--airborne --home "$SITL_HOME" --param-file "$MISSION_DIR/sitl.parm" \
   --speedup "$TIME_WARP" --port "$SITL_PORT" --sim-port "$SITL_TARGET_PORT" \
   --diagnostic-port "$SITL_DIAGNOSTIC_PORT")
 # Never adopt or stop a manually launched simulator on the same ports.
@@ -234,27 +234,13 @@ mkdir -p LOG_sitl || exit 1
 SITL_LOG_FILE="$MISSION_DIR/LOG_sitl/$COMPOSE_PROJECT_NAME.log"
 
 STARTUP_TIMEOUT="${SITL_STARTUP_TIMEOUT:-60}"
-DEADLINE=$((SECONDS + STARTUP_TIMEOUT))
-echo "$ME: Starting SITL at $SITL_HOME; log: $SITL_LOG_FILE"
+echo "$ME: Starting SITL airborne at $SITL_HOME; log: $SITL_LOG_FILE"
 if ! timeout "$STARTUP_TIMEOUT" launch_ardupilot_sitl.sh \
     "${SITL_WRAPPER_ARGS[@]}" up -d --no-build > "$SITL_LOG_FILE" 2>&1; then
-  echo "$ME: SITL startup failed; see $SITL_LOG_FILE" >&2
+  echo "$ME: SITL airborne startup failed; see $SITL_LOG_FILE" >&2
   exit 1
 fi
-while true; do
-  RUNNING_ID="$(timeout 2 launch_ardupilot_sitl.sh \
-    "${SITL_WRAPPER_ARGS[@]}" ps --status running --quiet 2>> "$SITL_LOG_FILE")"
-  if [[ -n "$RUNNING_ID" ]] &&
-     timeout 1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/"$1"' _ "$SITL_PORT" 2>/dev/null; then
-    break
-  fi
-  if (( SECONDS >= DEADLINE )); then
-    echo "$ME: SITL controller startup timed out; see $SITL_LOG_FILE" >&2
-    exit 1
-  fi
-  sleep 0.2
-done
-echo "$ME: SITL controller ready."
+echo "$ME: SITL airborne and ready."
 
 #------------------------------------------------------------
 #  Launch the communities.

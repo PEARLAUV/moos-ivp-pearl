@@ -1,0 +1,42 @@
+# Physical sensor profile for the currently used X500; not a complete factory
+# parameter dump, calibration backup, aircraft identity or arming permission.
+# Each future drone gets its own file. Apply before mode and mission files.
+# These are upstream Copter 4.7 parameters using METRES; older *_CM/GNDCLEAR
+# names use other units. Unknown parameters must fail REAL upload before writes.
+# Preserve the already installed hardware RNGFND1_TYPE: its model/interface has
+# not been specified. The REAL uploader rejects disabled/SITL sensor backends
+# when applying this profile. A parameter readback is not sensor health proof.
+# Metadata (pinned firmware):
+# https://github.com/ArduPilot/ardupilot/blob/dbe792162d06cab66c3475fd5556bf7a120f119e/libraries/AP_RangeFinder/AP_RangeFinder_Params.cpp
+
+# RNGFND1_ORIENT -- mounting-direction enum: 25 = down, 24 = up, 0 = forward.
+# The installed sensor faces down for landing height. This declares the sensor
+# orientation; it does not rotate UAV yaw, move hardware or guarantee good data.
+# SITL sets its physical simulated beam separately using SIM_SONAR_ROT=25.
+# https://ardupilot.org/copter/docs/parameters.html#rngfnd1-orient
+RNGFND1_ORIENT 25
+
+# RNGFND1_MIN -- minimum reliable range, metres. User sensor limit: 0.15 = 15 cm.
+# Readings below this are OutOfRangeLow, not healthy zero-height readings. REAL
+# retains this actual dead zone; SITL mode deliberately overrides it to zero
+# for idealized native height/retry tests without changing this physical profile.
+# https://ardupilot.org/copter/docs/parameters.html#rngfnd1-min
+RNGFND1_MIN 0.15
+
+# RNGFND1_MAX -- maximum reliable range, metres. User sensor limit: 12 m.
+# Greater ranges are OutOfRangeHigh; a 15 m RTL return may lack usable height
+# until descending. This limit does not extend target-camera detection range,
+# select RTL destination, relax GPS checks or authorize blind touchdown.
+# https://ardupilot.org/copter/docs/parameters.html#rngfnd1-max
+RNGFND1_MAX 12
+
+# RNGFND1_GNDCLR -- expected grounded sensor-to-surface range, metres.
+# Official metadata: "This parameter sets the expected range measurement that
+# the range finder should return when the vehicle is on the ground".
+# User measurement: 0.17 = 17 cm, only 2 cm above the 15 cm minimum. Validate
+# mounting/noise near contact. This is GNDCLR, not GNCLR or legacy centimetre
+# GNDCLEAR. EKF assumptions use it; it does not clamp frontend readings, place
+# the sensor, cure unhealthy data, set deck/Home altitude or detect touchdown.
+# SITL mode deliberately overrides it to zero; never use that override on REAL.
+# https://ardupilot.org/copter/docs/parameters.html#rngfnd1-gndclr
+RNGFND1_GNDCLR 0.17

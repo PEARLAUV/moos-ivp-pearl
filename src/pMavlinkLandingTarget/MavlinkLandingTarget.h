@@ -2,9 +2,12 @@
 #define MAVLINK_LANDING_TARGET_HEADER
 
 #include "LogicBuffer.h"
+#include "AttitudeHistory.h"
 #include "MOOS/libMOOS/Thirdparty/AppCasting/AppCastingMOOSApp.h"
 #include "MOOS/libMOOSGeodesy/MOOSGeodesy.h"
 #include "MavlinkTcp.h"
+#include "DirectPose.h"
+#include <array>
 #include <atomic>
 #include <string>
 
@@ -31,6 +34,7 @@ private:
     bool fresh(double now, double timeout) const;
   };
   void registerVariables();
+  void updateDirectPose();
   bool geometryFresh() const;
   void updateTargetGeometry();
   bool sendLandingTarget();
@@ -55,14 +59,24 @@ private:
   bool m_origin_valid = false;
   bool m_orientation_valid = false;
   double m_relative_heading = 0;
+  std::array<double, 4> m_target_quaternion{};
   bool m_show_visuals = false;
   Sample m_vehicle_lat, m_vehicle_lon, m_vehicle_yaw, m_vehicle_alt;
+  Sample m_vehicle_roll, m_vehicle_pitch, m_attitude_available, m_attitude_age, m_attitude_usec;
+  bool m_native_samples_seen = false, m_native_sample_valid = false;
+  double m_native_sample_time = -1;
+  bodyframe::AttitudeHistory m_attitude_history;
   InfoBuffer m_condition_info;
   LogicBuffer m_conditions;
   std::set<std::string> m_condition_vars;
   bool m_conditions_valid = true;
   bool m_conditions_met = true;
 
+  bool m_direct = true, m_direct_valid = false, m_streams_requested = false;
+  unsigned m_fc_component_id = 1;
+  double m_pose_timeout = 0.10, m_pose_skew = 0.02, m_pose_rate_hz = 50;
+  mavlink::DirectPose m_direct_history;
+  mavlink::NativePose m_direct_pose;
   mavlink::TcpClient m_link;
   double m_last_connect_attempt = -1;
   double m_last_heartbeat = -1;

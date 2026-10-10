@@ -219,6 +219,12 @@ bool uChecks::OnStartUp()
       m_session_var = value;
     else if(key == "snapshot_var")
       m_snapshot_var = value;
+    else if(key == "result_interval") {
+      if(!finiteNumber(value, m_result_interval) || m_result_interval < 0) {
+        reportUnhandledConfigWarning(original);
+        m_config_valid = false;
+      }
+    }
     else if(key == "snapshot_interval") {
       if(!setPosDoubleOnString(m_snapshot_interval, value) ||
          !std::isfinite(m_snapshot_interval)) {
@@ -252,7 +258,7 @@ bool uChecks::OnStartUp()
     else if(key != "require" && key != "condition" && key != "result_var" &&
             key != "state_var" && key != "result_prefix" &&
             key != "session_var" && key != "snapshot_var" &&
-            key != "snapshot_interval" &&
+            key != "snapshot_interval" && key != "result_interval" &&
             key != "apptick" && key != "commstick" &&
             key != "term_report_interval")
       handled = false;
@@ -466,11 +472,12 @@ string uChecks::evaluate(const NamedCheck& check, string& info, double now) cons
 }
 
 void uChecks::publish(const string& var, string& status_cache,
-                      string& info_cache, const string& status, const string& info)
+                      string& info_cache, const string& status, const string& info,
+                      bool refresh)
 {
-  if(status == status_cache && info == info_cache)
+  if(!refresh && status == status_cache && info == info_cache)
     return;
-  if(status != status_cache)
+  if(refresh || status != status_cache)
     Notify(var, status);
   Notify(var == m_report_var ? m_state_var : var + "_STATE",
          "status=" + status +
@@ -480,7 +487,7 @@ void uChecks::publish(const string& var, string& status_cache,
   info_cache = info;
 }
 
-void uChecks::updateCheck(NamedCheck& check, bool enabled, double now)
+void uChecks::updateCheck(NamedCheck& check, bool enabled, double now, bool refresh)
 {
   const string var = m_result_prefix + check.name;
   if(!enabled) {
@@ -513,7 +520,7 @@ void uChecks::updateCheck(NamedCheck& check, bool enabled, double now)
   if(check.active_since < 0)
     check.active_since = now;
   if(check.failed) {
-    publish(var, check.status, check.info, "fail", check.info);
+    publish(var, check.status, check.info, "fail", check.info, refresh);
     return;
   }
   string info;
@@ -536,7 +543,7 @@ void uChecks::updateCheck(NamedCheck& check, bool enabled, double now)
   }
   if(status == "fail")
     check.failed = true;
-  publish(var, check.status, check.info, status, info);
+  publish(var, check.status, check.info, status, info, refresh);
 }
 
 string uChecks::snapshotSignature() const
@@ -698,6 +705,7 @@ bool uChecks::Iterate()
   }
   const double now = MOOSTime();
   if(m_session_changed) {
+    m_last_result_time = -1;
     for(auto& entry : m_checks) {
       NamedCheck& check = entry.second;
       check.active_since = -1;
@@ -716,6 +724,14 @@ bool uChecks::Iterate()
   const bool enabled = active() &&
                        (m_session_var.empty() ||
                         (!m_session.empty() && m_session != "none"));
+  // Only an active producer can renew its authorization lease, and only
+  // after updateCheck re-evaluates current inputs (including age and holds).
+  // Never echo a retained success while inactive, or postpone input expiry.
+  if(!enabled)
+    m_last_result_time = -1;
+  const bool refresh = enabled && m_result_interval > 0 &&
+                       (m_last_result_time < 0 ||
+                        now - m_last_result_time >= m_result_interval);
   bool any_fail = false;
   bool any_expired = false;
   bool all_success = true;
@@ -723,7 +739,7 @@ bool uChecks::Iterate()
   string detail;
   for(auto& entry : m_checks) {
     NamedCheck& check = entry.second;
-    updateCheck(check, enabled, now);
+    updateCheck(check, enabled, now, refresh);
     if(check.status == "fail") any_fail = true;
     if(check.status == "expired") any_expired = true;
     if(check.status != "success") all_success = false;
@@ -735,7 +751,9 @@ bool uChecks::Iterate()
                         all_success ? "success" :
                         any_expired ? "expired" :
                         all_inactive ? "inactive" : "pending";
-  publish(m_report_var, m_status, m_info, status, "checks=" + detail);
+  publish(m_report_var, m_status, m_info, status, "checks=" + detail, refresh);
+  if(refresh)
+    m_last_result_time = now;
   if(m_snapshot_sequence == 0 || enabled != m_snapshot_active ||
      m_session != m_snapshot_session ||
      snapshotSignature() != m_snapshot_signature ||
@@ -749,7 +767,8 @@ bool uChecks::buildReport()
 {
   m_msgs << "Aggregate: " << m_status << "  " << m_info << endl;
   m_msgs << "Condition: " << m_condition.getRawCondition() << endl;
-  m_msgs << "Result: " << m_report_var << endl;
+  m_msgs << "Result: " << m_report_var
+         << " active refresh=" << m_result_interval << "s (0=change-only)" << endl;
   m_msgs << "Snapshot: " << m_snapshot_var
          << " interval=" << m_snapshot_interval
          << "s sequence=" << m_snapshot_sequence << endl;

@@ -2,8 +2,8 @@
 
 UAV-only SITL mission exercising `pMavlinkLandingTarget`, not recovery or landing.
 There is no peer vehicle, mediation, rendezvous, landing coordinator, ship model,
-or elevated-deck attachment. The drone automatically takes off, flies three
-north/south passes, then holds position without landing.
+or elevated-deck attachment. SITL startup leaves the drone armed and airborne;
+it flies three north/south passes, then holds position without landing.
 
 ## Geometry and passes
 
@@ -25,7 +25,8 @@ that next pass.
 | 2 | South to north | 5 m east (`x=5`) | 4 m |
 | 3 | North to south | Directly over target (`x=0`) | 15 m |
 
-Home is 0 m MSL; the flight altitudes are relative to that home. ArduPilot's
+The launcher requests an 8 m AGL airborne start for the first pass. The built-in
+model's ground/home is 0 m MSL, and flight altitudes are relative to it. ArduPilot's
 reported MSL heights may differ slightly with the simulated sensor/body offset.
 The target is a point, so its yaw has no drawn orientation or effect on the
 position-only observation. The BODY_FRD vector uses the **drone's native yaw**.
@@ -38,8 +39,8 @@ minimum distances on the three passes are approximately 7.62 m, 5.83 m and
 third deliberately tests range rejection.
 
 No `condition` entries are configured: conditions default **true**. Target
-visuals remain displayed even while the drone is out of range, before takeoff,
-or while the MAVLink connection is unavailable. They include:
+visuals remain displayed even while the drone is out of range, before mission
+start, or while the MAVLink connection is unavailable. They include:
 
 - A lime target point (`VIEW_POINT`), replacing the former square.
 - A lime outer detection-radius circle.
@@ -87,8 +88,9 @@ on `PATH`; use the `ardupilot-sitl` wrapper/image.
 ./launch.sh --target_range=20  # third pass also enters observation range
 ```
 
-The wrapper receives `--no-rc`, home, speedup and separate controller/simulation/
-diagnostics ports via CLI. There is no mission `.parm` overlay: this test does
+The wrapper receives `--airborne`, home, speedup, and separate controller/
+simulation/diagnostics ports via CLI; airborne startup enables no-RC defaults.
+There is no mission `.parm` overlay: this test does
 not enable precision-landing guidance or the ship simulator. `pArduBridge`
 relays the actual received target packets independently of landing control.
 The generic Copter Helm sender uses fresh native `IN_AIR` telemetry, allowing

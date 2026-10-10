@@ -1,0 +1,85 @@
+# REAL operating-mode layer. Apply drone -> this file -> mission.parm.
+# Intentionally no parameter entries yet: real sensor limits and clearance are
+# hardware properties in config/ardupilot/drones/x500.parm (0.15 m, 12 m, 0.17 m).
+# Preserve the installed hardware backend; the user's sensor type/interface is
+# not known, so do not invent RNGFND1_TYPE. The verified uploader checks that it
+# is enabled and not the SITL backend before applying rangefinder parameters.
+# Do not copy SIM_*, native SITL backend 100, zero minimum/clearance, no-RC
+# failsafe suppression, or simulator navigation shortcuts into a REAL stack.
+# Empty or omitted mode files are supported. Add future hardware-independent
+# REAL mode settings here only after individual review, with units and safety
+# rationale. This file is not evidence of active sensor health or flight safety.
+# REAL upload is explicitly invoked with --upload-params before MOOS starts,
+# checks fresh native ground/disarm throughout, and verifies final FC readback.
+# It does not arm/change mode/reboot/reset estimators. Required reboot changes
+# stop launch pending operator intervention; there is no automatic rollback.
+# https://ardupilot.org/dev/docs/mavlink-get-set-params.html
+
+# REAL precision-camera mounting placeholders: deliberately COMMENTED OUT.
+# No physical offsets were supplied; do not copy SITL's zero assumptions.
+# Before activating any entry, survey the camera optical center relative to
+# the vehicle body origin used by ArduPilot/observation producer. Use body FRD
+# axes (forward/right/down), signed METRES, not centimetres or GPS-antenna/deck
+# coordinates. Upstream per-axis documented range -5..5 m, increments 0.01 m.
+# Validate whether the producer supplies camera-origin or already translated
+# vehicle-origin observations: axes and origin are distinct, and incorrect
+# duplicate/missing compensation biases native landing geometry. These fields
+# do not configure yaw/rotation, desired landing offsets or rangefinder mounting.
+# Once individually reviewed, hardware-specific values should live in the
+# per-drone profile for reuse; an active REAL-mode entry would override it.
+# Leaving these commented preserves existing FC values, not necessarily zero.
+# Neither a placeholder nor eventual readback proves mounting correctness,
+# sensor health, target acquisition or safe touchdown. No flight command or
+# custom patch is added. Source: libraries/AC_PrecLand/AC_PrecLand.cpp,
+# var_info/construct_pos_meas/run_output_prediction, reviewed Copter 4.7.1.
+
+# PLND_CAM_POS_X -- measured forward offset, metres; positive ahead of body
+# origin, negative behind. Placeholder is not a selected value. Replace with
+# a surveyed signed number only after validating the producer's origin handling.
+# https://ardupilot.org/copter/docs/parameters.html#plnd-cam-pos-x
+# PLND_CAM_POS_X <MEASURED_FORWARD_M>
+
+# PLND_CAM_POS_Y -- measured right offset, metres; positive right, negative
+# left of body origin. No lateral mounting value is known or being uploaded;
+# this is not target-relative horizontal error or PEARL's lateral separation.
+# https://ardupilot.org/copter/docs/parameters.html#plnd-cam-pos-y
+# PLND_CAM_POS_Y <MEASURED_RIGHT_M>
+
+# PLND_CAM_POS_Z -- measured down offset, metres; positive below body origin,
+# negative above. This is not grounded sensor clearance, Home/MSL altitude or
+# target distance. Do not substitute the rangefinder's 0.17 m ground clearance.
+# https://ardupilot.org/copter/docs/parameters.html#plnd-cam-pos-z
+# PLND_CAM_POS_Z <MEASURED_DOWN_M>
+
+# REAL desired landing offsets: deliberately COMMENTED OUT, no values selected.
+# These are signed CENTIMETRES (-20..20 cm documented, increments 1 cm), not
+# metre-valued mounting offsets. Establish the desired camera-to-target landing
+# displacement from aircraft/deck geometry and validate it before activating.
+# Do not use these to conceal wrong observation/mount geometry. The camera,
+# gear footprint and clearance objective may differ; centered camera placement
+# alone is not proof of safe physical recovery. Confirm the frame convention.
+# Native run_output_prediction rotates body-frame offsets using aircraft
+# attitude, not platform heading, and shifts the landing estimate used for
+# guidance, the XY descent gate and remembered-target retry point. Camera
+# mounting compensation remains separate. Nonzero choices can therefore
+# deliberately move the landing objective and change retry positioning.
+# Leaving placeholders commented preserves current FC values, not necessarily
+# zero; shared mission entries do not override them. Readback alone cannot prove
+# suitable deck clearance, mounting correctness, sensor health or touchdown.
+# No flight/RTL command or custom firmware patch is added by this documentation.
+# Source: libraries/AC_PrecLand/AC_PrecLand.cpp, var_info/run_output_prediction,
+# reviewed companion Copter 4.7.1.
+
+# PLND_LAND_OFS_X -- desired camera landing displacement forward of target,
+# cm, in vehicle body frame (positive forward, negative aft). Replace the
+# placeholder with an individually reviewed signed number, not the measured
+# camera-to-vehicle mount distance. A guessed value can bias the landing point.
+# https://ardupilot.org/copter/docs/parameters.html#plnd-land-ofs-x
+# PLND_LAND_OFS_X <DESIRED_FORWARD_CM>
+
+# PLND_LAND_OFS_Y -- desired camera landing displacement right of target,
+# cm, in vehicle body frame (positive right, negative left). Select after
+# checking the intended gear/deck footprint and aircraft yaw; no real lateral
+# offset has been approved or is being uploaded by this commented placeholder.
+# https://ardupilot.org/copter/docs/parameters.html#plnd-land-ofs-y
+# PLND_LAND_OFS_Y <DESIRED_RIGHT_CM>

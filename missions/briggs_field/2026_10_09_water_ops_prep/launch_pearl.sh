@@ -32,12 +32,16 @@ PSHARE_PORT="9202"
 SHORE_IP="localhost"
 SHORE_PSHARE="9200"
 DIRECT_PEER="false"
-UAV_IP="unused"
+UAV_IP="localhost"
 UAV_PSHARE="9201"
 VNAME="pearl"
 COLOR="dodger_blue"
-START_POS="-4,-22,0"
+# 42.356424, -71.098393, UTM offsets from the existing mission datum.
+START_POS="51.033305,-56.215822,0"
 CRUISE_SPEED="0.5"
+LOITER_X="-20"
+LOITER_Y="-22"
+LOITER_RADIUS="15"
 MIN_STATE_TIME="0"
 SHERLOCK_METRICS_HOST="192.168.88.252"
 SHERLOCK_METRICS_PORT="9273"
@@ -53,16 +57,17 @@ for ARGI; do
     echo "  --just_make, -j        Only create targ files"
     echo "  --verbose, -v          Verbose launch summary"
     echo "  --auto, -a             Script launch, no uMAC"
-    echo "  --mode=<SIM|REAL>      PEARL operating mode"
+    echo "  --mode=<SIM|REAL|GRASS> PEARL operating mode"
     echo "  --ip=<localhost>       Advertised PEARL pShare host"
     echo "  --mport=<9002>         PEARL MOOSDB port"
     echo "  --pshare=<9202>        PEARL pShare port"
     echo "  --shore=<localhost>    Shoreside host"
     echo "  --shore_pshare=<9200>  Shoreside pShare port"
-    echo "  --uav_ip=<address>     Direct UAV host (optional)"
+    echo "  --uav_ip=<localhost>   Direct UAV host; also enables peer telemetry"
     echo "  --uav_pshare=<9201>    Direct UAV pShare port"
     echo "  --start_pos=<X,Y,H>    PEARL SIM start position"
     echo "  --speed=<0.5>          PEARL Helm speed, m/s"
+    echo "  --loiter=<X,Y,R>       Circular main task (default: -20,-22,15)"
     echo "  --min_state_time=<0>   Minimum FSM state dwell, seconds"
     echo "  --sherlock_metrics_host=<host>  Sherlock Telegraf host"
     echo "  --sherlock_metrics_port=<9273>  Sherlock Telegraf port"
@@ -98,6 +103,9 @@ for ARGI; do
     UAV_PSHARE="${ARGI#*=}"
   elif [[ "${ARGI}" == --start_pos=* || "${ARGI}" == --startpos=* ]]; then
     START_POS="${ARGI#*=}"
+  elif [[ "${ARGI}" == --loiter=* ]]; then
+    IFS=, read -r LOITER_X LOITER_Y LOITER_RADIUS EXTRA <<< "${ARGI#*=}"
+    [[ -z "$EXTRA" ]] || exit 1
   elif [[ "${ARGI}" == --speed=* ]]; then
     CRUISE_SPEED="${ARGI#*=}"
   elif [[ "${ARGI}" == --min_state_time=* ]]; then
@@ -112,9 +120,18 @@ for ARGI; do
   fi
 done
 
+NUMBER='^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)$'
+for VALUE in "$LOITER_X" "$LOITER_Y" "$LOITER_RADIUS" "$CRUISE_SPEED"; do
+  [[ "$VALUE" =~ $NUMBER ]] || { echo "$ME: invalid loiter geometry/speed." >&2; exit 1; }
+done
+awk -v r="$LOITER_RADIUS" -v s="$CRUISE_SPEED" 'BEGIN {exit !(r>=5 && s>0 && s<=0.5)}' || exit 1
 MODE=$(echo "$MODE" | tr '[:lower:]' '[:upper:]')
-if [[ "$MODE" != "SIM" && "$MODE" != "REAL" ]]; then
-  echo "$ME: --mode must be SIM or REAL. Exit Code 1."
+if [[ "$MODE" != "SIM" && "$MODE" != "REAL" && "$MODE" != "GRASS" ]]; then
+  echo "$ME: --mode must be SIM, REAL, or GRASS. Exit Code 1."
+  exit 1
+fi
+if [[ "$MODE" != "SIM" && "$TIME_WARP" != 1 ]]; then
+  echo "$ME: physical-sensor modes require time_warp=1. Exit Code 1." >&2
   exit 1
 fi
 if [[ ! "$MIN_STATE_TIME" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -177,10 +194,17 @@ if ! nsplug meta_pearl.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
   exit 1
 fi
 
-if ! nsplug meta_pearl.bhv "targ_${VNAME}.bhv" "${NSFLAGS[@]}" \
-  VNAME="$VNAME" SPEED="$CRUISE_SPEED" XMODE="$MODE"; then
-  echo "$ME: Failed to generate targ_${VNAME}.bhv; not launching." >&2
-  exit 1
+if [ "$MODE" = "GRASS" ]; then
+  # GRASS retains the supervisory FSM and coordination applications but has no
+  # Helm or normal mission route executor.
+  rm -f "targ_${VNAME}.bhv"
+else
+  if ! nsplug meta_pearl.bhv "targ_${VNAME}.bhv" "${NSFLAGS[@]}" \
+    VNAME="$VNAME" SPEED="$CRUISE_SPEED" XMODE="$MODE" \
+    LOITER_X="$LOITER_X" LOITER_Y="$LOITER_Y" LOITER_RADIUS="$LOITER_RADIUS"; then
+    echo "$ME: Failed to generate targ_${VNAME}.bhv; not launching." >&2
+    exit 1
+  fi
 fi
 
 if [ "$JUST_MAKE" = "yes" ]; then

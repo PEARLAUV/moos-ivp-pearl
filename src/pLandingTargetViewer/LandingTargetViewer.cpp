@@ -1,4 +1,5 @@
 #include "LandingTargetViewer.h"
+#include "BodyFrame.h"
 #include "ColorParse.h"
 #include "MBUtils.h"
 #include "MOOS/libMOOS/Utils/MOOSUtilityFunctions.h"
@@ -46,6 +47,19 @@ bool LandingTargetViewer::OnStartUp()
       ok = setNonWhiteVarOnString(m_target_prefix, data);
     else if (key == "vehicle_prefix")
       ok = setNonWhiteVarOnString(m_vehicle_prefix, data);
+    else if (key == "observation_pose_samples_var")
+      ok = setNonWhiteVarOnString(m_pose_samples_var, data);
+    else if (key == "projection_mode") {
+      const std::string mode = tolower(data);
+      ok = mode == "geographic" || mode == "relative";
+      if (ok)
+        m_relative_projection = mode == "relative";
+    } else if (key == "relative_anchor_x")
+      ok = setDoubleOnString(m_relative_anchor_x, data) &&
+           std::isfinite(m_relative_anchor_x);
+    else if (key == "relative_anchor_y")
+      ok = setDoubleOnString(m_relative_anchor_y, data) &&
+           std::isfinite(m_relative_anchor_y);
     else if (key == "label")
       ok = setNonWhiteVarOnString(m_label, data);
     else if (key == "color") {
@@ -62,7 +76,8 @@ bool LandingTargetViewer::OnStartUp()
       ok = setPosDoubleOnString(m_target_size, data);
     else if (key == "fallback_heading")
       ok = setDoubleOnString(m_fallback_heading, data);
-    else if (key == "apptick" || key == "commstick")
+    else if (key == "apptick" || key == "commstick" ||
+             key == "term_report_interval")
       ok = true;
     if (!ok) {
       reportUnhandledConfigWarning(original);
@@ -74,11 +89,12 @@ bool LandingTargetViewer::OnStartUp()
                          m_MissionReader.GetValue("LongOrigin", lon) && std::isfinite(lat) &&
                          std::isfinite(lon) && std::fabs(lat) < 90 && std::fabs(lon) <= 180 &&
                          m_geodesy.Initialise(lat, lon);
-  if (!origin_ok)
-    reportConfigWarning("Require valid LatOrigin/LongOrigin for UTM plotting");
-  m_valid = config_ok && origin_ok && std::isfinite(m_target_size) &&
-            std::isfinite(m_fallback_heading) && std::isfinite(m_observation_timeout) &&
-            std::isfinite(m_input_timeout);
+  if (!m_relative_projection && !origin_ok)
+    reportConfigWarning("Require valid LatOrigin/LongOrigin for geographic plotting");
+  m_valid = config_ok && (m_relative_projection || origin_ok) &&
+            std::isfinite(m_relative_anchor_x) && std::isfinite(m_relative_anchor_y) &&
+            std::isfinite(m_target_size) && std::isfinite(m_fallback_heading) &&
+            std::isfinite(m_observation_timeout) && std::isfinite(m_input_timeout);
   registerVariables();
   Notify("VIEW_POLYGON", "label=" + m_label + ",active=false");
   return true;
@@ -93,9 +109,11 @@ bool LandingTargetViewer::OnConnectToServer()
 void LandingTargetViewer::registerVariables()
 {
   AppCastingMOOSApp::RegisterVariables();
+  if (!m_pose_samples_var.empty()) Register(m_pose_samples_var, 0);
   for (const auto &field : TARGET_FIELDS)
     Register(m_target_prefix + "_" + field, 0);
-  for (const auto &field : {"LAT", "LON", "YAW"})
+  for (const auto &field : {"LAT", "LON", "YAW", "ROLL", "PITCH", "ATTITUDE_AVAILABLE", "ATTITUDE_AGE",
+                            "ATTITUDE_TIME_USEC", "ATTITUDE_SAMPLE_TIME", "ATTITUDE_SAMPLES"})
     Register(m_vehicle_prefix + "_" + field, 0);
 }
 
@@ -105,6 +123,15 @@ bool LandingTargetViewer::OnNewMail(MOOSMSG_LIST &mail)
   for (const auto &msg : mail) {
     if (msg.GetKey() == "APPCAST_REQ")
       continue;
+    if (!m_pose_samples_var.empty() && msg.GetKey() == m_pose_samples_var) {
+      mavlink::readPoseWindow(msg.IsString() ? msg.GetString() : "", m_observation_poses);
+      continue;
+    }
+    if (msg.GetKey() == m_vehicle_prefix + "_ATTITUDE_SAMPLES") {
+      m_native_samples_seen = true;
+      m_attitude_history.receive(msg.IsString() ? msg.GetString() : "");
+      continue;
+    }
     auto &input = m_inputs[msg.GetKey()];
     input.time = msg.GetTime();
     input.value = msg.GetDouble();
@@ -114,6 +141,11 @@ bool LandingTargetViewer::OnNewMail(MOOSMSG_LIST &mail)
       input.known = true;
     }
   }
+  double stamp = 0, roll = 0, pitch = 0, yaw = 0, received = 0;
+  if (!m_native_samples_seen && read(m_vehicle_prefix + "_ATTITUDE_TIME_USEC", stamp) && stamp > 0 && stamp < 9007199254740992.0 &&
+      read(m_vehicle_prefix + "_ROLL", roll) && read(m_vehicle_prefix + "_PITCH", pitch) &&
+      read(m_vehicle_prefix + "_YAW", yaw) && read(m_vehicle_prefix + "_ATTITUDE_SAMPLE_TIME", received))
+    m_attitude_history.remember(static_cast<uint64_t>(stamp), roll, pitch, yaw, received);
   return true;
 }
 
@@ -130,6 +162,12 @@ bool LandingTargetViewer::read(const std::string &key, double &value) const
 bool LandingTargetViewer::project(double lat, double lon, double north, double east, double &x,
                                   double &y)
 {
+  if (m_relative_projection) {
+    x = m_relative_anchor_x + east;
+    y = m_relative_anchor_y + north;
+    return std::isfinite(x) && std::isfinite(y);
+  }
+
   const double target_lat = lat + north / EARTH_RADIUS_METRES * 180 / PI_VALUE;
   const double cosine = std::cos((lat + target_lat) * PI_VALUE / 360);
   if (std::fabs(cosine) < 1e-6 || std::fabs(target_lat) >= 90)
@@ -171,18 +209,58 @@ bool LandingTargetViewer::drawTarget()
     m_status = "missing/invalid position";
     return false;
   }
-  double lat = 0, lon = 0, yaw = 0;
-  if (!read(m_vehicle_prefix + "_LAT", lat) || !read(m_vehicle_prefix + "_LON", lon) ||
-      !read(m_vehicle_prefix + "_YAW", yaw) || std::fabs(lat) >= 90 || std::fabs(lon) > 180) {
-    m_status = "missing/stale vehicle pose";
+  double lat = 0, lon = 0, yaw = 0, roll = 0, pitch = 0, attitude_available = 0, attitude_age = 0;
+  bodyframe::Matrix rotation{};
+  if (!m_pose_samples_var.empty()) {
+    double stamp = 0;
+    if (!target("TIME_USEC", stamp) || stamp <= 0 || stamp >= 9007199254740992.0 || std::floor(stamp) != stamp) {
+      m_status = "missing/invalid observation timestamp"; return false;
+    }
+    const auto pose = m_observation_poses.find(static_cast<uint64_t>(stamp));
+    if (pose == m_observation_poses.end() || pose->second.received_moos > m_curr_time + 1 ||
+        (m_curr_time - pose->second.received_moos) / std::max(0.001, GetMOOSTimeWarp()) > m_observation_timeout) {
+      m_status = "missing/stale exact direct native observation pose"; return false;
+    }
+    lat = pose->second.lat; lon = pose->second.lon;
+    rotation = bodyframe::bodyToNed(pose->second.roll, pose->second.pitch, pose->second.yaw);
+    m_pose_source = "exact direct FC observation pose (position + attitude)";
+  } else {
+  const bool position_available =
+      m_relative_projection ||
+      (read(m_vehicle_prefix + "_LAT", lat) &&
+       read(m_vehicle_prefix + "_LON", lon) && std::fabs(lat) < 90 &&
+       std::fabs(lon) <= 180);
+  if (!position_available || !read(m_vehicle_prefix + "_YAW", yaw) ||
+      !read(m_vehicle_prefix + "_ROLL", roll) ||
+      !read(m_vehicle_prefix + "_PITCH", pitch) ||
+      !read(m_vehicle_prefix + "_ATTITUDE_AVAILABLE", attitude_available) ||
+      attitude_available != 1 ||
+      !read(m_vehicle_prefix + "_ATTITUDE_AGE", attitude_age) || attitude_age < 0 ||
+      attitude_age + std::max(0.0, m_curr_time - m_inputs.at(m_vehicle_prefix + "_ATTITUDE_AGE").time) /
+                         std::max(0.001, GetMOOSTimeWarp()) > m_input_timeout) {
+    m_status = m_relative_projection ? "missing/stale vehicle attitude"
+                                     : "missing/stale vehicle pose";
     return false;
   }
-  const double yaw_rad = yaw * PI_VALUE / 180;
-  const auto world = [yaw_rad](double x, double y) {
-    return std::array<double, 2>{{std::cos(yaw_rad) * x - std::sin(yaw_rad) * y,
-                                  std::sin(yaw_rad) * x + std::cos(yaw_rad) * y}};
+  rotation = bodyframe::bodyToNed(roll, pitch, yaw);
+  m_pose_source = "latest native attitude (unmatched observation clock)";
+  double stamp = 0;
+  bodyframe::Pose exposure;
+  if (target("TIME_USEC", stamp) && stamp > 0 && stamp < 9007199254740992.0 &&
+      m_attitude_history.find(static_cast<uint64_t>(stamp), exposure)) {
+    if (exposure.received_moos_time > m_curr_time + 1 ||
+        (m_curr_time - exposure.received_moos_time) / std::max(0.001, GetMOOSTimeWarp()) > m_input_timeout) {
+      m_status = "observation attitude sample too old";
+      return false;
+    }
+    rotation = exposure.rotation;
+    m_pose_source = "exact native observation-time attitude";
+  }
+  }
+  const auto world = [&rotation](double x, double y, double z) {
+    return bodyframe::toNed(rotation, {{x, y, z}});
   };
-  const auto center = world(forward, right);
+  const auto center = world(forward, right, down);
   if (!project(lat, lon, center[0], center[1], m_x, m_y)) {
     m_status = "cannot project target position";
     return false;
@@ -215,7 +293,6 @@ bool LandingTargetViewer::drawTarget()
   }
   m_orientation_source = quaternion ? "received quaternion" : "configured grid heading";
   const double corners[4][2] = {{-0.5, -0.5}, {0.5, -0.5}, {0.5, 0.5}, {-0.5, 0.5}};
-  std::string spec = "pts={";
   std::array<std::array<double, 2>, 4> footprint{};
   for (int i = 0; i < 4; ++i) {
     double x = 0, y = 0;
@@ -223,7 +300,7 @@ bool LandingTargetViewer::drawTarget()
     const double across = corners[i][1] * m_width;
     if (quaternion) {
       const auto body = rotate(q, along, across);
-      const auto offset = world(body[0], body[1]);
+      const auto offset = world(body[0], body[1], body[2]);
       if (!project(lat, lon, center[0] + offset[0], center[1] + offset[1], x, y)) {
         m_status = "cannot project target footprint";
         return false;
@@ -234,10 +311,9 @@ bool LandingTargetViewer::drawTarget()
       y = m_y + along * std::cos(heading) - across * std::sin(heading);
     }
     footprint[i] = {{x, y}};
-    if (i)
-      spec += ":";
-    spec += doubleToStringX(x, 3) + "," + doubleToStringX(y, 3);
   }
+  // Validate the original physical rectangle, not the decorative roof.
+  // Its size, center and degeneracy contract remain unchanged.
   double area = 0;
   for (int i = 0; i < 4; ++i) {
     const auto &a = footprint[i];
@@ -248,10 +324,30 @@ bool LandingTargetViewer::drawTarget()
     m_status = "degenerate projected footprint";
     return false;
   }
+  // Display-only house outline. Replace the forward side (corners 1->2)
+  // with two roof edges, preserving the other three sides exactly. Construct
+  // the apex after projection: half the displayed side width outward gives
+  // 45-degree map angles even with unequal dimensions, tilt or UTM distortion.
+  // Signed base area selects the outward normal even if projection is mirrored.
+  const double side_x = footprint[2][0] - footprint[1][0];
+  const double side_y = footprint[2][1] - footprint[1][1];
+  const double outward = area < 0 ? 1.0 : -1.0;
+  const std::array<double, 2> apex = {{
+      (footprint[1][0] + footprint[2][0]) / 2 - outward * side_y / 2,
+      (footprint[1][1] + footprint[2][1]) / 2 + outward * side_x / 2}};
+  const std::array<std::array<double, 2>, 5> outline = {{
+      footprint[0], footprint[1], apex, footprint[2], footprint[3]}};
+  std::string spec = "pts={";
+  for (size_t i = 0; i < outline.size(); ++i) {
+    if (i)
+      spec += ":";
+    spec += doubleToStringX(outline[i][0], 3) + "," + doubleToStringX(outline[i][1], 3);
+  }
+
   // Project a target-local forward unit vector to report its grid heading.
   if (quaternion) {
     const auto body = rotate(q, 1, 0);
-    const auto offset = world(body[0], body[1]);
+    const auto offset = world(body[0], body[1], body[2]);
     double x = 0, y = 0;
     if (project(lat, lon, center[0] + offset[0], center[1] + offset[1], x, y))
       m_heading = std::fmod(std::atan2(x - m_x, y - m_y) * 180 / PI_VALUE + 360, 360);
@@ -260,13 +356,32 @@ bool LandingTargetViewer::drawTarget()
   Notify("VIEW_POLYGON", spec + "},label=" + m_label + ",active=true,edge_color=" + m_color +
                              ",vertex_size=0,edge_size=2,label_color=invisible,fill_color=" +
                              m_color + ",fill_transparency=0.15");
-  m_status = "displaying recent received target";
+  m_status = m_relative_projection
+                 ? "displaying drone-relative received target"
+                 : "displaying geographic received target";
   return true;
+}
+
+void LandingTargetViewer::postRelativeVehicle()
+{
+  if (!m_relative_projection)
+    return;
+
+  double heading = 0;
+  read(m_vehicle_prefix + "_YAW", heading);
+  heading = std::fmod(std::fmod(heading, 360.0) + 360.0, 360.0);
+  Notify("NODE_REPORT",
+         "NAME=uav,X=" + doubleToStringX(m_relative_anchor_x, 3) +
+             ",Y=" + doubleToStringX(m_relative_anchor_y, 3) +
+             ",SPD=0,HDG=" + doubleToStringX(heading, 2) +
+             ",TYPE=quadcopter,COLOR=yellow,LENGTH=1,TIME=" +
+             doubleToStringX(m_curr_time, 3));
 }
 
 bool LandingTargetViewer::Iterate()
 {
   AppCastingMOOSApp::Iterate();
+  postRelativeVehicle();
   m_active = drawTarget();
   if (!m_active)
     Notify("VIEW_POLYGON", "label=" + m_label + ",active=false");
@@ -288,6 +403,12 @@ bool LandingTargetViewer::buildReport()
   m_msgs << m_target_prefix << '\n';
   label("Vehicle prefix");
   m_msgs << m_vehicle_prefix << '\n';
+  label("Projection mode");
+  m_msgs << (m_relative_projection ? "drone-relative" : "geographic") << '\n';
+  if (m_relative_projection) {
+    label("Relative anchor x / y");
+    m_msgs << m_relative_anchor_x << " / " << m_relative_anchor_y << " m\n";
+  }
   label("Observation age");
   if (m_age >= 0)
     m_msgs << m_age << " s (max " << m_observation_timeout << " s)\n";
@@ -305,6 +426,8 @@ bool LandingTargetViewer::buildReport()
     m_msgs << m_size_source << '\n';
     label("Grid heading");
     m_msgs << m_heading << " deg\n";
+    label("Attitude source");
+    m_msgs << m_pose_source << '\n';
     label("Orientation source");
     m_msgs << m_orientation_source << '\n';
   }

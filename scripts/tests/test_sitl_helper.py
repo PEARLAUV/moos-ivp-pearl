@@ -59,6 +59,15 @@ class SITLHelperTest(unittest.TestCase):
         self.assertEqual(self.call("ps", "-q"), ["ps", "-q"])
         self.call("--param-file", "missing.parm", success=False)
 
+    def test_repeated_overlays_keep_order_and_all_paths(self):
+        paths = [self.directory / name for name in ("drone file.parm", "mode.parm", "mission.parm")]
+        for path in paths:
+            path.write_text("# Empty ordered test layer; no parameter mutations.\n")
+        args = self.call("--param-file", str(paths[0]), "--param-file=" + str(paths[1]),
+                         "--param-file", str(paths[2]), "--no-rc", "config")
+        self.assertEqual(args, ["--param-file", str(paths[0]), "--param-file", str(paths[1]),
+                                "--param-file", str(paths[2]), "--no-rc", "config"])
+
     def test_runtime_flags_require_values(self):
         for flag in ("--home", "--speedup", "--port", "--diagnostic-port",
                      "--sim-port", "--target-port", "--param-file"):

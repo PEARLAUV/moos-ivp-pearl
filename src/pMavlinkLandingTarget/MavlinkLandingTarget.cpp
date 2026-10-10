@@ -1,15 +1,21 @@
 #include "MavlinkLandingTarget.h"
+#include "BodyFrame.h"
+#include "MOOS/libMOOS/Utils/MOOSUtilityFunctions.h"
 #include "MBUtils.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
 #include <utility>
+#include <chrono>
 
 using namespace mavlink;
 namespace
 {
 constexpr double PI_VALUE = 3.14159265358979323846;
+double steadySeconds() {
+  return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 constexpr uint8_t MAV_FRAME_BODY_FRD = 12;
 constexpr uint8_t LANDING_TARGET_TYPE_VISION_FIDUCIAL = 2;
 } // namespace
@@ -28,7 +34,7 @@ void MavlinkLandingTarget::Sample::receive(const CMOOSMsg &msg)
 
 bool MavlinkLandingTarget::Sample::fresh(double now, double timeout) const
 {
-  return known && now - time <= timeout;
+  return known && time <= now + 1 && now - time <= timeout;
 }
 
 bool MavlinkLandingTarget::OnNewMail(MOOSMSG_LIST &mail)
@@ -59,12 +65,36 @@ bool MavlinkLandingTarget::OnNewMail(MOOSMSG_LIST &mail)
       m_vehicle_lon.receive(msg);
     else if (key == m_vehicle_nav_prefix + "_HEADING")
       m_vehicle_yaw.receive(msg);
+    else if (key == m_vehicle_nav_prefix + "_ROLL")
+      m_vehicle_roll.receive(msg);
+    else if (key == m_vehicle_nav_prefix + "_PITCH")
+      m_vehicle_pitch.receive(msg);
+    else if (key == m_vehicle_nav_prefix + "_ATTITUDE_AVAILABLE")
+      m_attitude_available.receive(msg);
+    else if (key == m_vehicle_nav_prefix + "_ATTITUDE_AGE")
+      m_attitude_age.receive(msg);
+    else if (key == m_vehicle_nav_prefix + "_ATTITUDE_TIME_USEC")
+      m_attitude_usec.receive(msg);
+    else if (key == m_vehicle_nav_prefix + "_ATTITUDE_SAMPLES") {
+      m_native_samples_seen = true;
+      m_native_sample_valid = m_attitude_history.receive(msg.IsString() ? msg.GetString() : "");
+    }
     else if (key == m_vehicle_nav_prefix + "_ALTITUDE_MSL")
       m_vehicle_alt.receive(msg);
     else if (!m_target_altitude_var.empty() && key == m_target_altitude_var)
       m_target_alt.receive(msg);
     else if (key != "APPCAST_REQ" && !condition_input)
       reportRunWarning("Unhandled Mail: " + key);
+  }
+  if (m_native_samples_seen && m_native_sample_valid) {
+    uint64_t stamp = 0;
+    bodyframe::Pose latest;
+    m_native_sample_valid = m_attitude_history.latest(stamp, latest);
+    m_vehicle_roll.value = latest.roll;
+    m_vehicle_pitch.value = latest.pitch;
+    m_vehicle_yaw.value = latest.yaw;
+    m_attitude_usec.value = static_cast<double>(stamp);
+    m_native_sample_time = latest.received_moos_time;
   }
   return true;
 }
@@ -80,10 +110,15 @@ bool MavlinkLandingTarget::Iterate()
     if (m_link.connectTo(m_mavlink_host, m_mavlink_port)) {
       m_last_heartbeat = -1;
       m_last_publish = -1;
+      m_direct_history.clear();
+      m_streams_requested = false;
       reportEvent("Connected to landing-target endpoint");
     }
   }
-  m_link.drain();
+  if (m_direct)
+    updateDirectPose();
+  else
+    m_link.drain();
   if (m_link.connected()) {
     if (m_last_heartbeat < 0 || m_curr_time - m_last_heartbeat >= 1) {
       // Advertise the vision component, never a ship or an autopilot.
@@ -112,6 +147,50 @@ bool MavlinkLandingTarget::Iterate()
   return true;
 }
 
+void MavlinkLandingTarget::updateDirectPose()
+{
+  const double now = steadySeconds();
+  for (const auto &frame : m_link.receive())
+    m_direct_history.receive(frame, m_target_system_id, m_fc_component_id, now, m_curr_time);
+  if (!m_link.connected()) {
+    m_direct_history.clear();
+    m_direct_valid = false;
+    Notify(m_vehicle_nav_prefix + "_MAVLINK_POSES", "");
+    return;
+  }
+  if (!m_streams_requested) {
+    // Only telemetry interval requests, on this sensor endpoint. Never change a
+    // flight mode, attitude target, mission, parameter, arm state or estimator.
+    bool sent = true;
+    for (unsigned id : {31U, 33U}) {
+      Payload payload;
+      appendFloat(payload, id);
+      appendFloat(payload, 1000000.0 / m_pose_rate_hz);
+      for (unsigned i = 0; i < 5; ++i) appendFloat(payload, 0);
+      appendUint16(payload, 511);
+      appendUint8(payload, m_target_system_id);
+      appendUint8(payload, m_fc_component_id);
+      appendUint8(payload, 0);
+      sent = m_link.send(COMMAND_LONG, payload, m_target_system_id, m_source_component_id) && sent;
+    }
+    m_streams_requested = sent;
+  }
+  m_direct_valid = m_direct_history.pose(now, m_pose_timeout,
+                                         static_cast<unsigned>(m_pose_skew * 1000), m_direct_pose);
+  if (m_direct_valid) {
+    const auto assign = [this](Sample &sample, double value) {
+      sample.value = value; sample.time = m_curr_time; sample.known = true;
+    };
+    assign(m_vehicle_lat, m_direct_pose.lat); assign(m_vehicle_lon, m_direct_pose.lon);
+    assign(m_vehicle_alt, m_direct_pose.msl); assign(m_vehicle_roll, m_direct_pose.roll);
+    assign(m_vehicle_pitch, m_direct_pose.pitch); assign(m_vehicle_yaw, m_direct_pose.yaw);
+    assign(m_attitude_usec, static_cast<double>(m_direct_pose.stamp));
+    assign(m_attitude_available, 1); assign(m_attitude_age, now - m_direct_pose.received);
+  }
+  // Original FC samples and original receipt times, not synthetic simulator poses.
+  Notify(m_vehicle_nav_prefix + "_MAVLINK_POSES", m_direct_history.window(now));
+}
+
 bool MavlinkLandingTarget::OnConnectToServer()
 {
   registerVariables();
@@ -134,6 +213,9 @@ bool MavlinkLandingTarget::OnStartUp()
       handled = m_conditions.addNewCondition(value);
       if (!handled)
         m_conditions_valid = false; // An invalid gate must never fail open.
+    } else if (param == "vehicle_pose_source") {
+      handled = value == "mavlink" || value == "moos";
+      if (handled) m_direct = value == "mavlink";
     } else if (param == "show_visuals")
       handled = setBooleanOnString(m_show_visuals, value);
     else if (param == "target_nav_prefix")
@@ -145,7 +227,7 @@ bool MavlinkLandingTarget::OnStartUp()
     else if (param == "mavlink_host")
       handled = setNonWhiteVarOnString(m_mavlink_host, value);
     else if (param == "mavlink_port" || param == "target_system_id" ||
-             param == "source_component_id" || param == "target_number") {
+             param == "source_component_id" || param == "fc_component_id" || param == "target_number") {
       int parsed = 0;
       const int maximum = param == "mavlink_port" ? 65535 : 255;
       const int minimum = param == "target_number" ? 0 : 1;
@@ -155,10 +237,23 @@ bool MavlinkLandingTarget::OnStartUp()
           m_mavlink_port = parsed;
         else if (param == "target_system_id")
           m_target_system_id = parsed;
+        else if (param == "fc_component_id")
+          m_fc_component_id = parsed;
         else if (param == "source_component_id")
           m_source_component_id = parsed;
         else
           m_target_number = parsed;
+      }
+    } else if ((param == "native_pose_timeout" || param == "native_pose_max_skew" ||
+                param == "native_pose_rate_hz") && isNumber(value)) {
+      const double parsed = std::atof(value.c_str());
+      const double maximum = param == "native_pose_rate_hz" ? 100 :
+                             param == "native_pose_timeout" ? 0.5 : 0.05;
+      handled = std::isfinite(parsed) && parsed > 0 && parsed <= maximum;
+      if (handled) {
+        if (param == "native_pose_timeout") m_pose_timeout = parsed;
+        else if (param == "native_pose_max_skew") m_pose_skew = parsed;
+        else m_pose_rate_hz = parsed;
       }
     } else if ((param == "publish_rate_hz" || param == "input_timeout" ||
                 param == "detection_range" || param == "target_altitude_msl") &&
@@ -206,10 +301,14 @@ void MavlinkLandingTarget::registerVariables()
     Register(m_target_nav_prefix + "_X", 0);
     Register(m_target_nav_prefix + "_Y", 0);
   }
+  if (!m_direct) {
   Register(m_vehicle_nav_prefix + "_LAT", 0);
   Register(m_vehicle_nav_prefix + "_LONG", 0);
   Register(m_vehicle_nav_prefix + "_HEADING", 0);
   Register(m_vehicle_nav_prefix + "_ALTITUDE_MSL", 0);
+  for (const auto &field : {"ROLL", "PITCH", "ATTITUDE_AVAILABLE", "ATTITUDE_AGE", "ATTITUDE_TIME_USEC", "ATTITUDE_SAMPLES"})
+    Register(m_vehicle_nav_prefix + "_" + field, 0);
+  }
   if (!m_target_altitude_var.empty())
     Register(m_target_altitude_var, 0);
 }
@@ -218,11 +317,31 @@ bool MavlinkLandingTarget::geometryFresh() const
 {
   const double altitude =
       m_target_altitude_var.empty() ? m_target_altitude_msl : m_target_alt.value;
-  return m_target_lat.fresh(m_curr_time, m_input_timeout) &&
+  if (m_direct)
+    return m_direct_valid && steadySeconds() >= m_direct_pose.received &&
+           steadySeconds() - m_direct_pose.received <= m_pose_timeout &&
+           m_target_lat.fresh(m_curr_time, m_input_timeout) &&
+           m_target_lon.fresh(m_curr_time, m_input_timeout) &&
+           std::fabs(m_target_lat.value) < 90 && std::fabs(m_target_lon.value) <= 180 &&
+           (m_target_altitude_var.empty() || m_target_alt.fresh(m_curr_time, m_input_timeout)) &&
+           std::isfinite(altitude) && altitude >= -1000 && altitude <= 10000;
+  return (!m_native_samples_seen ||
+          (m_native_sample_valid && m_native_sample_time <= m_curr_time + 1 &&
+           (m_curr_time - m_native_sample_time) / std::max(0.001, GetMOOSTimeWarp()) <= m_input_timeout)) &&
+         m_target_lat.fresh(m_curr_time, m_input_timeout) &&
          m_target_lon.fresh(m_curr_time, m_input_timeout) &&
          m_vehicle_lat.fresh(m_curr_time, m_input_timeout) &&
          m_vehicle_lon.fresh(m_curr_time, m_input_timeout) &&
          m_vehicle_yaw.fresh(m_curr_time, m_input_timeout) &&
+         m_attitude_usec.fresh(m_curr_time, m_input_timeout) && m_attitude_usec.value > 0 &&
+         m_attitude_usec.value < 9007199254740992.0 &&
+         m_vehicle_roll.fresh(m_curr_time, m_input_timeout) &&
+         m_vehicle_pitch.fresh(m_curr_time, m_input_timeout) &&
+         m_attitude_available.fresh(m_curr_time, m_input_timeout) &&
+         m_attitude_available.value == 1 &&
+         m_attitude_age.fresh(m_curr_time, m_input_timeout) && m_attitude_age.value >= 0 &&
+         m_attitude_age.value + std::max(0.0, m_curr_time - m_attitude_age.time) /
+                                    std::max(0.001, GetMOOSTimeWarp()) <= m_input_timeout &&
          m_vehicle_alt.fresh(m_curr_time, m_input_timeout) &&
          (m_target_altitude_var.empty() || m_target_alt.fresh(m_curr_time, m_input_timeout)) &&
          std::fabs(m_target_lat.value) <= 90 && std::fabs(m_vehicle_lat.value) <= 90 &&
@@ -242,10 +361,13 @@ void MavlinkLandingTarget::updateTargetGeometry()
   const double north = (m_target_lat.value - m_vehicle_lat.value) * PI_VALUE / 180.0 * 6378137.0;
   const double east = (m_target_lon.value - m_vehicle_lon.value) * PI_VALUE / 180.0 * 6378137.0 *
                       std::cos(mean_lat);
-  const double yaw = wrapHeading(m_vehicle_yaw.value) * PI_VALUE / 180.0;
-  m_target_forward = std::cos(yaw) * north + std::sin(yaw) * east;
-  m_target_right = -std::sin(yaw) * north + std::cos(yaw) * east;
-  m_target_down = m_vehicle_alt.value - altitude;
+  // BODY_FRD is aircraft-attitude aligned, not a level yaw-only frame.
+  const auto rotation = bodyframe::bodyToNed(m_vehicle_roll.value, m_vehicle_pitch.value,
+                                            m_vehicle_yaw.value);
+  const auto body = bodyframe::toBody(rotation, {{north, east, m_vehicle_alt.value - altitude}});
+  m_target_forward = body[0];
+  m_target_right = body[1];
+  m_target_down = body[2];
   m_target_distance = std::sqrt(m_target_forward * m_target_forward +
                                 m_target_right * m_target_right + m_target_down * m_target_down);
   m_target_visible = m_target_distance <= m_detection_range;
@@ -258,7 +380,10 @@ void MavlinkLandingTarget::updateTargetGeometry()
     if (m_geodesy.LatLong2LocalUTM(m_target_lat.value, m_target_lon.value, north0, east0) &&
         m_geodesy.LatLong2LocalUTM(m_target_lat.value + 1e-4, m_target_lon.value, north1, east1)) {
       const double grid_north = std::atan2(east1 - east0, north1 - north0) * 180 / PI_VALUE;
-      m_relative_heading = wrapHeading(m_target_heading.value - grid_north - m_vehicle_yaw.value);
+      const double target_yaw = m_target_heading.value - grid_north;
+      m_relative_heading = wrapHeading(target_yaw - m_vehicle_yaw.value);
+      m_target_quaternion = bodyframe::targetToBody(m_vehicle_roll.value, m_vehicle_pitch.value,
+                                                   m_vehicle_yaw.value, target_yaw);
       m_orientation_valid = true;
     }
   }
@@ -266,12 +391,17 @@ void MavlinkLandingTarget::updateTargetGeometry()
 
 bool MavlinkLandingTarget::sendLandingTarget()
 {
-  const float angle_x = std::atan2(m_target_right, std::max(std::fabs(m_target_down), 1.0e-6));
-  const float angle_y = std::atan2(m_target_forward, std::max(std::fabs(m_target_down), 1.0e-6));
+  // Downward camera image +X is body right; image +Y is body backward.
+  // ArduPilot's angular-only LOS is (-tan(angle_y), tan(angle_x), 1).
+  const float angle_x = std::atan2(m_target_right, m_target_down);
+  const float angle_y = std::atan2(-m_target_forward, m_target_down);
 
   std::vector<uint8_t> payload;
   payload.reserve(60);
-  appendUint64(payload, unixMicros());
+  // This body vector/quaternion were expressed using this exact FC attitude.
+  // Retain its boot-time stamp so receivers can undo that rotation, not a newer
+  // aircraft attitude encountered during transit. ArduPilot accepts boot usec.
+  appendUint64(payload, static_cast<uint64_t>(m_attitude_usec.value));
   appendFloat(payload, angle_x);
   appendFloat(payload, angle_y);
   appendFloat(payload, static_cast<float>(m_target_distance));
@@ -284,11 +414,8 @@ bool MavlinkLandingTarget::sendLandingTarget()
   appendFloat(payload, static_cast<float>(m_target_down));
   // All-zero quaternion means orientation unavailable, not a fabricated
   // body-aligned target. Position observations remain usable without heading.
-  const double half_yaw = m_relative_heading * PI_VALUE / 360;
-  appendFloat(payload, m_orientation_valid ? static_cast<float>(std::cos(half_yaw)) : 0);
-  appendFloat(payload, 0);
-  appendFloat(payload, 0);
-  appendFloat(payload, m_orientation_valid ? static_cast<float>(std::sin(half_yaw)) : 0);
+  for (const auto component : m_target_quaternion)
+    appendFloat(payload, m_orientation_valid ? static_cast<float>(component) : 0);
   appendUint8(payload, LANDING_TARGET_TYPE_VISION_FIDUCIAL);
   appendUint8(payload, 1);
 
@@ -374,6 +501,19 @@ bool MavlinkLandingTarget::buildReport()
   m_msgs << m_mavlink_host << ':' << m_mavlink_port << '\n';
   label("Connected");
   m_msgs << (m_link.connected() ? "yes" : "no") << '\n';
+  label("Aircraft pose source");
+  m_msgs << (m_direct ? "direct FC MAVLink (no MOOS fallback)" : "legacy MOOS") << '\n';
+  if (m_direct) {
+    label("Native pose status"); m_msgs << m_direct_history.reason() << '\n';
+    label("Native pose limits"); m_msgs << m_pose_timeout << " s receive age / "
+        << m_pose_skew * 1000 << " ms FC timestamp skew\n";
+    label("Native stream request"); m_msgs << m_pose_rate_hz << " Hz (telemetry only)\n";
+    label("Native pose age");
+    if (m_direct_valid) m_msgs << steadySeconds() - m_direct_pose.received << " s\n";
+    else m_msgs << "--\n";
+    label("Native pose timestamps"); m_msgs << m_direct_pose.stamp << " / "
+        << m_direct_pose.position_stamp << " us since FC boot (attitude / position)\n";
+  }
   label("Broadcasting");
   m_msgs << (m_target_active ? "yes" : "no") << '\n';
   label("Target messages");
@@ -388,7 +528,7 @@ bool MavlinkLandingTarget::buildReport()
   m_msgs << (m_orientation_valid ? "grid heading encoded in quaternion" : "unavailable") << '\n';
   label("Target relative yaw");
   if (m_orientation_valid)
-    m_msgs << m_relative_heading << " deg (BODY_FRD)\n";
+    m_msgs << m_relative_heading << " deg (true heading difference)\n";
   else
     m_msgs << "-- (requires fresh heading and origin)\n";
 
@@ -427,7 +567,11 @@ bool MavlinkLandingTarget::buildReport()
   m_msgs << m_vehicle_nav_prefix << '\n';
   sample("Vehicle latitude", m_vehicle_lat, " deg", 7);
   sample("Vehicle longitude", m_vehicle_lon, " deg", 7);
-  sample("Vehicle yaw", m_vehicle_yaw, " deg");
+  sample("Vehicle yaw", m_vehicle_yaw, " deg (true)");
+  sample("Vehicle roll", m_vehicle_roll, " deg");
+  sample("Vehicle pitch", m_vehicle_pitch, " deg");
+  sample("Attitude available", m_attitude_available, "", 0);
+  sample("Native attitude age", m_attitude_age, " s (real)");
   sample("Vehicle altitude", m_vehicle_alt, " m MSL");
   label("Input timeout");
   m_msgs << std::fixed << std::setprecision(2) << m_input_timeout << " s\n";

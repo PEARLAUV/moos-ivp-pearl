@@ -1,0 +1,856 @@
+{
+  "uav_fsm.toml": {
+    "machine": {
+      "label": "UAV operation",
+      "initial": "idle",
+      "initial_layout": {
+        "left": 0,
+        "top": 514
+      }
+    },
+    "states": {
+      "idle": {
+        "label": "Idle on deck",
+        "layout": {
+          "left": 120,
+          "top": 500,
+          "width": 200
+        },
+        "transitions": {
+          "begin_takeoff_operations": {
+            "to": "takeoff_operations",
+            "label": "Tasking received"
+          }
+        }
+      },
+      "takeoff_operations": {
+        "label": "Takeoff operations",
+        "layout": {
+          "left": 400,
+          "top": 280,
+          "width": 250
+        },
+        "initial": "establishing_takeoff_readiness",
+        "diagram": true,
+        "sinks": {
+          "completed_successfully": {
+            "label": "Completed"
+          },
+          "aborted": {
+            "label": "Aborted"
+          }
+        },
+        "states": {
+          "establishing_takeoff_readiness": {
+            "label": "Establishing takeoff readiness",
+            "layout": {
+              "top": 170,
+              "left": 0,
+              "width": 250
+            },
+            "transitions": {
+              "established": {
+                "to": "requesting_takeoff_clearance",
+                "label": "Readiness established"
+              },
+              "not_ready": {
+                "to": "sink.aborted",
+                "label": "Not ready"
+              }
+            }
+          },
+          "requesting_takeoff_clearance": {
+            "label": "Requesting takeoff clearance",
+            "layout": {
+              "top": 340,
+              "left": 0,
+              "width": 250
+            },
+            "transitions": {
+              "clearance_granted": {
+                "to": "takeoff",
+                "label": "Granted"
+              },
+              "clearance_rejected": {
+                "to": "sink.aborted",
+                "label": "Denied"
+              }
+            }
+          },
+          "takeoff": {
+            "label": "Taking off",
+            "layout": {
+              "top": 510,
+              "left": 0,
+              "width": 250
+            },
+            "transitions": {
+              "takeoff_completed": {
+                "to": "sink.completed_successfully",
+                "label": "Confirmed"
+              },
+              "takeoff_failed": {
+                "to": "sink.aborted",
+                "label": "Failed"
+              }
+            }
+          }
+        },
+        "transitions": {
+          "takeoff_completed": {
+            "exit": "completed_successfully",
+            "to": "mission_execution"
+          },
+          "takeoff_aborted": {
+            "to": "idle",
+            "exit": "aborted"
+          }
+        }
+      },
+      "mission_execution": {
+        "label": "Executing mission",
+        "layout": {
+          "left": 400,
+          "top": 500,
+          "width": 250
+        },
+        "transitions": {
+          "mission_completed": {
+            "to": "landing_operations",
+            "label": "Mission complete"
+          }
+        }
+      },
+      "landing_operations": {
+        "label": "Landing operations",
+        "diagram": true,
+        "initial": "establishing_landing_readiness",
+        "initial_layout": {
+          "left": 283,
+          "top": 0
+        },
+        "layout": {
+          "left": 400,
+          "top": 720,
+          "width": 250
+        },
+        "sinks": {
+          "nominal": {
+            "label": "Completed"
+          },
+          "offnominal": {
+            "label": "Off-nominal",
+            "layout": {
+              "left": 1350,
+              "top": 694
+            }
+          },
+          "loitering": {
+            "label": "Loitering",
+            "layout": {
+              "left": 1350,
+              "top": 94
+            }
+          }
+        },
+        "transitions": {
+          "nominal_exit": {
+            "exit": "nominal",
+            "to": "idle"
+          },
+          "offnominal_exit": {
+            "exit": "offnominal",
+            "to": "offnominal"
+          },
+          "loitering_exit": {
+            "exit": "loitering",
+            "to": "loitering"
+          }
+        },
+        "states": {
+          "establishing_landing_readiness": {
+            "label": "Establishing landing readiness",
+            "layout": {
+              "left": 150,
+              "top": 80,
+              "width": 300
+            },
+            "transitions": {
+              "readiness_established": {
+                "to": "requesting_recovery",
+                "label": "Ready"
+              },
+              "readiness_failed": {
+                "to": "transiting_to_secondary_loiter_location",
+                "label": "Readiness failed"
+              }
+            }
+          },
+          "requesting_recovery": {
+            "label": "Requesting recovery",
+            "layout": {
+              "left": 150,
+              "top": 230,
+              "width": 300
+            },
+            "transitions": {
+              "recovery_requested": {
+                "to": "calculating_rendezvous_point",
+                "label": "Request sent"
+              },
+              "recovery_request_failed": {
+                "to": "deviating_to_secondary_landing_position",
+                "label": "Request failed"
+              }
+            }
+          },
+          "calculating_rendezvous_point": {
+            "label": "Calculating rendezvous point",
+            "layout": {
+              "left": 150,
+              "top": 380,
+              "width": 300
+            },
+            "transitions": {
+              "rendezvous_point_ready": {
+                "to": "moving_to_rendezvous_point",
+                "label": "Point calculated"
+              },
+              "rendezvous_calculation_failed": {
+                "to": "deviating_to_secondary_landing_position",
+                "label": "Calculation\nfailed"
+              }
+            }
+          },
+          "moving_to_rendezvous_point": {
+            "label": "Moving to rendezvous point",
+            "layout": {
+              "left": 150,
+              "top": 530,
+              "width": 300
+            },
+            "transitions": {
+              "rendezvous_reached": {
+                "to": "waiting_for_landing_clearance",
+                "label": "Rendezvous reached"
+              },
+              "rendezvous_transit_failed": {
+                "to": "deviating_to_secondary_landing_position",
+                "label": "Rendezvous transit failed"
+              }
+            }
+          },
+          "waiting_for_landing_clearance": {
+            "label": "Waiting for landing clearance",
+            "layout": {
+              "left": 150,
+              "top": 680,
+              "width": 300
+            },
+            "transitions": {
+              "landing_clearance_granted": {
+                "to": "approaching",
+                "label": "Clearance granted"
+              },
+              "landing_clearance_failed": {
+                "to": "deviating_to_secondary_landing_position",
+                "label": "Clearance failed"
+              }
+            }
+          },
+          "approaching": {
+            "label": "Approaching",
+            "layout": {
+              "left": 150,
+              "top": 830,
+              "width": 300
+            },
+            "transitions": {
+              "landing_committed": {
+                "to": "landing",
+                "label": "Landing committed"
+              },
+              "approach_failed": {
+                "to": "deviating_to_secondary_landing_position",
+                "label": "Approach failed"
+              }
+            }
+          },
+          "landing": {
+            "label": "Landing",
+            "layout": {
+              "left": 150,
+              "top": 980,
+              "width": 300
+            },
+            "transitions": {
+              "landing_completed": {
+                "to": "sink.nominal",
+                "label": "Landed and disarmed"
+              },
+              "landing_target_lost": {
+                "to": "retrying_landing_target",
+                "label": "Target lost"
+              },
+              "landing_failed": {
+                "to": "deviating_to_secondary_landing_position",
+                "label": "Primary landing failed"
+              }
+            }
+          },
+          "retrying_landing_target": {
+            "label": "Retrying landing target",
+            "layout": {
+              "left": 620,
+              "top": 1110,
+              "width": 230
+            },
+            "transitions": {
+              "target_reacquired": {
+                "to": "landing",
+                "label": "Target reacquired"
+              },
+              "target_retries_exhausted": {
+                "to": "deviating_to_secondary_landing_position",
+                "label": "Retries exhausted"
+              }
+            }
+          },
+          "deviating_to_secondary_landing_position": {
+            "label": "Transiting to rally point",
+            "layout": {
+              "left": 600,
+              "top": 680,
+              "width": 250
+            },
+            "transitions": {
+              "secondary_landing_position_reached": {
+                "to": "secondary_landing",
+                "label": "Rally point\nreached"
+              }
+            }
+          },
+          "secondary_landing": {
+            "label": "Secondary landing",
+            "layout": {
+              "left": 980,
+              "top": 680,
+              "width": 250
+            },
+            "transitions": {
+              "secondary_landing_completed": {
+                "to": "sink.offnominal",
+                "label": "Secondary\nlanding\ncomplete"
+              }
+            }
+          },
+          "transiting_to_secondary_loiter_location": {
+            "label": "Transiting to rally point",
+            "layout": {
+              "left": 600,
+              "top": 80,
+              "width": 250
+            },
+            "transitions": {
+              "secondary_loiter_location_reached": {
+                "to": "loitering_at_secondary_altitude",
+                "label": "Rally point\nreached"
+              }
+            }
+          },
+          "loitering_at_secondary_altitude": {
+            "label": "Loitering at secondary altitude",
+            "layout": {
+              "left": 980,
+              "top": 80,
+              "width": 250
+            },
+            "transitions": {
+              "secondary_loiter_established": {
+                "to": "sink.loitering",
+                "label": "Loiter\nestablished"
+              }
+            }
+          }
+        }
+      },
+      "offnominal": {
+        "label": "Off-nominal landing\nTakeoff inhibited",
+        "layout": {
+          "left": 400,
+          "top": 900,
+          "width": 250
+        }
+      },
+      "loitering": {
+        "label": "Loitering at secondary altitude\nAwaiting recovery",
+        "layout": {
+          "left": 700,
+          "top": 900,
+          "width": 300
+        }
+      }
+    }
+  },
+  "pearl_fsm.toml": {
+    "machine": {
+      "label": "PEARL operation",
+      "initial": "normal_operation",
+      "condition": "(moos_manual_override==false) && (pearl_allstop==false)",
+      "history": true,
+      "initial_layout": {
+        "top": 0,
+        "left": 358
+      }
+    },
+    "states": {
+      "normal_operation": {
+        "label": "Normal operation",
+        "layout": {
+          "grid-rows": 2,
+          "grid-gap": 12,
+          "top": 100,
+          "left": 0
+        },
+        "regions": {
+          "main_activity": {
+            "label": "Main activity",
+            "layout": {
+              "direction": "right"
+            },
+            "initial": "idle",
+            "initial_layout": {
+              "left": 0,
+              "top": 149
+            },
+            "history_layout": {
+              "top": 140,
+              "left": 500
+            },
+            "states": {
+              "idle": {
+                "label": "Idle",
+                "layout": {
+                  "top": 125,
+                  "left": 100
+                },
+                "transitions": {
+                  "start_mission": {
+                    "to": "executing_mission",
+                    "label": "Task execution requested"
+                  }
+                }
+              },
+              "executing_mission": {
+                "label": "Executing mission",
+                "layout": {
+                  "top": 0,
+                  "left": 300
+                },
+                "transitions": {
+                  "begin_return": {
+                    "to": "returning_to_base",
+                    "label": "Mission\ncomplete"
+                  }
+                }
+              },
+              "returning_to_base": {
+                "label": "Returning to base",
+                "layout": {
+                  "top": 250,
+                  "left": 300
+                },
+                "transitions": {
+                  "return_complete": {
+                    "to": "idle",
+                    "label": "Return complete"
+                  }
+                }
+              }
+            }
+          },
+          "support_activity": {
+            "label": "Support activity",
+            "layout": {
+              "direction": "right"
+            },
+            "initial": "no_active_request",
+            "initial_layout": {
+              "left": 0,
+              "top": 242
+            },
+            "states": {
+              "no_active_request": {
+                "label": "No active request",
+                "layout": {
+                  "left": 100,
+                  "top": 200,
+                  "height": 120
+                },
+                "transitions": {
+                  "start_takeoff_request": {
+                    "to": "takeoff_pre_interruption_checks",
+                    "label": "Takeoff request\nreceived"
+                  },
+                  "start_recovery_request": {
+                    "to": "recovery_pre_interruption_checks",
+                    "label": "Recovery request\nreceived"
+                  }
+                }
+              },
+              "takeoff_pre_interruption_checks": {
+                "label": "Takeoff pre-interruption checks",
+                "layout": {
+                  "left": 300,
+                  "top": 0
+                },
+                "transitions": {
+                  "normal_to_takeoff": {
+                    "to": "takeoff_support",
+                    "label": "Checks passed"
+                  },
+                  "takeoff_withdrawn": {
+                    "to": "no_active_request",
+                    "label": "Cancelled"
+                  },
+                  "takeoff_rejected": {
+                    "to": "no_active_request",
+                    "label": "Rejected"
+                  }
+                }
+              },
+              "recovery_pre_interruption_checks": {
+                "label": "Recovery pre-interruption checks",
+                "layout": {
+                  "left": 300,
+                  "top": 430
+                },
+                "transitions": {
+                  "recovery_checks_pass": {
+                    "to": "calculating_rendezvous",
+                    "label": "Checks passed"
+                  },
+                  "recovery_withdrawn": {
+                    "to": "no_active_request",
+                    "label": "Cancelled"
+                  },
+                  "recovery_rejected": {
+                    "to": "no_active_request",
+                    "label": "Rejected"
+                  }
+                }
+              },
+              "calculating_rendezvous": {
+                "label": "Calculating rendezvous",
+                "transitions": {
+                  "normal_to_recovery": {
+                    "to": "recovery_support",
+                    "label": "Point calculated"
+                  },
+                  "rendezvous_withdrawn": {
+                    "to": "no_active_request",
+                    "label": "Cancelled"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "takeoff_support": {
+        "label": "Takeoff support",
+        "layout": {
+          "top": 480,
+          "left": 760
+        },
+        "initial": "establishing_takeoff_conditions",
+        "diagram": true,
+        "initial_layout": {
+          "top": 0,
+          "left": 133
+        },
+        "sink_layout": {
+          "left": 800,
+          "top": 850
+        },
+        "transitions": {
+          "takeoff_to_normal": {
+            "to": "normal_operation",
+            "history": {
+              "machine": "main_activity",
+              "state": "history"
+            },
+            "label": "Resume\nnominal\noperation"
+          }
+        },
+        "states": {
+          "establishing_takeoff_conditions": {
+            "label": "Establishing takeoff conditions",
+            "layout": {
+              "left": 0,
+              "top": 100,
+              "width": 300
+            },
+            "transitions": {
+              "establishing_takeoff_conditions_to_post_interruption_checks": {
+                "to": "post_interruption_checks",
+                "label": "Takeoff conditions established"
+              },
+              "establishing_takeoff_conditions_to_cancelling_before_clearance": {
+                "to": "cancelling_before_clearance",
+                "label": "Takeoff cancelled before clearance"
+              }
+            }
+          },
+          "post_interruption_checks": {
+            "label": "Post-interruption checks",
+            "layout": {
+              "left": 0,
+              "top": 300,
+              "width": 300
+            },
+            "transitions": {
+              "post_interruption_checks_to_awaiting_drone_departure": {
+                "to": "awaiting_drone_departure",
+                "label": "Post-interruption checks passed"
+              },
+              "post_interruption_checks_to_cancelling_before_clearance": {
+                "to": "cancelling_before_clearance",
+                "label": "Takeoff cancelled before clearance"
+              },
+              "post_interruption_checks_failed": {
+                "to": "cancelling_before_clearance",
+                "label": "Post-interruption checks failed"
+              }
+            }
+          },
+          "awaiting_drone_departure": {
+            "label": "Awaiting drone departure",
+            "layout": {
+              "left": 0,
+              "top": 500,
+              "width": 300
+            },
+            "transitions": {
+              "awaiting_drone_departure_to_takeoff_in_progress": {
+                "to": "takeoff_in_progress",
+                "label": "Drone departure underway"
+              },
+              "awaiting_drone_departure_to_disengaging_takeoff_support": {
+                "to": "disengaging_takeoff_support",
+                "label": "Takeoff support cancellation requested"
+              }
+            }
+          },
+          "takeoff_in_progress": {
+            "label": "Takeoff in progress",
+            "layout": {
+              "left": 0,
+              "top": 700,
+              "width": 300
+            },
+            "transitions": {
+              "takeoff_in_progress_to_disengaging_takeoff_support": {
+                "to": "disengaging_takeoff_support",
+                "label": "Takeoff cancelled during departure"
+              },
+              "takeoff_in_progress_to_sink": {
+                "to": "sink",
+                "label": "Drone departed"
+              }
+            }
+          },
+          "cancelling_before_clearance": {
+            "label": "Cancelling before clearance",
+            "layout": {
+              "left": 380,
+              "top": 200,
+              "width": 280
+            },
+            "transitions": {
+              "cancelling_before_clearance_to_sink": {
+                "to": "sink",
+                "label": "Takeoff\ncancellation\ncomplete"
+              }
+            }
+          },
+          "disengaging_takeoff_support": {
+            "label": "Disengaging takeoff support",
+            "layout": {
+              "left": 380,
+              "top": 600,
+              "width": 280
+            },
+            "transitions": {
+              "disengaging_takeoff_support_to_sink": {
+                "to": "sink",
+                "label": "Takeoff\nsupport\ndisengaged"
+              }
+            }
+          }
+        }
+      },
+      "recovery_support": {
+        "label": "Recovery support",
+        "layout": {
+          "top": 480,
+          "left": 950
+        },
+        "initial": "moving_to_rendezvous",
+        "diagram": true,
+        "sink_layout": {
+          "left": 600,
+          "top": 950
+        },
+        "transitions": {
+          "recovery_to_normal": {
+            "to": "normal_operation",
+            "history": {
+              "machine": "main_activity",
+              "state": "history"
+            },
+            "label": "Resume nominal operation"
+          }
+        },
+        "states": {
+          "moving_to_rendezvous": {
+            "label": "Moving to rendezvous point",
+            "layout": {
+              "left": 0,
+              "top": 100,
+              "width": 300
+            },
+            "transitions": {
+              "moving_to_rendezvous_to_establishing_recovery_conditions": {
+                "to": "establishing_recovery_conditions",
+                "label": "Rendezvous point reached"
+              },
+              "moving_to_rendezvous_to_cancelling_before_clearance": {
+                "to": "cancelling_before_clearance",
+                "label": "Recovery support\ncancellation requested"
+              }
+            }
+          },
+          "establishing_recovery_conditions": {
+            "label": "Establishing recovery conditions",
+            "layout": {
+              "left": 0,
+              "top": 250,
+              "width": 300
+            },
+            "transitions": {
+              "establishing_recovery_conditions_to_post_interruption_checks": {
+                "to": "post_interruption_checks",
+                "label": "Recovery conditions established"
+              },
+              "establishing_recovery_conditions_to_cancelling_before_clearance": {
+                "to": "cancelling_before_clearance",
+                "label": "Recovery support\ncancellation requested"
+              }
+            }
+          },
+          "post_interruption_checks": {
+            "label": "Post-interruption checks",
+            "layout": {
+              "left": 0,
+              "top": 400,
+              "width": 300
+            },
+            "transitions": {
+              "post_interruption_checks_to_supporting_approach": {
+                "to": "supporting_approach",
+                "label": "Landing clearance granted"
+              },
+              "post_interruption_checks_to_cancelling_before_clearance_2": {
+                "to": "cancelling_before_clearance",
+                "label": "Recovery support\ncancellation requested"
+              },
+              "post_interruption_checks_failed": {
+                "to": "cancelling_before_clearance",
+                "label": "Post-interruption checks failed"
+              }
+            }
+          },
+          "supporting_approach": {
+            "label": "Supporting approach",
+            "layout": {
+              "left": 0,
+              "top": 550,
+              "width": 300
+            },
+            "transitions": {
+              "supporting_approach_to_supporting_landing": {
+                "to": "supporting_landing",
+                "label": "Drone landing"
+              },
+              "supporting_approach_to_disengaging_recovery_support": {
+                "to": "disengaging_recovery_support",
+                "label": "Recovery support\ncancellation requested"
+              }
+            }
+          },
+          "supporting_landing": {
+            "label": "Supporting landing",
+            "layout": {
+              "left": 0,
+              "top": 700,
+              "width": 300
+            },
+            "transitions": {
+              "supporting_landing_to_confirming_recovery": {
+                "to": "confirming_recovery",
+                "label": "Drone touchdown"
+              },
+              "supporting_landing_to_disengaging_recovery_support": {
+                "to": "disengaging_recovery_support",
+                "label": "Recovery support\ncancellation requested"
+              }
+            }
+          },
+          "confirming_recovery": {
+            "label": "Confirming recovery",
+            "layout": {
+              "left": 0,
+              "top": 850,
+              "width": 300
+            },
+            "transitions": {
+              "confirming_recovery_to_sink": {
+                "to": "sink",
+                "label": "Recovery confirmed"
+              }
+            }
+          },
+          "cancelling_before_clearance": {
+            "label": "Cancelling before clearance",
+            "layout": {
+              "left": 550,
+              "top": 250,
+              "width": 280
+            },
+            "transitions": {
+              "cancelling_before_clearance_to_sink": {
+                "to": "sink",
+                "label": "Recovery\ncancellation\ncomplete"
+              }
+            }
+          },
+          "disengaging_recovery_support": {
+            "label": "Disengaging recovery support",
+            "layout": {
+              "left": 550,
+              "top": 700,
+              "width": 280
+            },
+            "transitions": {
+              "disengaging_recovery_support_to_sink": {
+                "to": "sink",
+                "label": "Recovery\nsupport\ndisengaged"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
