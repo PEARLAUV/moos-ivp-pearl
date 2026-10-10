@@ -19,6 +19,21 @@
 
 using namespace std;
 
+namespace {
+bool returnPoint(const string& spec, XYPoint& result)
+{
+  if(parseString(spec, ',').size() != 2) return false;
+  const string xs = tokStringParse(spec, "x", ',', '=');
+  const string ys = tokStringParse(spec, "y", ',', '=');
+  if(!isNumber(xs) || !isNumber(ys)) return false;
+  const double x = atof(xs.c_str()), y = atof(ys.c_str());
+  if(!std::isfinite(x) || !std::isfinite(y) ||
+     fabs(x) > 100000 || fabs(y) > 100000) return false;
+  result = XYPoint(x, y);
+  return true;
+}
+}
+
 //---------------------------------------------------------
 // Constructor()
 
@@ -75,6 +90,9 @@ bool RouteBuffer::OnNewMail(MOOSMSG_LIST &NewMail)
 
   // Cache guard facts before commands, without changing their producer times.
   for(const auto& msg : NewMail) {
+    if(m_role == "shoreside" && !m_return_point_var.empty() &&
+       msg.GetKey() == m_return_point_var)
+      handleMailReturnPoint(msg);
     if(m_task_guards.count(msg.GetKey()))
       m_task_inputs[msg.GetKey()] = {
         msg.IsDouble() ? doubleToStringX(msg.GetDouble()) : msg.GetString(), msg.GetTime()};
@@ -95,6 +113,8 @@ bool RouteBuffer::OnNewMail(MOOSMSG_LIST &NewMail)
       handled = handleMailPoint(msg);
     else if((m_role == "shoreside") && (key == m_task_request_var))
       handled = handleMailTask(msg);
+    else if(m_role == "shoreside" && !m_return_point_var.empty() && key == m_return_point_var)
+      handled = true; // Settings were processed before any task in this batch.
     else if((m_role == "shoreside") && !m_stage_clear_request_var.empty() &&
             key == m_stage_clear_request_var) {
       if(mailIsTrue(msg)) clearStagedDrawing();
@@ -161,6 +181,9 @@ bool RouteBuffer::Iterate()
   AppCastingMOOSApp::Iterate();
 
   if(m_config_valid) {
+    if(m_role == "shoreside" && !m_return_point_var.empty() &&
+       (m_last_return_visual_time < 0 || m_curr_time - m_last_return_visual_time >= 2))
+      postReturnPoint(); // Late viewer startup must not lose the default marker.
     if((m_role == "shoreside") && !m_sync_sent) {
       // pMediator currently begins its sequence at zero, which receivers
       // deliberately reject. Consume that initial ID with a harmless command.
@@ -179,6 +202,10 @@ bool RouteBuffer::Iterate()
     // Release the retained snapshot on actual DRIVE, never on a task timer.
     if((m_role == "vehicle") && !m_deferred_helm_update.empty() &&
        (m_helm_state == "DRIVE")) {
+      if(!m_deferred_return_update.empty()) {
+        Notify(m_return_update_var, m_deferred_return_update);
+        m_deferred_return_update.clear();
+      }
       Notify(m_route_update_var, m_deferred_helm_update);
       m_deferred_helm_update.clear();
       reportEvent("Staged route delivered after Helm DRIVE");
@@ -277,6 +304,7 @@ bool RouteBuffer::OnStartUp()
 {
   AppCastingMOOSApp::OnStartUp();
   m_started = MOOSTime();
+  m_last_return_edit_time = m_started;
 
   STRING_LIST sParams;
   m_MissionReader.EnableVerbatimQuoting(false);
@@ -297,6 +325,16 @@ bool RouteBuffer::OnStartUp()
       handled = setNonWhiteVarOnString(m_task_request_var, value);
     else if(param == "stage_clear_request_var")
       handled = setNonWhiteVarOnString(m_stage_clear_request_var, value);
+    else if(param == "return_point_var")
+      handled = setNonWhiteVarOnString(m_return_point_var, value);
+    else if(param == "return_update_var")
+      handled = setNonWhiteVarOnString(m_return_update_var, value);
+    else if(param == "task_return_destination")
+      handled = setNonWhiteVarOnString(m_task_return_destination, tolower(value));
+    else if(param == "initial_return_point") {
+      m_have_return_point = returnPoint(value, m_return_point);
+      handled = m_have_return_point;
+    }
     else if(param == "task_destination")
       handled = !value.empty() && !strContainsWhite(value) &&
                 m_task_destinations.insert(tolower(value)).second;
@@ -389,7 +427,8 @@ bool RouteBuffer::OnStartUp()
       reportUnhandledConfigWarning(orig);
       if(strBegins(param, "task_") || param == "stage_clear_request_var" ||
          param == "route_ready_name_var" || param == "route_ready_name_prefix" ||
-         param == "route_identity_var")
+         param == "route_identity_var" || param == "initial_return_point" ||
+         strBegins(param, "return_"))
         m_config_valid = false;
     }
   }
@@ -428,8 +467,19 @@ bool RouteBuffer::OnStartUp()
     reportConfigWarning("Task execution requires guards, started state and zero deploy/replay delay");
     m_config_valid = false;
   }
+  if((!m_return_point_var.empty() || !m_task_return_destination.empty()) &&
+     (m_role != "shoreside" || m_return_point_var.empty() ||
+      !m_task_destinations.count(m_task_return_destination))) {
+    reportConfigWarning("Return staging needs shoreside role, point variable and allowed destination");
+    m_config_valid = false;
+  }
+  if(!m_return_update_var.empty() && (m_role != "vehicle" || m_task_execute_var.empty())) {
+    reportConfigWarning("Return execution needs guarded vehicle task policy");
+    m_config_valid = false;
+  }
   if(m_config_valid && !m_route_purpose_var.empty())
     Notify(m_route_purpose_var, "none");
+  if(m_config_valid) postReturnPoint();
 
   registerVariables();
   return(true);
@@ -445,6 +495,7 @@ void RouteBuffer::registerVariables()
   if(m_role == "shoreside") {
     Register(m_point_var, 0);
     Register(m_task_request_var, 0);
+    if(!m_return_point_var.empty()) Register(m_return_point_var, 0);
     if(!m_stage_clear_request_var.empty()) Register(m_stage_clear_request_var, 0);
     Register(m_deploy_request_var, 0);
     Register(m_clear_request_var, 0);
@@ -515,9 +566,17 @@ bool RouteBuffer::handleMailTask(const CMOOSMsg& msg)
   const auto stamp = std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::system_clock::now().time_since_epoch()).count();
   const string id = "task_" + destination + "_" + to_string(stamp);
-  const string command = "action=deploy # task_id=" + id +
-                         " # task_time=" + doubleToStringX(m_curr_time, 6) +
-                         " # points=" + getPointsSpec();
+  string command = "action=deploy # task_id=" + id +
+                   " # task_time=" + doubleToStringX(m_curr_time, 6) +
+                   " # points=" + getPointsSpec();
+  if(destination == m_task_return_destination) {
+    if(!m_have_return_point) {
+      postState("TASK_REJECTED_RETURN_POINT");
+      return true; // Keep the drawing; no submission or task flags.
+    }
+    command += " # return_point=x=" + doubleToStringX(m_return_point.x(), 6) +
+               ",y=" + doubleToStringX(m_return_point.y(), 6);
+  }
   if(!sendMediatedCommand(command, destination)) {
     postState("TASK_REJECTED_SEND");
     return true;
@@ -530,6 +589,27 @@ bool RouteBuffer::handleMailTask(const CMOOSMsg& msg)
     Notify(flag.first, flag.second);
   postState("TASK_SUBMITTED");
   return true;
+}
+
+void RouteBuffer::handleMailReturnPoint(const CMOOSMsg& msg)
+{
+  if(msg.GetTime() < m_last_return_edit_time || msg.GetTime() > m_curr_time + 1)
+    return;
+  m_last_return_edit_time = msg.GetTime();
+  m_have_return_point = msg.IsString() && returnPoint(msg.GetString(), m_return_point);
+  postReturnPoint();
+}
+
+void RouteBuffer::postReturnPoint()
+{
+  if(m_role != "shoreside" || m_return_point_var.empty()) return;
+  m_last_return_visual_time = m_curr_time;
+  const string spec = "x=" + doubleToStringX(m_return_point.x(), 6) +
+                      ",y=" + doubleToStringX(m_return_point.y(), 6);
+  Notify(m_return_point_var + "_STAGED", m_have_return_point ? spec : "invalid");
+  Notify("VIEW_POINT", spec +
+         ",label=staged_return,vertex_color=cyan,vertex_size=8,label_color=invisible,active=" +
+         boolToString(m_have_return_point));
 }
 
 void RouteBuffer::clearStagedDrawing()
@@ -736,7 +816,8 @@ bool RouteBuffer::processVehicleCommand(const string& command,
   string slip_radius;
   string route_name;
   string purpose = "operator";
-  string task_id, task_time;
+  string task_id, task_time, task_return;
+  unsigned int return_fields = 0;
   for(unsigned int i=0; i<fields.size(); i++) {
     string field = stripBlankEnds(fields[i]);
     string param = tolower(biteStringX(field, '='));
@@ -744,6 +825,7 @@ bool RouteBuffer::processVehicleCommand(const string& command,
 
     if(param == "task_id") task_id = value;
     else if(param == "task_time") task_time = value;
+    else if(param == "return_point") { task_return = value; ++return_fields; }
     else if(param == "action")
       action = tolower(value);
     else if(param == "points")
@@ -771,6 +853,7 @@ bool RouteBuffer::processVehicleCommand(const string& command,
     if(m_task_start_pending && !m_task_execute_var.empty()) Notify(m_task_execute_var, "false");
     m_task_start_pending = false;
     m_deferred_helm_update.clear();
+    m_deferred_return_update.clear();
     m_vehicle_deploy_pending = false;
     m_vehicle_route_replay_pending = false;
     m_vehicle_pending_route_update.clear();
@@ -835,8 +918,26 @@ bool RouteBuffer::processVehicleCommand(const string& command,
         return(false);
       }
     }
-    return(postRouteSnapshot(points, speed, capture_radius, slip_radius,
-                             route_name, purpose));
+    XYPoint return_point;
+    if(!m_return_update_var.empty() &&
+       (return_fields != 1 || !returnPoint(task_return, return_point))) {
+      m_commands_rejected++;
+      postState("TASK_REJECTED_RETURN_POINT");
+      return false;
+    }
+    const bool accepted = postRouteSnapshot(points, speed, capture_radius, slip_radius,
+                                           route_name, purpose);
+    if(accepted && !m_return_update_var.empty()) {
+      // Part of this immutable task, never a separately mutable vehicle setting.
+      m_committed_return_update = "points=" + doubleToStringX(return_point.x(), 6) +
+                                 "," + doubleToStringX(return_point.y(), 6);
+      Notify("ROUTE_BUFFER_RETURN_ACTIVE", "task_id=" + task_id + "#" + task_return);
+      if(m_helm_state_var.empty() || m_helm_state == "DRIVE")
+        Notify(m_return_update_var, m_committed_return_update);
+      else
+        m_deferred_return_update = m_committed_return_update;
+    }
+    return accepted;
   }
 
   if(action == "append") {
@@ -1113,6 +1214,10 @@ bool RouteBuffer::buildReport()
   m_msgs << "State:            " << m_state << endl;
   m_msgs << "Source node:      " << m_source_node << endl;
   m_msgs << "Destination node: " << m_destination_node << endl;
+  if(!m_return_point_var.empty())
+    m_msgs << "Staged return:    " << (m_have_return_point ? m_return_point.get_spec() : "INVALID") << endl;
+  if(!m_return_update_var.empty())
+    m_msgs << "Committed return: " << m_committed_return_update << endl;
   m_msgs << "Route points:     " << m_points.size()
          << "/" << m_max_points << endl;
   m_msgs << "Contacts cached:  " << m_contact_points.size() << endl;

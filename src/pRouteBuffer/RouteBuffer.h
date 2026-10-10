@@ -37,6 +37,8 @@ class RouteBuffer : public AppCastingMOOSApp
  private:
    bool handleMailPoint(const CMOOSMsg&);
    bool handleMailTask(const CMOOSMsg&);
+   void handleMailReturnPoint(const CMOOSMsg&);
+   void postReturnPoint();
    bool taskPermitted() const;
    void cancelPendingTask(const std::string&);
    void clearStagedDrawing();
@@ -95,6 +97,11 @@ class RouteBuffer : public AppCastingMOOSApp
    // Optional shared-drawing/task policy; legacy deploy remains unchanged.
    std::string m_task_request_var = "ROUTE_BUFFER_TASK";
    std::string m_stage_clear_request_var;
+   std::string m_return_point_var, m_return_update_var, m_task_return_destination;
+   XYPoint m_return_point;
+   bool m_have_return_point = false;
+   double m_last_return_edit_time = -1, m_last_return_visual_time = -1;
+   std::string m_deferred_return_update, m_committed_return_update;
    std::set<std::string> m_task_destinations;
    std::map<std::string, std::vector<std::pair<std::string, std::string>>> m_task_submit_flags;
    std::map<std::string, std::set<std::string>> m_task_guards;

@@ -84,6 +84,11 @@ void showExampleConfigAndExit()
   blk("  task_request_var   = ROUTE_BUFFER_TASK                         ");
   blk("  stage_clear_request_var = ROUTE_BUFFER_CLEAR_STAGED            ");
   blk("  // Optional: task_submit_flag = uav:RALLY_TASK_COMMIT=true     ");
+  blk("  // Optional return staging (shoreside, disabled by default):  ");
+  blk("  // return_point_var = PEARL_RETURN_POINT                     ");
+  blk("  // task_return_destination = pearl                          ");
+  blk("  // initial_return_point = x=10.6,y=4.8                       ");
+  blk("  // Vehicle: return_update_var = PEARL_RETURN_UPDATE          ");
   blk("  node_report_var    = NODE_REPORT                              ");
   blk("  contact_max_age    = 3                                        ");
   blk("  deploy_delay       = 0     // Seconds; 0 uses route_ready_var   ");
@@ -120,6 +125,7 @@ void showInterfaceAndExit()
   blk("    ROUTE_BUFFER_GOTO   = pearl                                 ");
   blk("    ROUTE_BUFFER_TASK   = pearl|uav (configured destination)      ");
   blk("    ROUTE_BUFFER_CLEAR_STAGED = true (local drawing only)        ");
+  blk("    Configured return_point_var = x=X,y=Y (future tasks only)   ");
   blk("    NODE_REPORT = NAME=pearl,X=-90,Y=-65,...                    ");
   blk("  Vehicle role:                                                 ");
   blk("    ROUTE_BUFFER_COMMAND = action=deploy # points={-100,-50}    ");

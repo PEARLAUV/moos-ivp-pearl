@@ -78,6 +78,31 @@ ownership; clearing a Helm flag alone does not release it. This policy is
 disabled by default, does not acknowledge execution/expiry, and does not
 change waypoint guidance or manufacture readiness.
 
+## Optional task-frozen return point
+
+Shore configuration:
+```
+return_point_var = PEARL_RETURN_POINT
+task_return_destination = pearl
+initial_return_point = x=10.6,y=4.8
+```
+Point edits are strings `x=X,y=Y` (finite local metres, each within ±100 km).
+The cyan unlabeled `staged_return` marker and
+`PEARL_RETURN_POINT_STAGED` show the staged selection. Consuming or clearing
+the route drawing does not clear it. A task for the configured destination
+requires a valid selection and carries one immutable
+`return_point=x=X,y=Y` field inside the same mediated request. Other
+destinations are unchanged; later edits do not modify sent/retried tasks.
+
+Vehicle configuration `return_update_var = PEARL_RETURN_UPDATE` requires the
+existing guarded task policy. Missing, invalid or repeated return metadata
+rejects the task before it can execute. Only an accepted task emits its frozen
+`points=X,Y` waypoint update; busy/duplicate tasks cannot redirect it.
+Parked Helm receives the retained return and route snapshots only on DRIVE;
+local clear/cancellation discards deferred updates. The return waypoint must
+subscribe to that update variable. All options are disabled by default, so
+existing deployments remain unchanged.
+
 ## Validation
 
 `tests/test_shared_task.py`: destination isolation, immutable snapshots,

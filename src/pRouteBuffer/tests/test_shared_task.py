@@ -45,6 +45,7 @@ ProcessConfig=pLogger
  WildCardLogging=false
  Log=NODE_MESSAGE_LOCAL @ 0
  Log=VIEW_SEGLIST @ 0
+ Log=VIEW_POINT @ 0
  Log=ROUTE_BUFFER_TASK_DESTINATION @ 0
  Log=ROUTE_BUFFER_TASK_ID @ 0
  Log=RALLY_TASK_COMMIT @ 0
@@ -60,6 +61,9 @@ ProcessConfig=pRouteBuffer
  task_destination=uav
  task_submit_flag=uav:RALLY_TASK_COMMIT=true
  stage_clear_request_var=ROUTE_BUFFER_CLEAR_STAGED
+ return_point_var=PEARL_RETURN_POINT
+ task_return_destination=pearl
+ initial_return_point=x=10.6,y=4.8
 }}
 """)
         self.output = (self.root / "antler.log").open("w")
@@ -82,11 +86,12 @@ ProcessConfig=pRouteBuffer
 
     def poke(self, *pairs):
         subprocess.run([str(MOOS / "uPokeDB"), str(self.mission), "--quiet", *pairs],
-                       cwd=self.root, capture_output=True, check=True, timeout=20)
+                       cwd=self.root, capture_output=True, check=True, timeout=25)
 
     def query(self, *conditions):
         result = subprocess.run([str(MOOS / "uQueryDB"), str(self.mission),
-                                 *(f"--condition={c}" for c in conditions), "--wait=6"],
+                                 *(f"--condition={c}" for c in conditions), "--wait=6",
+                                 "--check_var=PEARL_RETURN_POINT_STAGED", "--esv"],
                                 cwd=self.root, capture_output=True, text=True, check=False, timeout=20)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -100,6 +105,10 @@ ProcessConfig=pRouteBuffer
                    "ROUTE_BUFFER_TASK_DESTINATION=pearl", "RALLY_TASK_COMMIT=false")
         self.poke("ROUTE_BUFFER_TASK:=uav")  # Drawing is already consumed.
         self.query("ROUTE_BUFFER_STATE=TASK_REJECTED_EMPTY", "RALLY_TASK_COMMIT=false")
+        self.poke("PEARL_RETURN_POINT:=x=30,y=-10")  # Cannot mutate the sent task.
+        self.query("ROUTE_BUFFER_COUNT=0")
+        self.assertIn("PEARL_RETURN_POINT_STAGED=x=30,y=-10",
+                      (self.root / ".checkvars").read_text())
         self.poke("ROUTE_POINT:=x=99,y=99")
         self.poke("ROUTE_BUFFER_TASK:=unknown")
         self.query("ROUTE_BUFFER_STATE=TASK_REJECTED_TARGET", "ROUTE_BUFFER_COUNT=1")
@@ -122,6 +131,8 @@ ProcessConfig=pRouteBuffer
         self.assertIn("dest_node=pearl", messages[0])
         self.assertIn("points={0,20:20,20}", messages[0])
         self.assertNotIn("99,99", messages[0])
+        self.assertIn("return_point=x=10.6,y=4.8", messages[0])
+        self.assertNotIn("return_point", messages[1])
         self.assertIn("dest_node=uav", messages[1])
         self.assertIn("points={99,99}", messages[1])
         self.assertTrue(all("action=deploy" in msg and "task_time=" in msg and
@@ -129,6 +140,34 @@ ProcessConfig=pRouteBuffer
         self.assertTrue(all("action=clear" not in msg for msg in messages))
         self.assertTrue(any("label=route_buffer_path" in line and "active=false" in line
                             for line in log.splitlines()))
+
+    def test_return_edits_snapshot_next_task_and_invalid_point_preserves_drawing(self):
+        self.poke("PEARL_RETURN_POINT:=x=12,y=-7", "ROUTE_POINT:=x=1,y=2")
+        self.poke("ROUTE_BUFFER_TASK:=pearl")
+        self.query("ROUTE_BUFFER_STATE=TASK_SUBMITTED", "ROUTE_BUFFER_COUNT=0")
+        first = self.root / "task/task.alog"
+        time.sleep(0.5)
+        self.assertIn("return_point=x=12,y=-7", first.read_text())
+        self.poke("PEARL_RETURN_POINT:=x=nan,y=2", "ROUTE_POINT:=x=3,y=4")
+        self.poke("ROUTE_BUFFER_TASK:=pearl")
+        self.query("ROUTE_BUFFER_STATE=TASK_REJECTED_RETURN_POINT", "ROUTE_BUFFER_COUNT=1",
+                   "PEARL_RETURN_POINT_STAGED=invalid")
+        self.poke("PEARL_RETURN_POINT:=x=100001,y=0")
+        self.poke("ROUTE_BUFFER_TASK:=pearl")
+        self.query("ROUTE_BUFFER_STATE=TASK_REJECTED_RETURN_POINT", "ROUTE_BUFFER_COUNT=1")
+        self.poke("PEARL_RETURN_POINT:=x=-4,y=9")
+        self.poke("ROUTE_BUFFER_TASK:=pearl")
+        self.query("ROUTE_BUFFER_STATE=TASK_SUBMITTED", "ROUTE_BUFFER_COUNT=0")
+        self.poke("ROUTE_BUFFER_CLEAR_STAGED=true")
+        self.query("ROUTE_BUFFER_COUNT=0")
+        self.assertIn("PEARL_RETURN_POINT_STAGED=x=-4,y=9",
+                      (self.root / ".checkvars").read_text())
+        time.sleep(0.5)
+        messages = [line for line in first.read_text().splitlines()
+                    if "NODE_MESSAGE_LOCAL" in line and "action=deploy" in line]
+        self.assertEqual(len(messages), 2, messages)
+        self.assertIn("return_point=x=12,y=-7", messages[0])
+        self.assertIn("return_point=x=-4,y=9", messages[1])
 
 
 if __name__ == "__main__":
