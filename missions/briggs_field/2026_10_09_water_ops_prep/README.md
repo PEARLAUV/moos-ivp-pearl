@@ -1458,7 +1458,9 @@ only PEARL in GRASS:
 
 GRASS runs the unchanged FSM, takeoff/recovery checks, rendezvous planner, and
 landing coordinator. It uses the physical `/dev/ttyUSB0` receiver through
-`iDualGPS` with `DUAL_GPS=false` (process alias `iSingleGPS`). It does not run `pHelmIvP`,
+`iDualGPS` with `DUAL_GPS=false`. The legacy GPS application is deliberately
+not aliased because its entry point does not consume pAntler's plain alias
+argument. GRASS does not run `pHelmIvP`,
 `pRouteBuffer`, `uSimMarineV22`, PID, or thrust mixing. The missing route buffer
 means the main-activity transition cannot receive a legitimate `ROUTE_READY`,
 while support-state coordination remains available. PEARL's `NODE_REPORT` is

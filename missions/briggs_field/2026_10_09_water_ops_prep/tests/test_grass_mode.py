@@ -86,8 +86,11 @@ class GrassModeContract(unittest.TestCase):
         self.assertNotIn("bridge = src=ROUTE_BUFFER_VEHICLE_STATE", self.grass)
 
     def test_uses_one_physical_gps_and_no_synthetic_gps(self):
-        self.assertIn("Run = iDualGPS           @ NewConsole = false ~ iSingleGPS", self.grass)
-        self.assertIn("ProcessConfig = iSingleGPS", self.grass)
+        self.assertIn("Run = iDualGPS           @ NewConsole = false", self.grass)
+        self.assertNotIn("~ iSingleGPS", self.grass)
+        self.assertIn("ProcessConfig = iDualGPS", self.grass)
+        self.assertIn("thresh = app=iDualGPS", self.grass)
+        self.assertNotIn("app=iSingleGPS", self.grass)
         self.assertIn("DUAL_GPS = false", self.grass)
         self.assertIn("PORT_1   = /dev/ttyUSB0", self.grass)
         self.assertIn("GPS_LATITUDE      -> NAV_LAT", self.grass)

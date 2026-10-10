@@ -61,7 +61,7 @@ ProcessConfig = ANTLER
 #else
   Run = uTimerScript       @ NewConsole = false ~ uSyntheticPlatformInputs
 #ifdef XMODE GRASS
-  Run = iDualGPS           @ NewConsole = false ~ iSingleGPS
+  Run = iDualGPS           @ NewConsole = false
   Run = uTimerScript       @ NewConsole = false ~ uGrassRuntimeInputs
 #else
   Run = uTimerScript       @ NewConsole = false ~ uSimGpsInputs
@@ -323,7 +323,7 @@ ProcessConfig = uLoadWatch
 #else
   thresh = app=uSyntheticPlatformInputs, gapthresh=3
 #ifdef XMODE GRASS
-  thresh = app=iSingleGPS,          gapthresh=3
+  thresh = app=iDualGPS,            gapthresh=3
   thresh = app=uGrassRuntimeInputs, gapthresh=3
 #else
   thresh = app=uSimGpsInputs,  gapthresh=3
@@ -701,9 +701,9 @@ ProcessConfig = pHelmIvP
 
 #ifdef XMODE GRASS
 //----------------------------------------------------
-// The existing GPS driver runs one receiver only and is aliased to make the
-// GRASS hardware contract explicit.
-ProcessConfig = iSingleGPS
+// The existing GPS driver runs one receiver only. Do not alias this legacy
+// application: its main function does not consume pAntler's plain alias form.
+ProcessConfig = iDualGPS
 {
   AppTick   = 10
   CommsTick = 10
