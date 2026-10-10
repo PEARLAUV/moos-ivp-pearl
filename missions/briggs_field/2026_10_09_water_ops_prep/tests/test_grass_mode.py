@@ -89,6 +89,7 @@ class GrassModeContract(unittest.TestCase):
         self.assertIn("Run = iDualGPS           @ NewConsole = false ~ iSingleGPS", self.grass)
         self.assertIn("ProcessConfig = iSingleGPS", self.grass)
         self.assertIn("DUAL_GPS = false", self.grass)
+        self.assertIn("PORT_1   = /dev/ttyUSB0", self.grass)
         self.assertIn("GPS_LATITUDE      -> NAV_LAT", self.grass)
         self.assertIn("GPS_HEADING_GPRMC -> NAV_COG", self.grass)
         self.assertIn("uGrassRuntimeInputs", self.grass)

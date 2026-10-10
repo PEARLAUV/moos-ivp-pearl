@@ -708,7 +708,7 @@ ProcessConfig = iSingleGPS
   CommsTick = 10
 
   DUAL_GPS = false
-  PORT_1   = /dev/ttyAMA5
+  PORT_1   = /dev/ttyUSB0
   BAUDRATE = 9600
   PREFIX   = GPS
 
