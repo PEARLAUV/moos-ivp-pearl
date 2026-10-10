@@ -27,6 +27,7 @@ JUST_MAKE="no"
 AUTO_LAUNCHED="no"
 
 MODE="SITL"
+SITE="briggs"
 IS_SIM="true"
 IP_ADDR="localhost"
 MOOS_PORT="9001"
@@ -60,6 +61,7 @@ for ARGI; do
     echo "  --verbose, -v           Verbose launch summary"
     echo "  --auto, -a              Script launch, no uMAC"
     echo "  --mode=<SITL|REAL>      UAV operating mode"
+    echo "  --site=<briggs|charles>  Shared navigation datum/map (default: briggs)"
     echo "  --ip=<localhost>        Advertised UAV pShare host"
     echo "  --mport=<9001>          UAV MOOSDB port"
     echo "  --pshare=<9201>         UAV pShare port"
@@ -76,7 +78,8 @@ for ARGI; do
     echo "  --upload-params         REAL only: guarded upload/readback before MOOS"
     echo "  --param-system-id=<1>   Native FC system ID for verified upload"
     echo "  --param-component-id=<1> Native FC component ID for verified upload"
-    echo "  --secondary_landing=<X,Y>  Contingency landing point (default: 10,15)"
+    echo "  --uav_rally=<X,Y>          Initial rally fallback (default: 10,15)"
+    echo "  --secondary_landing=<X,Y>  Alias for --uav_rally"
     echo "  --deck_altitude=<1>     Shared target/deck height, metres MSL"
     echo "  --target_range=<12>     Landing-target 3-D detection range, metres"
     echo "  --min_state_time=<0>       Minimum FSM state dwell, seconds"
@@ -95,6 +98,8 @@ for ARGI; do
     AUTO_LAUNCHED="yes"
   elif [[ "${ARGI}" == --mode=* ]]; then
     MODE="${ARGI#*=}"
+  elif [[ "${ARGI}" == --site=* ]]; then
+    SITE="${ARGI#*=}"
   elif [[ "${ARGI}" == --ip=* ]]; then
     IP_ADDR="${ARGI#*=}"
   elif [[ "${ARGI}" == --mport=* ]]; then
@@ -128,7 +133,7 @@ for ARGI; do
     PARAM_SYSTEM_ID="${ARGI#*=}"
   elif [[ "${ARGI}" == --param-component-id=* ]]; then
     PARAM_COMPONENT_ID="${ARGI#*=}"
-  elif [[ "${ARGI}" == --secondary_landing=* ]]; then
+  elif [[ "${ARGI}" == --secondary_landing=* || "${ARGI}" == --uav_rally=* ]]; then
     SECONDARY_LANDING="${ARGI#*=}"
   elif [[ "${ARGI}" == --deck_altitude=* ]]; then
     DECK_ALTITUDE="${ARGI#*=}"
@@ -151,6 +156,18 @@ if [[ ! "$SECONDARY_LANDING" =~ ^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+),[+-]?([0-9]
   echo "$ME: --secondary_landing must be numeric X,Y. Exit Code 1."
   exit 1
 fi
+if ! python3 - "$SECONDARY_LANDING" <<'PY'
+import math
+import sys
+try:
+    values = [float(v) for v in sys.argv[1].split(",")]
+    assert len(values) == 2 and all(math.isfinite(v) and abs(v) <= 100000 for v in values)
+except (ValueError, AssertionError):
+    sys.exit("uav_rally must be finite local X,Y within 100 km")
+PY
+then
+  exit 1
+fi
 SECONDARY_LANDING_X="${SECONDARY_LANDING%%,*}"
 SECONDARY_LANDING_Y="${SECONDARY_LANDING#*,}"
 
@@ -159,9 +176,16 @@ if [[ ! "$DECK_ALTITUDE" =~ ^[0-9]+([.][0-9]+)?$ || ! "$TARGET_RANGE" =~ ^[0-9]+
   echo "$ME: require deck_altitude in [0,5] m MSL and target_range > 0." >&2
   exit 1
 fi
+SITE="${SITE,,}"
+if [[ "$SITE" != briggs && "$SITE" != charles ]]; then
+  echo "$ME: --site must be briggs or charles. Exit Code 1." >&2
+  exit 1
+fi
 MODE=$(echo "$MODE" | tr '[:lower:]' '[:upper:]')
 SITL_ROUTER_PORT="${SITL_TARGET_PORT:-5763}"
 if [ "$MODE" = "SITL" ]; then
+  # Startup-only site selection for the owned simulator; never set REAL Home.
+  export MISSION_SITE="$SITE"
   if [[ ! "$SITL_ROUTER_PORT" =~ ^[0-9]{1,5}$ ]] ||
      (( 10#$SITL_ROUTER_PORT < 1 || 10#$SITL_ROUTER_PORT > 65535 )); then
     echo "$ME: invalid SITL_TARGET_PORT" >&2
@@ -209,6 +233,7 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "============================================"
   echo "CMD_ARGS =          [${CMD_ARGS}]"
   echo "MODE =              [${MODE}]"
+  echo "SITE =              [${SITE}]"
   echo "TIME_WARP =         [${TIME_WARP}]"
   echo "IP_ADDR =           [${IP_ADDR}]"
   echo "MOOS_PORT =         [${MOOS_PORT}]"
@@ -238,7 +263,7 @@ fi
 NSFLAGS=(--strict --force -x "--path=$MISSION_DIR:$UAV_BASE_DIR")
 
 nsplug meta_uav.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
-  WARP="$TIME_WARP" IP_ADDR="$IP_ADDR" MOOS_PORT="$MOOS_PORT" \
+  WARP="$TIME_WARP" SITE="$SITE" IP_ADDR="$IP_ADDR" MOOS_PORT="$MOOS_PORT" \
   PSHARE_PORT="$PSHARE_PORT" SHORE_IP="$SHORE_IP" \
   SHORE_PSHARE="$SHORE_PSHARE" DIRECT_PEER="$DIRECT_PEER" \
   PEARL_IP="$PEARL_IP" PEARL_PSHARE="$PEARL_PSHARE" \
@@ -288,7 +313,7 @@ cleanup_sitl() {
   fi
   timeout 5 "$MISSION_DIR/launch_sitl.sh" "$TIME_WARP" logs --no-color \
     >> "$SITL_LOG_FILE" 2>&1 || true
-  timeout 15 "$MISSION_DIR/launch_sitl.sh" "$TIME_WARP" down --timeout 5 \
+  "$MISSION_DIR/launch_sitl.sh" --cleanup-project="$COMPOSE_PROJECT_NAME" \
     >> "$SITL_LOG_FILE" 2>&1 || true
 }
 
@@ -307,6 +332,12 @@ if [ "$MODE" = "SITL" ]; then
   SITL_LOG_DIR="${SITL_LOG_DIR:-$MISSION_DIR/LOG_sitl}"
   mkdir -p -- "$SITL_LOG_DIR" || exit 1
   SITL_LOG_FILE="$SITL_LOG_DIR/$COMPOSE_PROJECT_NAME.log"
+  OWNERS_DIR="${SITL_OWNERS_DIR:-$MISSION_DIR/.sitl-owned}"
+  mkdir -p -- "$OWNERS_DIR" || exit 1
+  printf '%s\n' "$COMPOSE_PROJECT_NAME" > "$OWNERS_DIR/$COMPOSE_PROJECT_NAME" || exit 1
+  if [[ -n "${SITL_ACTIVE_PROJECT_FILE:-}" ]]; then
+    printf '%s\n' "$COMPOSE_PROJECT_NAME" > "$SITL_ACTIVE_PROJECT_FILE" || exit 1
+  fi
   ANTLER_PID=""
   trap cleanup_sitl EXIT
   trap 'exit 143' TERM

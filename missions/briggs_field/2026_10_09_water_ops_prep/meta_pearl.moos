@@ -482,6 +482,7 @@ ProcessConfig = pRouteBuffer
   helm_state_var = IVPHELM_STATE
   task_execute_var = TASK_EXECUTE
   route_ready_name_prefix = pearl_main_task_
+  return_update_var = PEARL_RETURN_UPDATE
   route_ready_name_var = ROUTE_READY_NAME
   task_started_state = PEARL_FSM_MAIN_ACTIVITY_STATE=EXECUTING_MISSION
   task_guard = PEARL_FSM_OPERATION_STATE=NORMAL_OPERATION

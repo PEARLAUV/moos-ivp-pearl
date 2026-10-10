@@ -26,6 +26,7 @@ JUST_MAKE="no"
 AUTO_LAUNCHED="no"
 LAUNCH_GUI="yes"
 MODE="SITL"
+SITE="briggs"
 
 IP_ADDR="localhost"
 MOOS_PORT="9000"
@@ -35,6 +36,7 @@ UAV_PSHARE="9201"
 PEARL_IP="localhost"
 PEARL_PSHARE="9202"
 SECONDARY_LANDING="10,15"
+PEARL_RETURN="10.6,4.8"
 
 #------------------------------------------------------------
 #  Part 3: Parse command-line arguments.
@@ -49,6 +51,7 @@ for ARGI; do
     echo "  --auto, -a                    Script launch, no uMAC"
     echo "  --nogui, -ng                  No pMarineViewer"
     echo "  --mode=<SITL|REAL>            Whole-mission operating mode"
+    echo "  --site=<briggs|charles>  Shared navigation datum/map (default: briggs)"
     echo "  --ip=<localhost>              Advertised shoreside pShare host"
     echo "  --mport=<9000>                Shoreside MOOSDB port"
     echo "  --pshare=<9200>               Shoreside pShare port"
@@ -56,7 +59,9 @@ for ARGI; do
     echo "  --uav_pshare=<9201>           Direct UAV pShare port"
     echo "  --pearl_ip=<localhost>        Direct PEARL host"
     echo "  --pearl_pshare=<9202>         Direct PEARL pShare port"
-    echo "  --secondary_landing=<X,Y>     Initially staged rally (default: 10,15)"
+    echo "  --uav_rally=<X,Y>             Initial map-editable rally (default: 10,15)"
+    echo "  --pearl_return=<X,Y>          Initial map-editable return (default: 10.6,4.8)"
+    echo "  --secondary_landing=<X,Y>     Alias for --uav_rally"
     exit 0
   elif [[ "${ARGI}" =~ ^[0-9]+$ && "$TIME_WARP" = 1 ]]; then
     if [ "$ARGI" -lt 1 ]; then
@@ -74,6 +79,8 @@ for ARGI; do
     LAUNCH_GUI="no"
   elif [[ "${ARGI}" == --mode=* ]]; then
     MODE="${ARGI#*=}"
+  elif [[ "${ARGI}" == --site=* ]]; then
+    SITE="${ARGI#*=}"
   elif [[ "${ARGI}" == --ip=* ]]; then
     IP_ADDR="${ARGI#*=}"
   elif [[ "${ARGI}" == --mport=* ]]; then
@@ -82,8 +89,10 @@ for ARGI; do
     PSHARE_PORT="${ARGI#*=}"
   elif [[ "${ARGI}" == --uav_ip=* ]]; then
     UAV_IP="${ARGI#*=}"
-  elif [[ "${ARGI}" == --secondary_landing=* ]]; then
+  elif [[ "${ARGI}" == --secondary_landing=* || "${ARGI}" == --uav_rally=* ]]; then
     SECONDARY_LANDING="${ARGI#*=}"
+  elif [[ "${ARGI}" == --pearl_return=* ]]; then
+    PEARL_RETURN="${ARGI#*=}"
   elif [[ "${ARGI}" == --uav_pshare=* ]]; then
     UAV_PSHARE="${ARGI#*=}"
   elif [[ "${ARGI}" == --pearl_ip=* ]]; then
@@ -96,6 +105,11 @@ for ARGI; do
   fi
 done
 
+SITE="${SITE,,}"
+if [[ "$SITE" != briggs && "$SITE" != charles ]]; then
+  echo "$ME: --site must be briggs or charles. Exit Code 1." >&2
+  exit 1
+fi
 MODE=$(echo "$MODE" | tr '[:lower:]' '[:upper:]')
 if [[ "$MODE" != "SITL" && "$MODE" != "REAL" ]]; then
   echo "$ME: --mode must be SITL or REAL. Exit Code 1."
@@ -114,6 +128,7 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "JUST_MAKE =     [${JUST_MAKE}]"
   echo "LAUNCH_GUI =    [${LAUNCH_GUI}]"
   echo "MODE =          [${MODE}]"
+  echo "SITE =              [${SITE}]"
   echo "IP_ADDR =       [${IP_ADDR}]"
   echo "MOOS_PORT =     [${MOOS_PORT}]"
   echo "PSHARE_PORT =   [${PSHARE_PORT}]"
@@ -126,27 +141,30 @@ fi
 #------------------------------------------------------------
 #  Part 5: Generate the shoreside target.
 #------------------------------------------------------------
-if ! python3 - "$SECONDARY_LANDING" <<'PY'
+if ! python3 - "$SECONDARY_LANDING" "$PEARL_RETURN" <<'PY'
 import math
 import sys
-try:
-    values = [float(v) for v in sys.argv[1].split(",")]
-    assert len(values) == 2 and all(math.isfinite(v) and abs(v) <= 100000 for v in values)
-except (ValueError, AssertionError):
-    sys.exit("Rally point must contain two finite local coordinates within 100 km")
+for name, spec in zip(("uav_rally", "pearl_return"), sys.argv[1:]):
+    try:
+        values = [float(v) for v in spec.split(",")]
+        assert len(values) == 2 and all(math.isfinite(v) and abs(v) <= 100000 for v in values)
+    except (ValueError, AssertionError):
+        sys.exit(f"{name} must be finite local X,Y within 100 km")
 PY
 then
   exit 1
 fi
 IFS=, read -r RALLY_X RALLY_Y <<< "$SECONDARY_LANDING"
+IFS=, read -r PEARL_RETURN_X PEARL_RETURN_Y <<< "$PEARL_RETURN"
 NSFLAGS=(--strict --force -x)
 
 nsplug meta_shoreside.moos targ_shoreside.moos "${NSFLAGS[@]}" \
-  WARP="$TIME_WARP" IP_ADDR="$IP_ADDR" MOOS_PORT="$MOOS_PORT" \
+  WARP="$TIME_WARP" SITE="$SITE" IP_ADDR="$IP_ADDR" MOOS_PORT="$MOOS_PORT" \
   PSHARE_PORT="$PSHARE_PORT" LAUNCH_GUI="$LAUNCH_GUI" \
   UAV_IP="$UAV_IP" UAV_PSHARE="$UAV_PSHARE" \
   PEARL_IP="$PEARL_IP" PEARL_PSHARE="$PEARL_PSHARE" \
-  RALLY_X="$RALLY_X" RALLY_Y="$RALLY_Y" || exit 1
+  RALLY_X="$RALLY_X" RALLY_Y="$RALLY_Y" \
+  PEARL_RETURN_X="$PEARL_RETURN_X" PEARL_RETURN_Y="$PEARL_RETURN_Y" || exit 1
 
 if [ "$JUST_MAKE" = "yes" ]; then
   echo "$ME: Targ files made; exiting without launch."

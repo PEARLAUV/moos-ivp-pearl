@@ -140,7 +140,8 @@ class SITLLaunchTest(unittest.TestCase):
                        PATH=str(root) + os.pathsep + os.environ["PATH"],
                        SITL_LOG_DIR=str(root / "logs"), SITL_PORT=str(port),
                        SITL_TARGET_PORT=str(target_port),
-                       SITL_STARTUP_TIMEOUT="4", SITL_SPEEDUP="99")
+                       SITL_STARTUP_TIMEOUT="4", SITL_SPEEDUP="99",
+                       SITL_OWNERS_DIR=str(root / "owners"))
             if mode == "SITL":
                 env["TEST_REQUIRE_READY"] = "1"
             for name in ("DRONE_MODEL", "DRONE_PARAM_FILE", "MODE_PARAM_FILE",

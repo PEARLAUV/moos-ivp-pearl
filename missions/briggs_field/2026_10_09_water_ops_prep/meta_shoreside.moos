@@ -14,7 +14,8 @@ ProcessConfig = ANTLER
 {
   MSBetweenLaunches = 100
   // MOOS treats // as an inline comment; the wrapper expands udp: to udp://.
-  QGCParams = --endpoint=udp:100.112.119.114:14550
+  // Follow the selected UAV host: localhost for SIM, Tailnet for REAL.
+  QGCParams = --endpoint=udp:$(UAV_IP):14550
 
   Run = MOOSDB          @ NewConsole = false
   Run = pRealm          @ NewConsole = false
@@ -187,6 +188,13 @@ ProcessConfig = pRouteBuffer
   task_submit_flag = uav:RALLY_TASK_COMMIT=true
   task_submit_flag = pearl:PEARL_ALLSTOP_PEARL=false
   stage_clear_request_var = ROUTE_BUFFER_CLEAR_STAGED
+  return_point_var = PEARL_RETURN_POINT
+  task_return_destination = pearl
+#ifdef PEARL_RETURN_X
+  initial_return_point = x=$(PEARL_RETURN_X),y=$(PEARL_RETURN_Y)
+#else
+  initial_return_point = x=10.6,y=4.8
+#endif
   max_points       = 50
   contact_max_age  = 3
 }
@@ -253,11 +261,19 @@ ProcessConfig = pMarineViewer
 
   beat_flag = HEARTBEAT_ALL=true
 
-  // Briggs Field imagery; its .info datum matches plug_origin_warp.moos.
+#ifdef SITE charles
+  // Chevron demo's MIT_SP imagery, datum and viewer framing.
+  tiff_file           = ../../images/MIT_SP.tif
+  set_pan_x           = 0
+  set_pan_y           = -400
+  zoom                = 1
+#else
+  // Preserve Briggs Field imagery and current framing.
   tiff_file           = ../../images/briggs_test/briggs_test.tif
   set_pan_x           = 50
   set_pan_y           = 200
   zoom                = 2
+#endif
   vehicle_shape_scale = 1.5
   vehicles_name_mode  = off
   vehicles_layer      = bottom
@@ -317,6 +333,7 @@ ProcessConfig = pMarineViewer
   scope = ROUTE_BUFFER_TASK_ID
   scope = ROUTE_BUFFER_TASK_DESTINATION
   scope = PEARL_ROUTE_BUFFER_STATE
+  scope = PEARL_RETURN_POINT_STAGED
   scope = PEARL_ROUTE_READY
   scope = ROUTE_BUFFER_COUNT
   scope = ROUTE_BUFFER_VEHICLE_STATE
@@ -432,6 +449,7 @@ ProcessConfig = pMarineViewer
   // and actual received-target checks. There is no direct landing button.
   left_context[route] = ROUTE_POINT = "x=$[XPOS],y=$[YPOS]"
   left_context[uav-rally] = RALLY_POINT = "x=$[XPOS],y=$[YPOS]"
+  left_context[pearl-return] = PEARL_RETURN_POINT = "x=$[XPOS],y=$[YPOS]"
   right_context[route-clear] = ROUTE_BUFFER_CLEAR_STAGED=true
   right_context[uav-cancel] = ROUTE_BUFFER_CLEAR=true
   right_context[uav-cancel] = NODE_MESSAGE_LOCAL="src_node=shoreside,dest_node=uav,var_name=UAV_TASK_CANCEL,string_val=true"

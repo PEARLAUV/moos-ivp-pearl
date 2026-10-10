@@ -91,6 +91,7 @@ ProcessConfig=pFSMRuntime
                                  *(f"--condition={c}" for c in conditions),
                                  "--check_var=ROUTE_READY_NAME", "--check_var=ROUTE_BUFFER_VEHICLE_STATE",
                                  "--check_var=TASK_EXECUTE", "--check_var=ROUTE_UPDATE",
+                                 "--check_var=PEARL_RETURN_UPDATE",
                                  "--check_var=PEARL_FSM_MAIN_ACTIVITY_STATE",
                                  "--check_var=PEARL_FSM_OPERATION_STATE",
                                  "--check_var=PEARL_FSM_SUPPORT_ACTIVITY_STATE",
@@ -105,19 +106,27 @@ ProcessConfig=pFSMRuntime
                          (checkvars.read_text() if checkvars.exists() else "") +
                          (self.directory / "antler.log").read_text())
 
-    def task(self, identity="first", points="{0,20:20,20}"):
+    def assert_return(self, expected):
+        self.query("IVPHELM_STATE=DRIVE")
+        self.assertIn(f"PEARL_RETURN_UPDATE=points={expected}",
+                      (self.directory / ".checkvars").read_text())
+
+    def task(self, identity="first", points="{0,20:20,20}", return_point="x=10.6,y=4.8"):
         self.poke(f"ROUTE_BUFFER_COMMAND:=action=deploy # task_id={identity} # "
-                  f"task_time={time.time():.6f} # points={points}")
+                  f"task_time={time.time():.6f} # points={points} # return_point={return_point}")
         self.query("PEARL_FSM_MAIN_ACTIVITY_STATE=EXECUTING_MISSION", "ROUTE_READY=true",
                    "ROUTE_DEPLOY=true", "ROUTE_BUFFER_VEHICLE_STATE=TASK_STARTED")
 
-    def finish(self):
+    def finish(self, return_point=(10.6, 4.8), return_heading=None):
         self.poke("NAV_X=0", "NAV_Y=20")
         self.query("PEARL_FSM_MAIN_ACTIVITY_STATE=EXECUTING_MISSION", "DESIRED_HEADING>89",
                    "DESIRED_HEADING<91")
         self.poke("NAV_X=20")
         self.query("PEARL_FSM_MAIN_ACTIVITY_STATE=RETURNING_TO_BASE", "ROUTE_READY=false")
-        self.poke("NAV_X=10.6", "NAV_Y=4.8")
+        if return_heading is not None:
+            self.query(f"DESIRED_HEADING>{return_heading - 1}",
+                       f"DESIRED_HEADING<{return_heading + 1}")
+        self.poke(f"NAV_X={return_point[0]}", f"NAV_Y={return_point[1]}")
         self.query("PEARL_FSM_MAIN_ACTIVITY_STATE=IDLE", "MAIN_TASK_STATUS=returned")
 
     def test_route_completion_return_and_repeated_tasks(self):
@@ -161,6 +170,32 @@ ProcessConfig=pFSMRuntime
         self.poke(f"ROUTE_BUFFER_COMMAND:=action=deploy # task_id=same # "
                   f"task_time={stamp:.6f} # points={{0,20:20,20}}")
         self.query("PEARL_FSM_MAIN_ACTIVITY_STATE=IDLE", "ROUTE_READY=false")
+
+    def test_task_frozen_return_updates_real_helm_and_repeated_destinations(self):
+        self.task(return_point="x=30,y=-10")
+        self.assert_return("30,-10")
+        # No separately mutable return input exists on the vehicle. A busy task
+        # cannot change the executing task's return behavior.
+        self.poke(f"ROUTE_BUFFER_COMMAND:=action=deploy # task_id=busy-return # "
+                  f"task_time={time.time():.6f} # points={{99,99}} # return_point=x=-5,y=40")
+        self.query("ROUTE_BUFFER_VEHICLE_STATE=TASK_REJECTED_CONTEXT")
+        self.assert_return("30,-10")
+        self.finish((30, -10), 161.565)
+        self.task("new-return", return_point="x=-5,y=40")
+        self.assert_return("-5,40")
+        self.finish((-5, 40), 308.66)
+
+    def test_missing_invalid_and_duplicate_return_metadata_fail_closed(self):
+        for index, metadata in enumerate(("", "# return_point=x=nan,y=2",
+                                           "# return_point=x=100001,y=0",
+                                           "# return_point=x=0,y=0 # return_point=x=1,y=1")):
+            self.poke(f"ROUTE_BUFFER_COMMAND:=action=deploy # task_id=bad-return-{index} # "
+                      f"task_time={time.time():.6f} # points={{0,20}} {metadata}")
+            self.query("ROUTE_BUFFER_VEHICLE_STATE=TASK_REJECTED_RETURN_POINT",
+                       "PEARL_FSM_MAIN_ACTIVITY_STATE=IDLE", "TASK_EXECUTE=false",
+                       "ROUTE_READY=false")
+        self.task("valid-return")
+        self.finish()
 
 
 if __name__ == "__main__":

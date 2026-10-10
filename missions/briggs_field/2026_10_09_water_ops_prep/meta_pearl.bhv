@@ -89,6 +89,7 @@ Behavior = BHV_Waypoint
 Behavior = BHV_Waypoint
 {
   name      = pearl_return
+  updates   = PEARL_RETURN_UPDATE
   pwt       = 100
   condition = PEARL_FSM_MAIN_ACTIVITY_STATE=RETURNING_TO_BASE
   endflag   = MAIN_TASK_STATUS=returned
@@ -97,7 +98,11 @@ Behavior = BHV_Waypoint
   speed          = $(SPEED)
   capture_radius = 2
   slip_radius    = 8
+#ifdef PEARL_RETURN_X
+  points         = $(PEARL_RETURN_X),$(PEARL_RETURN_Y)
+#else
   points         = 10.6,4.8
+#endif
 }
 
 //----------------------------------------------------

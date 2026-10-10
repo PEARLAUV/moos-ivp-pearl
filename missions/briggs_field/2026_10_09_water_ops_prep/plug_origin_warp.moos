@@ -5,5 +5,14 @@
 
 MOOSTimeWarp = $(WARP)
 
+// Every node must select the same site; local task/return/rally coordinates
+// use this datum. This does not initialize native GPS/FC position or Home.
+#ifdef SITE charles
+// Datum from charles_river/2026_09_29_chevron_demo.
+LatOrigin  = 42.358436
+LongOrigin = -71.087448
+#else
+// Preserve the prep mission's default Briggs datum.
 LatOrigin  = 42.3569186052
 LongOrigin = -71.0990291116
+#endif

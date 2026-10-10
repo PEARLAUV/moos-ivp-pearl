@@ -2,6 +2,7 @@
 /MOOSLog_*/
 /XLOG_*/
 /SITL_aug_pearl_uav/
+/.sitl-owned/
 /field_logs/
 /.LastOpenedMOOSLogDirectory
 /.checkvars

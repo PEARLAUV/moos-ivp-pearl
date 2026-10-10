@@ -1,6 +1,6 @@
 # aug_pearl_uav
 
-`aug_pearl_uav` is a two-vehicle Charles River mission for a generic UAV and
+`aug_pearl_uav` is a two-vehicle Briggs/Charles prep mission for a UAV and
 the PEARL surface vehicle. It combines the qualified UAV operator workflow from
 `uav_solo/briggs_test` with PEARL's hardware and Helm stack from
 `may_test_run`.
@@ -10,6 +10,110 @@ workflow is deliberately small: after the UAV is airborne, PEARL chooses one
 meeting point, the UAV validates it, both vehicles travel there, PEARL grants
 landing clearance, and the UAV acquires PEARL's landing target before it
 commits precision landing.
+
+## Per-host Briggs / Charles launch targets
+
+Run **one target on its corresponding host**, from this mission directory:
+
+| Site | Shoreside host | PEARL host | Drone host |
+|---|---|---|---|
+| Briggs | `make shoreside-briggs` — REAL, `100.88.214.50` | `make pearl-briggs` — GRASS, `100.71.137.47` | `make drone-briggs` — REAL, `100.112.119.114` |
+| Charles | `make shoreside-charles` — REAL, `100.88.214.50` | `make pearl-charles` — REAL, `100.113.99.58` | `make drone-charles` — REAL, `100.112.119.114` |
+
+Both drone targets pass **`--model=x500`**. Every target supplies its own
+advertised IP and the appropriate shore/peer addresses. These are local
+launch commands, **not SSH orchestration**. Bare `make` prints help, not a live
+launch. No aggregate target starts physical nodes together.
+
+- **Briggs:** preserve datum `42.3569186052,-71.0990291116`, current
+  `briggs_test.tif` and framing (pan `50,200`, zoom `2`), and PEARL
+  configured start `51.033305,-56.215822,0`.
+- **Charles:** use `2026_09_29_chevron_demo`'s datum
+  `42.358436,-71.087448`, `MIT_SP.tif`, framing (pan `0,-400`, zoom `1`),
+  and configured start `-4,-22,0`. This selects geography, not the old
+  chevron mission/FSM/task; the prep mission's lifecycle remains. No default
+  loiter is configured at either site; idle station-keeping and recovery holds
+  remain distinct safety/coordination behaviors.
+
+The combined and split launchers support `--site=briggs|charles` (default Briggs). All nodes
+must use the same site/datum. **REAL/GRASS positions and aircraft Home remain
+native sensor/FC-derived**; configured starts do not teleport or initialize
+native navigation. Place hardware appropriately and verify the measured
+position before tasking. GRASS has no Helm/propulsion return executor.
+
+User-selected initial **map-editable** points, in each site's local metres:
+
+| Site | PEARL return | UAV rally |
+|---|---|---|
+| Briggs | `43.787856,-39.259280` = **42.356575,-71.098486** | `15.042299,-51.993939` = **42.356454,-71.098831** |
+| Charles | `9.138278,2.997768` = **42.358465,-71.087338** | `7.783478,11.586484` = **42.358542,-71.087357** |
+
+These are provisional points, **not surveyed safe landing sites, FC Home,
+clearance, readiness or flight authorization**. Check terrain/obstacles/deck
+geometry before committing a task. The existing task freeze and native rally
+ACK/readback still own readiness; launch does not automatically upload a rally
+or issue a flight command. Shoreside return/rally editing remains available.
+
+Preview or generate only, without starting applications or writing parameters:
+
+```bash
+make -n drone-briggs
+make shoreside-charles LAUNCH_ARGS=--just_make
+```
+
+Make variables `BRIGGS_START/RETURN/RALLY`, `CHARLES_START/RETURN/RALLY`,
+`MODEL` and the IP variables are overridable. Start and marker
+overrides are independent: override return/rally too if relocating a start.
+Use `LAUNCH_ARGS` for common flags and `SHORESIDE_ARGS`, `PEARL_ARGS`,
+`DRONE_ARGS` for node-specific options. Parameter upload remains **explicit**
+(`DRONE_ARGS=--upload-params` on REAL); ordinary targets never request it.
+Do not regenerate a different site's targets over a running mission.
+
+### Local simulation and explicit housekeeping
+
+```bash
+make sim-briggs
+make sim-charles
+# Optional speedup (default 1) and GUI flags:
+make sim-charles SIM_WARP=5 SIM_ARGS=--nogui
+# Generate all three targets only; no Docker, MOOS apps or parameter uploads:
+make sim-charles LAUNCH_ARGS=--just_make
+```
+
+Both sim targets call `launch.sh`: UAV SITL, PEARL SIM, and local shoreside.
+All peer links use localhost, never the physical Tailnet addresses. The sites
+reuse their physical targets' return/rally points, configured PEARL start,
+datum, imagery and viewer pan/zoom. No loiter center/behavior is added. Idle
+station-keeping, recovery holds and the approved native RTL pause are unchanged.
+
+A new owned SITL receives an explicit Home at the selected datum
+(`lat,lon,0,0`, aircraft local `0,0`), not a borrowed PEARL navigation sample.
+`SITL_HOME` can override the simulator's startup Home; `SITL_PORT`,
+`SITL_DIAGNOSTIC_PORT`, and `SITL_TARGET_PORT` select its host endpoints.
+These are forwarded by CLI to the wrapper, not assumed to take effect merely
+because environment variables exist. Site selection never writes REAL Home
+or resets an existing FC/estimator. `SIM_ARGS` supplies combined-launch flags.
+
+Housekeeping is explicit and never runs before a launch target:
+
+- `make clean` runs `./clean.sh`: deletes this mission's logs/generated targets.
+- `make kill` stops this mission's MarineViewer VNC wrapper and QGC VNC
+  containers, runs `ktm` (**host-wide**, potentially affecting other MOOS
+  communities), then tears down registered owned ArduPilot SITL projects.
+
+Ctrl+C or normal operator-console exit from a combined sim launch stops its
+owned community process groups, VNC/QGC sessions and exact SITL project. It
+never runs host-wide `ktm` on that path. `--xlaunched` explicitly hands background
+lifecycle ownership back to automation; later `make kill` still finds its SITL.
+SITL ownership markers in `.sitl-owned/` survive log cleanup and are removed only
+on successful teardown. Failed teardown is reported and retains a retry marker.
+Unregistered/manual/other-mission SITL projects are not adopted or removed.
+GUI cleanup scopes MarineViewer wrappers by user, mission directory and (for
+Ctrl+C) run group; QGC cleanup also recognizes default mission export mounts
+for whole-mission orphan recovery. It does not stop unrelated VNC desktops.
+
+Preview with `make -n clean` / `make -n kill`. Use `clean` only after shutdown;
+it deletes logs/targets, not applications or containers.
 
 ## Shared route tasking
 
@@ -47,6 +151,33 @@ These paths were exercised in owned isolated real-MOOS/Helm/FSM tests using
 synthetic navigation, not a new physical two-vehicle flight. Apply through the
 next safe normal launch; no running missions were restarted.
 
+## Return/rally defaults and map selection
+
+Seed both points using local mission coordinates (metres), not latitude/longitude:
+
+```bash
+./launch.sh --pearl_return=10.6,4.8 --uav_rally=10,15
+```
+
+These are the unchanged defaults, **not locked destinations**. Left-click
+**pearl-return** or **uav-rally** in the map context menu to select the point
+for future tasks; PEARL's staged return marker is cyan and unlabeled.
+**TASK-PEARL** freezes the selected return point with the route/task ID.
+Later map edits cannot redirect an executing task or its return. The next
+accepted task may use a different return point. Clearing/consuming the shared
+route drawing does not clear either point selection or another vehicle's task.
+An invalid/missing PEARL return selection rejects submission without consuming
+the drawing; malformed/missing task return metadata cannot start PEARL.
+
+For split launches, give both switches to `launch_shoreside.sh`, and give
+`--pearl_return=X,Y` to `launch_pearl.sh` /
+`--uav_rally=X,Y` to `launch_uav.sh` for consistent initial behavior fallbacks.
+The vehicle accepts the task-frozen selection, not live map-setting updates.
+`--secondary_landing=X,Y` remains an alias for `--uav_rally=X,Y`.
+Coordinates must be finite, within ±100 km on each axis; launch generation
+rejects malformed values. Rally altitude, upload/readback, checks and ARM
+protection are unchanged. Apply through the next safe normal launch.
+
 ## Rally selection and task commit
 
 Left-click **uav-rally** in the map context menu to stage the fallback point.
@@ -64,6 +195,22 @@ not held in IDLE until rally verification. Progress beyond readiness requires
 `pArduBridge` to upload/read back the single FC rally, the rally-only selection
 policy and above-Home RTL altitude settings. Missing/failed verification blocks
 FLIGHT_PLAN readiness and ARM, not the task-received state transition.
+
+`ENTER_GUIDED` also supports a subsequent task after successful recovery:
+ArduPilot may retain LAND (or RTL) after touchdown/disarm. A fresh explicit
+request may leave only the same recovery mode observed at admission, with
+connected native ON_GROUND and disarmed samples no older than two real
+seconds. That request-scoped exception is permanently revoked on mode change
+or loss of proof, and cleared on success, cancellation or timeout. A new
+LAND/RTL mode after admission, pending LAND/RTL intent, manual parking or
+deadman still preempts. Guided readiness still requires native mode telemetry;
+no ARM, takeoff, rally verification or FSM checks are bypassed.
+Bridge AppCast exposes `Guided Readiness Pending` and
+`Ground Recovery Exception`. Production-path doubles cover freshness,
+airborne/unknown evidence and preemption;
+`src/pArduBridge/tests/test_guided_ground_sitl.py --run-sitl` in the UAV-base
+repo verifies two owned disarmed LAND-to-Guided requests using native
+heartbeats, without ARM/TAKEOFF or a live mission change.
 
 MOOS off-nominal waypoint guidance uses that same frozen point and altitude.
 Generic FC RTL/failsafe recovery uses the FC's stored rally, with
