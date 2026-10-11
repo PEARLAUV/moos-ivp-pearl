@@ -49,6 +49,7 @@ SECONDARY_LANDING="10,15"
 MIN_STATE_TIME="0"
 DECK_ALTITUDE="1"
 TARGET_RANGE="12"
+YAW_ALIGNMENT="true"
 UPLOAD_PARAMS="no"
 PARAM_SYSTEM_ID=1
 PARAM_COMPONENT_ID=1
@@ -87,6 +88,9 @@ for ARGI; do
     echo "  --deck_altitude=<1>     Shared target/deck height, metres MSL"
     echo "  --target_range=<12>     Landing-target 3-D detection range, metres"
     echo "  --min_state_time=<0>       Minimum FSM state dwell, seconds"
+    echo "  --yaw-alignment            Require target-relative yaw alignment (default)"
+    echo "  --no-yaw-alignment         Explicitly bypass target-relative yaw alignment"
+    echo
     exit 0
   elif [[ "${ARGI}" =~ ^[0-9]+$ && "$TIME_WARP" = 1 ]]; then
     if [ "$ARGI" -lt 1 ]; then
@@ -126,11 +130,11 @@ for ARGI; do
   elif [[ "${ARGI}" == --model=* ]]; then
     export DRONE_MODEL="${ARGI#*=}"
   elif [[ "${ARGI}" == --drone-params=* ]]; then
-    DRONE_PARAM_FILE="${ARGI#*=}"
+    export DRONE_PARAM_FILE="${ARGI#*=}"
   elif [[ "${ARGI}" == --mode-params=* ]]; then
-    MODE_PARAM_FILE="${ARGI#*=}"
+    export MODE_PARAM_FILE="${ARGI#*=}"
   elif [[ "${ARGI}" == --mission-params=* ]]; then
-    MISSION_PARAM_FILE="${ARGI#*=}"
+    export MISSION_PARAM_FILE="${ARGI#*=}"
   elif [[ "${ARGI}" == --upload-params ]]; then
     UPLOAD_PARAMS="yes"
   elif [[ "${ARGI}" == --param-system-id=* ]]; then
@@ -145,6 +149,10 @@ for ARGI; do
     TARGET_RANGE="${ARGI#*=}"
   elif [[ "${ARGI}" == --min_state_time=* ]]; then
     MIN_STATE_TIME="${ARGI#*=}"
+  elif [[ "${ARGI}" == --yaw-alignment ]]; then
+    YAW_ALIGNMENT="true"
+  elif [[ "${ARGI}" == --no-yaw-alignment ]]; then
+    YAW_ALIGNMENT="false"
   else
     echo "$ME: Bad Arg:[$ARGI]. Exit Code 1."
     exit 1
@@ -251,6 +259,7 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "AP_PROTOCOL =       [${AP_PROTOCOL}]"
   echo "SECONDARY_LANDING = [${SECONDARY_LANDING}]"
   echo "MIN_STATE_TIME =    [${MIN_STATE_TIME}]"
+  echo "YAW_ALIGNMENT =     [${YAW_ALIGNMENT}]"
   echo "DRONE_MODEL =       [${DRONE_MODEL}]"
   echo "PARAMETER_STACK =   [${ARDUPILOT_PARAM_ARGS[*]}]"
   echo "UPLOAD_PARAMS =     [${UPLOAD_PARAMS}]"
@@ -276,7 +285,7 @@ nsplug meta_uav.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
   AP_URL="$AP_URL" AP_PROTOCOL="$AP_PROTOCOL" \
   SECONDARY_LANDING_X="$SECONDARY_LANDING_X" \
   SECONDARY_LANDING_Y="$SECONDARY_LANDING_Y" \
-  MIN_STATE_TIME="$MIN_STATE_TIME" \
+  MIN_STATE_TIME="$MIN_STATE_TIME" YAW_ALIGNMENT="$YAW_ALIGNMENT" \
   XMODE="$MODE" IS_SIM="$IS_SIM" \
   SITL_ROUTER_PORT="$SITL_ROUTER_PORT" DECK_ALTITUDE="$DECK_ALTITUDE" TARGET_RANGE="$TARGET_RANGE" \
   PEARL_LIB_DIR="$PEARL_ROOT/lib" || exit 1

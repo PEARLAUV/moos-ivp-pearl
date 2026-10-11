@@ -34,8 +34,6 @@ bool LandingCoordinator::OnStartUp()
       ok = setPosDoubleOnString(m_timeout, data);
     else if (param == "input_timeout")
       ok = setPosDoubleOnString(m_input_timeout, data);
-    else if (param == "observation_pose_samples_var")
-      ok = setNonWhiteVarOnString(m_pose_samples_var, data);
     else if (param == "align_yaw")
       ok = setBooleanOnString(m_align_yaw, data);
     else if (param == "yaw_tolerance")
@@ -44,6 +42,16 @@ bool LandingCoordinator::OnStartUp()
       ok = setPosDoubleOnString(m_yaw_rate, data) && isfinite(m_yaw_rate) && m_yaw_rate <= 90;
     else if (param == "yaw_timeout")
       ok = setPosDoubleOnString(m_yaw_timeout, data) && isfinite(m_yaw_timeout);
+    else if (param == "yaw_stability_time")
+      ok = setPosDoubleOnString(m_yaw_stability_time, data) && isfinite(m_yaw_stability_time);
+    else if (param == "yaw_hold_time")
+      ok = setPosDoubleOnString(m_yaw_hold_time, data) && isfinite(m_yaw_hold_time);
+    else if (param == "yaw_stability_tolerance")
+      ok = setPosDoubleOnString(m_yaw_stability_tolerance, data) &&
+           isfinite(m_yaw_stability_tolerance) && m_yaw_stability_tolerance <= 45;
+    else if (param == "yaw_max_tilt")
+      ok = setPosDoubleOnString(m_yaw_max_tilt, data) && isfinite(m_yaw_max_tilt) &&
+           m_yaw_max_tilt <= 45;
     else if (param == "agreement_condition" || param == "rendezvous_condition" ||
              param == "clearance_condition" || param == "command_condition") {
       const string stage = param.substr(0, param.find('_'));
@@ -93,12 +101,11 @@ void LandingCoordinator::registerVariables()
         "UAV_HEALTH_ALL_OK", "UAV_HEALTH_AGE", "UAV_IS_ARMED", "UAV_LANDED_STATE",
         "UAV_LANDED_STATE_AVAILABLE", "UAV_LANDED_STATE_AGE", "UAV_COMMAND_RESULT"})
     Register(key, 0);
-  if (m_align_yaw && !m_pose_samples_var.empty()) Register(m_pose_samples_var, 0);
   if (m_align_yaw)
-    for (const auto &key : {"UAV_YAW", "UAV_ROLL", "UAV_PITCH", "UAV_ATTITUDE_AVAILABLE",
-                            "UAV_ATTITUDE_AGE", "UAV_ATTITUDE_SAMPLE_TIME", "UAV_ATTITUDE_TIME_USEC",
-                            "UAV_GUIDED_MODE_ACTIVE", "UAV_ATTITUDE_SAMPLES",
-                            "UAV_LANDING_TARGET_TIME_USEC", "UAV_YAW_ALIGN_RESULT",
+    for (const auto &key : {"UAV_ROLL", "UAV_PITCH", "UAV_ATTITUDE_AVAILABLE",
+                            "UAV_ATTITUDE_AGE", "UAV_GUIDED_MODE_ACTIVE",
+                            "UAV_LANDING_TARGET_TIME_USEC", "UAV_LANDING_TARGET_TARGET_NUM",
+                            "UAV_YAW_ALIGN_RESULT",
                             "UAV_LANDING_TARGET_Q_W", "UAV_LANDING_TARGET_Q_X",
                             "UAV_LANDING_TARGET_Q_Y", "UAV_LANDING_TARGET_Q_Z"})
       Register(key, 0);
@@ -112,10 +119,6 @@ bool LandingCoordinator::OnNewMail(MOOSMSG_LIST &mail)
   AppCastingMOOSApp::OnNewMail(mail);
   for (const auto &msg : mail) {
     const string key = msg.GetKey();
-    if (!m_pose_samples_var.empty() && key == m_pose_samples_var) {
-      mavlink::readPoseWindow(msg.IsString() ? msg.GetString() : "", m_observation_poses);
-      continue;
-    }
     if (key == "RECOVER") {
       // RECOVER is sent only to the aircraft; PEARL receives a mediated request.
       if (m_valid && m_role == "aircraft" && isTrue(msg) &&
@@ -130,10 +133,6 @@ bool LandingCoordinator::OnNewMail(MOOSMSG_LIST &mail)
       m_inputs[key].value = msg.IsDouble() ? doubleToStringX(msg.GetDouble(), 6) : msg.GetString();
       m_inputs[key].time = msg.GetTime();
       m_inputs[key].numeric = msg.IsDouble();
-      if (key == "UAV_ATTITUDE_SAMPLES" && m_align_yaw) {
-        m_native_samples_seen = true;
-        m_attitude_history.receive(msg.IsString() ? msg.GetString() : "");
-      }
       if (key == "RENDEZVOUS_OWN_SESSION" && m_rv_started && value(key) != m_old_rv_session &&
           msg.GetTime() >= m_state_time)
         m_rv_session = value(key);
@@ -144,9 +143,9 @@ bool LandingCoordinator::OnNewMail(MOOSMSG_LIST &mail)
           msg.GetTime() >= m_yaw_request_time && fresh(key) &&
           tokStringParse(msg.GetString(), "id", '#', '=') == m_yaw_request_id) {
         const string status = tokStringParse(msg.GetString(), "status", '#', '=');
-        const string heading = tokStringParse(msg.GetString(), "heading", '#', '=');
-        if (isNumber(heading) && isfinite(atof(heading.c_str())) &&
-            fabs(atof(heading.c_str()) - m_yaw_goal) < 1e-4) {
+        const string angle = tokStringParse(msg.GetString(), "angle", '#', '=');
+        if (isNumber(angle) && isfinite(atof(angle.c_str())) &&
+            fabs(atof(angle.c_str()) - m_yaw_goal) < 1e-4) {
           if (status == "ACCEPTED") {
             m_yaw_accepted = true;
             m_yaw_ack_time = msg.GetTime();
@@ -170,13 +169,6 @@ bool LandingCoordinator::OnNewMail(MOOSMSG_LIST &mail)
       }
     }
   }
-  if (m_align_yaw && !m_native_samples_seen) {
-    double stamp = 0, roll = 0, pitch = 0, yaw = 0, received = 0;
-    if (number("UAV_ATTITUDE_TIME_USEC", stamp) && stamp > 0 && stamp < 9007199254740992.0 &&
-        number("UAV_ROLL", roll) && number("UAV_PITCH", pitch) && number("UAV_YAW", yaw) &&
-        number("UAV_ATTITUDE_SAMPLE_TIME", received))
-      m_attitude_history.remember(static_cast<uint64_t>(stamp), roll, pitch, yaw, received);
-  }
   return true;
 }
 
@@ -195,9 +187,14 @@ void LandingCoordinator::begin()
   m_rv_session.clear();
   m_command_accepted = false;
   m_yaw_started = m_yaw_request_time = m_yaw_ack_time = -1;
+  m_yaw_stable_since = m_yaw_confirm_since = -1;
+  m_yaw_last_stamp = m_yaw_request_stamp = m_yaw_confirm_stamp = 0;
+  m_yaw_target_num = -1;
+  m_yaw_stable_samples = m_yaw_confirm_samples = 0;
   m_yaw_request_id.clear();
   m_yaw_accepted = false;
   m_yaw_state = m_align_yaw ? "WAITING" : "DISABLED";
+  m_yaw_input_reason = "not_evaluated";
   Notify("LANDING_DECK_ENABLED", "false");
   state("REQUESTED", "recover_received");
   send();
@@ -354,7 +351,7 @@ bool LandingCoordinator::number(const string &key, double &data) const
   return isfinite(data);
 }
 
-bool LandingCoordinator::targetHeading(double &heading, double &yaw, double &sample_time)
+bool LandingCoordinator::targetRelativeYaw(double &error, double &sample_time, uint64_t &stamp)
 {
   double roll = 0, pitch = 0, available = 0, age = 0;
   if (!flag("UAV_GUIDED_MODE_ACTIVE")) {
@@ -366,7 +363,7 @@ bool LandingCoordinator::targetHeading(double &heading, double &yaw, double &sam
     return false;
   }
   for (const auto &entry : {make_pair("UAV_ROLL", &roll), make_pair("UAV_PITCH", &pitch),
-                            make_pair("UAV_YAW", &yaw), make_pair("UAV_ATTITUDE_AVAILABLE", &available),
+                            make_pair("UAV_ATTITUDE_AVAILABLE", &available),
                             make_pair("UAV_ATTITUDE_AGE", &age)}) {
     if (!number(entry.first, *entry.second)) {
       m_yaw_input_reason = string(entry.first) + "_missing_stale_or_not_numeric";
@@ -379,30 +376,36 @@ bool LandingCoordinator::targetHeading(double &heading, double &yaw, double &sam
     m_yaw_input_reason = "native_attitude_unavailable_or_old";
     return false;
   }
-  if (m_native_samples_seen) {
-    uint64_t latest_stamp = 0;
-    bodyframe::Pose current;
-    if (!m_attitude_history.latest(latest_stamp, current) ||
-        current.received_moos_time > m_curr_time + 1 ||
-        (m_curr_time - current.received_moos_time) / max(0.001, GetMOOSTimeWarp()) > 0.5) {
-      m_yaw_input_reason = "native_attitude_samples_missing_or_old";
-      return false;
-    }
-    yaw = current.yaw;
-    sample_time = current.received_moos_time;
-  } else if (!number("UAV_ATTITUDE_SAMPLE_TIME", sample_time)) {
-    m_yaw_input_reason = "native_attitude_sample_time_missing";
+  if (hypot(roll, pitch) > m_yaw_max_tilt) {
+    m_yaw_input_reason = "aircraft_tilt_exceeds_relative_yaw_limit";
     return false;
   }
+
+  double target_num = 0;
+  if (!number("UAV_LANDING_TARGET_TARGET_NUM", target_num) || target_num < 0 ||
+      target_num > 255 || floor(target_num) != target_num) {
+    m_yaw_input_reason = "target_number_missing_stale_or_invalid";
+    return false;
+  }
+  if (m_yaw_target_num >= 0 && static_cast<int>(target_num) != m_yaw_target_num) {
+    m_yaw_target_num = static_cast<int>(target_num);
+    m_yaw_input_reason = "target_number_changed";
+    return false;
+  }
+  m_yaw_target_num = static_cast<int>(target_num);
+
   bodyframe::Quaternion q{};
   const char *fields[] = {"W", "X", "Y", "Z"};
   double norm = 0;
+  sample_time = m_curr_time + 1;
   for (unsigned i = 0; i < 4; ++i) {
-    if (!number(string("UAV_LANDING_TARGET_Q_") + fields[i], q[i])) {
+    const string key = string("UAV_LANDING_TARGET_Q_") + fields[i];
+    if (!number(key, q[i])) {
       m_yaw_input_reason = string("quaternion_") + fields[i] + "_missing_stale_or_not_numeric";
       return false;
     }
     norm += q[i] * q[i];
+    sample_time = min(sample_time, m_inputs.at(key).time);
   }
   if (!isfinite(norm) || norm <= 1e-12) {
     m_yaw_input_reason = "quaternion_invalid_or_unavailable";
@@ -410,36 +413,21 @@ bool LandingCoordinator::targetHeading(double &heading, double &yaw, double &sam
   }
   for (auto &component : q)
     component /= sqrt(norm);
-  double stamp = 0;
-  bodyframe::Pose exposure;
-  if (!number("UAV_LANDING_TARGET_TIME_USEC", stamp) || stamp <= 0 ||
-      stamp >= 9007199254740992.0 || floor(stamp) != stamp) {
-    m_yaw_input_reason = "observation_attitude_timestamp_missing_or_invalid";
+
+  double observation_stamp = 0;
+  if (!number("UAV_LANDING_TARGET_TIME_USEC", observation_stamp) || observation_stamp <= 0 ||
+      observation_stamp >= 9007199254740992.0 || floor(observation_stamp) != observation_stamp) {
+    m_yaw_input_reason = "observation_timestamp_missing_or_invalid";
     return false;
   }
-  if (!m_pose_samples_var.empty()) {
-    const auto pose = m_observation_poses.find(static_cast<uint64_t>(stamp));
-    if (pose == m_observation_poses.end()) {
-      m_yaw_input_reason = "observation_timestamp_not_in_direct_native_pose_history";
-      return false;
-    }
-    exposure.rotation = bodyframe::bodyToNed(pose->second.roll, pose->second.pitch, pose->second.yaw);
-    exposure.received_moos_time = pose->second.received_moos;
-  } else if (!m_attitude_history.find(static_cast<uint64_t>(stamp), exposure)) {
-    m_yaw_input_reason = "observation_attitude_timestamp_not_in_native_history";
-    return false;
-  }
-  if (exposure.received_moos_time > m_curr_time + 1 ||
-      (m_curr_time - exposure.received_moos_time) / max(0.001, GetMOOSTimeWarp()) > 0.5) {
-    m_yaw_input_reason = "observation_native_attitude_sample_too_old_or_future";
-    return false;
-  }
-  const auto forward = bodyframe::toNed(exposure.rotation, bodyframe::rotate(q, {{1, 0, 0}}));
+  stamp = static_cast<uint64_t>(observation_stamp);
+  sample_time = min(sample_time, m_inputs.at("UAV_LANDING_TARGET_TIME_USEC").time);
+  const auto forward = bodyframe::rotate(q, {{1, 0, 0}});
   if (hypot(forward[0], forward[1]) <= 1e-6) {
     m_yaw_input_reason = "target_forward_axis_vertical";
     return false;
   }
-  heading = fmod(atan2(forward[1], forward[0]) / bodyframe::radians + 360, 360);
+  error = remainder(atan2(forward[1], forward[0]) / bodyframe::radians, 360.0);
   m_yaw_input_reason = "ready";
   return true;
 }
@@ -450,37 +438,84 @@ bool LandingCoordinator::yawReady()
     return true;
   if (m_yaw_started < 0)
     m_yaw_started = m_curr_time;
-  double heading = 0, yaw = 0, sample_time = -1;
-  if (!targetHeading(heading, yaw, sample_time)) {
+
+  double relative_error = 0, sample_time = -1;
+  uint64_t stamp = 0;
+  if (!targetRelativeYaw(relative_error, sample_time, stamp)) {
+    if (!m_yaw_request_id.empty() && m_yaw_input_reason == "target_number_changed") {
+      abort("yaw_target_changed_after_command");
+      return false;
+    }
     m_yaw_state = "WAITING_FOR_ORIENTATION";
+    m_yaw_stable_since = m_yaw_confirm_since = -1;
+    m_yaw_stable_samples = m_yaw_confirm_samples = 0;
     return false; // Never manufacture orientation or alignment from elapsed time.
   }
-  const auto error = [](double a, double b) { return remainder(a - b, 360.0); };
-  if (m_yaw_request_id.empty()) {
-    m_yaw_goal = heading; // Freeze this transaction's true-north target heading.
-    m_yaw_error = error(yaw, m_yaw_goal);
+  m_yaw_error = relative_error;
+  if (!m_yaw_request_id.empty() && m_yaw_last_stamp > 0 && stamp < m_yaw_last_stamp) {
+    abort("yaw_observation_clock_rewind_after_command");
+    return false;
+  }
+  const bool new_sample = stamp != m_yaw_last_stamp;
+  if (new_sample) {
+    if (stamp < m_yaw_last_stamp || m_yaw_stable_samples == 0 ||
+        fabs(remainder(relative_error - m_yaw_stable_reference, 360.0)) >
+            m_yaw_stability_tolerance) {
+      m_yaw_stable_reference = relative_error;
+      m_yaw_stable_since = sample_time;
+      m_yaw_stable_samples = 1;
+    } else {
+      m_yaw_stable_reference += remainder(relative_error - m_yaw_stable_reference, 360.0) /
+                                static_cast<double>(m_yaw_stable_samples + 1);
+      m_yaw_stable_reference = remainder(m_yaw_stable_reference, 360.0);
+      ++m_yaw_stable_samples;
+    }
+    m_yaw_last_stamp = stamp;
+  }
+
+  if (m_yaw_request_id.empty() && fabs(relative_error) > m_yaw_tolerance) {
+    if (m_yaw_stable_samples < 3 || m_yaw_stable_since < 0 ||
+        sample_time - m_yaw_stable_since < m_yaw_stability_time) {
+      m_yaw_state = "STABILIZING_TARGET_ORIENTATION";
+      return false;
+    }
+    m_yaw_goal = relative_error;
+    m_yaw_request_stamp = stamp;
     m_yaw_request_id = m_session + "_yaw";
     m_yaw_request_time = m_curr_time;
     m_yaw_state = "COMMANDING";
     Notify("YAW_ALIGN_REQUEST", "id=" + m_yaw_request_id +
-        "#heading=" + doubleToStringX(m_yaw_goal, 6) + "#rate=" + doubleToStringX(m_yaw_rate, 3));
+        "#angle=" + doubleToStringX(m_yaw_goal, 6) + "#rate=" + doubleToStringX(m_yaw_rate, 3));
     return false;
   }
-  if (fabs(error(heading, m_yaw_goal)) > m_yaw_tolerance) {
-    abort("yaw_target_heading_changed");
-    return false;
-  }
-  m_yaw_error = error(yaw, m_yaw_goal);
-  if (!m_yaw_accepted) {
+  if (!m_yaw_request_id.empty() && !m_yaw_accepted) {
     m_yaw_state = "WAITING_FOR_FC_ACK";
     return false;
   }
-  if (sample_time < m_yaw_ack_time || sample_time > m_curr_time + 1) {
-    m_yaw_state = "WAITING_FOR_POST_ACK_ATTITUDE";
+  if (!m_yaw_request_id.empty() &&
+      (sample_time < m_yaw_ack_time || sample_time > m_curr_time + 1 ||
+       stamp == m_yaw_request_stamp)) {
+    m_yaw_state = "WAITING_FOR_POST_ACK_TARGET";
     return false;
   }
-  if (fabs(m_yaw_error) > m_yaw_tolerance) {
+  if (fabs(relative_error) > m_yaw_tolerance) {
+    m_yaw_confirm_since = -1;
+    m_yaw_confirm_stamp = 0;
+    m_yaw_confirm_samples = 0;
     m_yaw_state = "ALIGNING";
+    return false;
+  }
+  if (new_sample && stamp != m_yaw_confirm_stamp) {
+    if (m_yaw_confirm_since < 0) {
+      m_yaw_confirm_since = sample_time;
+      m_yaw_confirm_samples = 1;
+    } else
+      ++m_yaw_confirm_samples;
+    m_yaw_confirm_stamp = stamp;
+  }
+  if (m_yaw_confirm_samples < 3 || m_yaw_confirm_since < 0 ||
+      sample_time - m_yaw_confirm_since < m_yaw_hold_time) {
+    m_yaw_state = "CONFIRMING_ALIGNMENT";
     return false;
   }
   m_yaw_state = "ALIGNED";
@@ -522,8 +557,15 @@ bool LandingCoordinator::Iterate()
       state("CLEARED", "both_rendezvous_complete");
     } else if (m_role == "aircraft" && m_state == "RENDEZVOUS" && peer_fresh &&
                m_peer_phase == "CLEARED" && m_peer_rv_phase == "COMPLETE" &&
-               m_rv_phase == "COMPLETE" && checksReady() && permits("command")) {
-      if (yawReady()) {
+               m_rv_phase == "COMPLETE" && permits("command")) {
+      if (!checksReady()) {
+        if (m_align_yaw && m_yaw_started >= 0) {
+          m_yaw_state = "WAITING_FOR_ORIENTATION";
+          m_yaw_input_reason = "required_landing_check_missing_or_stale";
+          m_yaw_stable_since = m_yaw_confirm_since = -1;
+          m_yaw_stable_samples = m_yaw_confirm_samples = 0;
+        }
+      } else if (yawReady()) {
         state("COMMANDING", m_align_yaw ? "clearance_checks_and_yaw_ready" : "clearance_and_checks_ready");
         m_command_time = m_curr_time;
         Notify("ARDU_COMMAND", "AUTOLAND");
@@ -603,10 +645,12 @@ void LandingCoordinator::publish()
   Notify("LANDING_OWN_TARGET_FRESH", targetFresh() ? "true" : "false");
   Notify("LANDING_OWN_YAW_STATE", m_yaw_state);
   Notify("LANDING_OWN_YAW_INPUT_REASON", m_yaw_input_reason);
-  if (!m_yaw_request_id.empty()) {
+  Notify("LANDING_OWN_YAW_STABLE_SAMPLES", static_cast<double>(m_yaw_stable_samples));
+  Notify("LANDING_OWN_YAW_CONFIRM_SAMPLES", static_cast<double>(m_yaw_confirm_samples));
+  if (!m_yaw_request_id.empty())
     Notify("LANDING_OWN_YAW_GOAL", m_yaw_goal);
+  if (m_yaw_started >= 0 && m_yaw_input_reason == "ready")
     Notify("LANDING_OWN_YAW_ERROR", m_yaw_error);
-  }
 }
 
 bool LandingCoordinator::isTrue(const CMOOSMsg &msg) const
@@ -710,15 +754,20 @@ bool LandingCoordinator::buildReport()
       m_msgs << m_yaw_input_reason << '\n';
       label("Yaw tolerance / rate");
       m_msgs << m_yaw_tolerance << " deg / " << m_yaw_rate << " deg/s\n";
+      label("Stability / hold");
+      m_msgs << m_yaw_stability_time << " / " << m_yaw_hold_time << " MOOS s; "
+             << m_yaw_stability_tolerance << " deg jitter\n";
+      label("Maximum tilt");
+      m_msgs << m_yaw_max_tilt << " deg\n";
       label("Yaw timeout");
       m_msgs << m_yaw_timeout << " MOOS s\n";
       label("Yaw request / FC ACK");
       m_msgs << show(m_yaw_request_id) << " / " << (m_yaw_accepted ? "accepted" : "not accepted") << '\n';
-      label("Yaw goal / error");
+      label("Command / error");
       if (m_yaw_request_id.empty())
-        m_msgs << "missing (requires fresh native attitude and received quaternion)\n";
+        m_msgs << "none / " << m_yaw_error << " deg target-relative\n";
       else
-        m_msgs << m_yaw_goal << " / " << m_yaw_error << " deg (true)\n";
+        m_msgs << m_yaw_goal << " / " << m_yaw_error << " deg target-relative\n";
     }
     label("Overall checks");
     m_msgs << (m_command_accepted ? "not required (LAND already accepted)"

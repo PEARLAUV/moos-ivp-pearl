@@ -42,7 +42,7 @@ def main():
     fixture = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fixture)
     fixture.TRACKED.update({"YAW_ALIGN_REQUEST", "UAV_YAW_ALIGN_RESULT", "UAV_YAW",
-                            "UAV_ATTITUDE_SAMPLE_TIME", "LANDING_OWN_YAW_GOAL",
+                            "LANDING_OWN_YAW_GOAL", "LANDING_OWN_YAW_ERROR",
                             "LANDING_OWN_YAW_STATE", "LANDING_OWN_YAW_INPUT_REASON",
                             "PEARL_NAV_X", "PEARL_NAV_Y"})
     directory = Path(tempfile.mkdtemp(prefix="precision-yaw-sitl-"))
@@ -143,15 +143,16 @@ def main():
         initial_error = math.hypot(latest_before("NAV_X")-latest_before("PEARL_NAV_X"),
                                    latest_before("NAV_Y")-latest_before("PEARL_NAV_Y"))
         assert initial_error >= args.min_initial_error, initial_error
-        yaw, goal = latest_before("UAV_YAW"), latest_before("LANDING_OWN_YAW_GOAL")
-        error = math.remainder(yaw-goal, 360)
-        assert abs(error) <= 5, (yaw, goal, error)
+        yaw = latest_before("UAV_YAW")
+        error = latest_before("LANDING_OWN_YAW_ERROR")
+        assert abs(error) <= 5, (yaw, error)
+        request_fields = dict(field.split("=", 1) for field in requests[0][3].split("#"))
+        rotation = abs(float(request_fields["angle"]))
+        assert rotation > 90, request_fields
         initial_yaw = float([r for r in logs.matching("UAV", "UAV_YAW")
                              if r[0] <= requests[0][0]][-1][3])
-        rotation = abs(math.remainder(goal - initial_yaw, 360))
-        assert rotation > 90, (initial_yaw, goal)
-        assert latest_before("UAV_ATTITUDE_SAMPLE_TIME") >= accepted[0][0] - 0.01
-        result.update(result="PASS", initial_lateral_error_m=initial_error, yaw_true_deg=yaw, frozen_goal_true_deg=goal, yaw_error_deg=error,
+        result.update(result="PASS", initial_lateral_error_m=initial_error,
+                      yaw_true_deg=yaw, target_relative_yaw_error_deg=error,
                       initial_yaw_true_deg=initial_yaw, requested_rotation_deg=rotation,
                       yaw_request=requests[0][3], yaw_ack=accepted[0][3])
         print(json.dumps(result, indent=2), flush=True)

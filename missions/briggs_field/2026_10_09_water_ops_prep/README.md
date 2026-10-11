@@ -312,23 +312,35 @@ no level-pose substitution is made. The received viewer applies the full inverse
 mapping, including the vertical component's horizontal projection under tilt.
 Native attitude boot timestamps identify the exact pose used for the observation.
 
-This mission enables aircraft `pLandingCoordinator` **`align_yaw=true`** on the
-next launch (the reusable app default remains false). With fresh permission,
-clearance and existing checks, it freezes heading from the received target
-quaternion, sends one native yaw request during the established Guided hold,
-and requires both FC ACK and fresh **post-ACK native measured** yaw within
-5 degrees before AUTOLAND. Timeout is 60 MOOS seconds; yaw command rate is
-30 degrees/FC second. The existing FSM graph and coordinator phases are unchanged.
-Missing orientation/clock match, rejection, changed target, cancellation or lost
-permission cannot manufacture readiness or trigger a timed retry. ArduPilot owns
-LAND/descent/retries/touchdown/disarm; yaw is not continuously tracked during LAND.
+Yaw alignment is enabled by default for both REAL and SITL launches. Use
+`--no-yaw-alignment` to disable it for one generated mission, or
+`--yaw-alignment` to select it explicitly. The launcher expands both the
+coordinator option and the independent FSM check consistently: enabled requires
+`LANDING_OWN_YAW_STATE=ALIGNED`, while disabled requires the explicit
+`DISABLED` state. REAL and SITL use the same method when enabled: the received
+BODY_FRD target quaternion directly supplies signed relative yaw error. Stable observations cause one relative `CONDITION_YAW`
+request during the established Guided hold; FC ACK is followed by fresh,
+advancing target observations held within 5 degrees before AUTOLAND. No
+exposure-time NED pose, clock match, simulator heading, peer heading or COG can
+authorize alignment. Timeout is 60 MOOS seconds and command rate is 30 degrees
+per FC second.
 
-`PLND_YAW_ALIGN` is sensor mounting calibration, not this feature. ArduPilot ignores
-LANDING_TARGET quaternion for its own yaw control. See
-[pLandingCoordinator](../../../src/pLandingCoordinator/README.md) for option,
-freshness, protocol and real-camera synchronization limitations, and
-[pMavlinkLandingTarget](../../../src/pMavlinkLandingTarget/README.md) for the corrected
-angular signs. No live mission is regenerated, restarted or commanded by these edits.
+`uLandingYawChecks` independently requires `LANDING_OWN_YAW_STATE=ALIGNED` on
+the FSM's APPROACHING-to-LANDING edge. `pLandingCoordinator` remains the owner
+of the active command/ACK/measurement transaction and cannot publish LANDING
+until the yaw gate has passed and LAND has been accepted. Missing or unstable
+orientation, stale/nonadvancing observations, excessive tilt, rejection,
+cancellation or lost permission cannot manufacture readiness or trigger a timed
+retry. ArduPilot owns LAND/descent/retries/touchdown/disarm; yaw is not
+continuously tracked during LAND.
+
+`PLND_YAW_ALIGN` is sensor mounting calibration, not this feature. ArduPilot
+ignores LANDING_TARGET quaternion for its own yaw control. See
+[pLandingCoordinator](../../../src/pLandingCoordinator/README.md) for the
+freshness, stability, command and confirmation contracts, and
+[pMavlinkLandingTarget](../../../src/pMavlinkLandingTarget/README.md) for the
+corrected angular signs. No live mission is regenerated, restarted or commanded
+by these edits.
 
 ## Guided ownership diagnostics
 

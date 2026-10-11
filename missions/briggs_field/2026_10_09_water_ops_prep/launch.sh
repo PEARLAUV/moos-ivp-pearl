@@ -67,6 +67,7 @@ PEARL_RETURN="10.6,4.8"
 MIN_STATE_TIME="0"
 DECK_ALTITUDE="1"
 TARGET_RANGE="12"
+YAW_ALIGNMENT="true"
 AP_URL=""
 AP_PROTOCOL=""
 PARAM_ARGS=()
@@ -104,6 +105,8 @@ for ARGI; do
     echo "  --deck_altitude=<1>     Shared target/deck height, metres MSL"
     echo "  --target_range=<12>     Landing-target 3-D detection range, metres"
     echo "  --min_state_time=<0>          Minimum FSM state dwell, seconds"
+    echo "  --yaw-alignment               Require target-relative yaw alignment (default)"
+    echo "  --no-yaw-alignment            Explicitly bypass target-relative yaw alignment"
     echo "  --ap_url=<endpoint>           UAV ArduPilot endpoint"
     echo "  --ap_protocol=<proto>         UAV udp, tcp, or serial"
     echo "  --model=<x500>               Drone parameter profile basename (not SITL frame)"
@@ -154,6 +157,10 @@ for ARGI; do
     TARGET_RANGE="${ARGI#*=}"
   elif [[ "${ARGI}" == --min_state_time=* ]]; then
     MIN_STATE_TIME="${ARGI#*=}"
+  elif [[ "${ARGI}" == --yaw-alignment ]]; then
+    YAW_ALIGNMENT="true"
+  elif [[ "${ARGI}" == --no-yaw-alignment ]]; then
+    YAW_ALIGNMENT="false"
   elif [[ "${ARGI}" == --ap_url=* ]]; then
     AP_URL="${ARGI#*=}"
   elif [[ "${ARGI}" == --ap_protocol=* ]]; then
@@ -250,6 +257,7 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "UAV_PSHARE =        [${UAV_PSHARE}]"
   echo "PEARL_PSHARE =      [${PEARL_PSHARE}]"
   echo "MIN_STATE_TIME =    [${MIN_STATE_TIME}]"
+  echo "YAW_ALIGNMENT =     [${YAW_ALIGNMENT}]"
   echo -n "Hit any key to continue launch "
   read -r _
 fi
@@ -276,6 +284,11 @@ UARGS+=(--shore_pshare="$SHORE_PSHARE")
 UARGS+=(--pearl_ip=localhost --pearl_pshare="$PEARL_PSHARE")
 UARGS+=(--secondary_landing="$SECONDARY_LANDING" --deck_altitude="$DECK_ALTITUDE" --target_range="$TARGET_RANGE")
 UARGS+=(--min_state_time="$MIN_STATE_TIME")
+if [[ "$YAW_ALIGNMENT" == true ]]; then
+  UARGS+=(--yaw-alignment)
+else
+  UARGS+=(--no-yaw-alignment)
+fi
 [ -n "$AP_URL" ] && UARGS+=(--ap_url="$AP_URL")
 [ -n "$AP_PROTOCOL" ] && UARGS+=(--ap_protocol="$AP_PROTOCOL")
 [ "$JUST_MAKE" = "yes" ] && UARGS+=(--just_make)

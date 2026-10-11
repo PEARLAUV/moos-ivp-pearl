@@ -2,9 +2,8 @@
 #define LANDING_COORDINATOR_HEADER
 
 #include "LogicCondition.h"
-#include "AttitudeHistory.h"
-#include "DirectPose.h"
 #include "MOOS/libMOOS/Thirdparty/AppCasting/AppCastingMOOSApp.h"
+#include <cstdint>
 #include <map>
 #include <string>
 
@@ -48,7 +47,7 @@ private:
   bool isTrue(const CMOOSMsg &msg) const;
   void publish();
   bool number(const std::string &key, double &data) const;
-  bool targetHeading(double &heading, double &yaw, double &sample_time);
+  bool targetRelativeYaw(double &error, double &sample_time, uint64_t &stamp);
   bool yawReady();
 
   std::string m_ownship;
@@ -75,15 +74,17 @@ private:
   bool m_align_yaw = false;
   bool m_yaw_accepted = false;
   double m_yaw_tolerance = 5, m_yaw_rate = 30, m_yaw_timeout = 60;
+  double m_yaw_stability_time = 0.5, m_yaw_hold_time = 0.5;
+  double m_yaw_stability_tolerance = 3, m_yaw_max_tilt = 15;
   double m_yaw_started = -1, m_yaw_request_time = -1, m_yaw_ack_time = -1;
-  double m_yaw_goal = 0, m_yaw_error = 0;
+  double m_yaw_stable_since = -1, m_yaw_confirm_since = -1;
+  double m_yaw_stable_reference = 0, m_yaw_goal = 0, m_yaw_error = 0;
+  uint64_t m_yaw_last_stamp = 0, m_yaw_request_stamp = 0, m_yaw_confirm_stamp = 0;
+  int m_yaw_target_num = -1;
+  unsigned m_yaw_stable_samples = 0, m_yaw_confirm_samples = 0;
   std::string m_yaw_state = "DISABLED";
   std::string m_yaw_input_reason = "not_evaluated";
   std::string m_yaw_request_id;
-  bodyframe::AttitudeHistory m_attitude_history;
-  std::string m_pose_samples_var;
-  std::map<uint64_t, mavlink::NativePose> m_observation_poses;
-  bool m_native_samples_seen = false;
   std::map<std::string, Input> m_inputs;
   std::map<std::string, LogicCondition> m_conditions;
   std::map<std::string, std::string> m_condition_specs;

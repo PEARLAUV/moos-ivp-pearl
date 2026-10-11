@@ -186,8 +186,7 @@ ProcessConfig = pLandingCoordinator
   ownship = uav
   peer_node = pearl
   role = aircraft
-  // Exposure rotation only. Readiness/post-ACK yaw still use bridge native telemetry.
-  observation_pose_samples_var = UAV_NAV_MAVLINK_POSES
+  // Match REAL: align directly from the received BODY_FRD target quaternion.
   landing_timeout = 450
   input_timeout = 3
 

@@ -39,6 +39,7 @@ ProcessConfig = ANTLER
   Run = uChecks        @ NewConsole = false ~ uPretakeoffChecks
   Run = uChecks        @ NewConsole = false ~ uAirborneChecks
   Run = uChecks        @ NewConsole = false ~ uLandingAirborneChecks
+  Run = uChecks        @ NewConsole = false ~ uLandingYawChecks
   Run = uChecks        @ NewConsole = false ~ uLandingGroundChecks
   Run = pHelmIvP       @ NewConsole = false
   Run = uTimerScript   @ NewConsole = false ~ uRouteClear
@@ -311,6 +312,10 @@ ProcessConfig = uFldNodeBroker
   bridge = src=LANDING_OWN_REASON, alias=LANDING_UAV_REASON,frequency=1,behavior=coalesce
   bridge = src=LANDING_OWN_CHECKS_READY, alias=LANDING_UAV_CHECKS_READY,frequency=1,behavior=coalesce
   bridge = src=LANDING_OWN_TARGET_FRESH, alias=LANDING_UAV_TARGET_FRESH,frequency=1,behavior=coalesce
+  bridge = src=LANDING_OWN_YAW_STATE, alias=LANDING_UAV_YAW_STATE,frequency=1,behavior=coalesce
+  bridge = src=LANDING_OWN_YAW_INPUT_REASON, alias=LANDING_UAV_YAW_INPUT_REASON,frequency=1,behavior=coalesce
+  bridge = src=LANDING_OWN_YAW_ERROR, alias=LANDING_UAV_YAW_ERROR,frequency=2,behavior=latest
+  bridge = src=LANDING_YAW_CHECKS, alias=LANDING_UAV_YAW_CHECKS,frequency=1,behavior=coalesce
   bridge = src=LANDING_OWN_RENDEZVOUS_PHASE, alias=LANDING_UAV_RENDEZVOUS_PHASE,frequency=1,behavior=coalesce
   bridge = src=LANDING_TARGET_VIEW_ACTIVE,frequency=1,behavior=coalesce
   bridge = src=AUTOPILOT_MODE
@@ -698,13 +703,15 @@ ProcessConfig = pLandingCoordinator
   ownship = $(VNAME)
   peer_node = pearl
   role = aircraft
-  // Exposure rotation only. Readiness/post-ACK yaw still use bridge native telemetry.
-  observation_pose_samples_var = UAV_NAV_MAVLINK_POSES
-  // Pre-LAND only: received target quaternion + native attitude, FC ACK and
-  // measured yaw required. ArduPilot retains ownership of descent and disarm.
-  align_yaw = true
-  yaw_tolerance = 5 // degrees; circular measured error, not a command ACK shortcut
-  yaw_rate = 30 // degrees/s; bounded native CONDITION_YAW during existing Guided hold
+  // REAL and SITL both align from the received BODY_FRD target quaternion.
+  // No exposure-time NED pose or simulator-only heading is used.
+  align_yaw = $(YAW_ALIGNMENT)
+  yaw_tolerance = 5 // degrees; confirmed target-relative error, not an FC ACK shortcut
+  yaw_rate = 30 // degrees/s; bounded relative CONDITION_YAW in the existing Guided hold
+  yaw_stability_time = 0.5 // MOOS seconds of stable observations before commanding yaw
+  yaw_stability_tolerance = 3 // degrees; reset stability when target orientation jumps
+  yaw_hold_time = 0.5 // MOOS seconds continuously in tolerance after the command
+  yaw_max_tilt = 15 // degrees combined roll/pitch; BODY_FRD yaw projection limit
   yaw_timeout = 60 // MOOS seconds; abort, never auto-retry or descend on timeout
   input_timeout = 3
   landing_timeout = 450
@@ -760,6 +767,26 @@ ProcessConfig = uLandingAirborneChecks
   require = check=NATIVE_STATE,var=UAV_LANDED_STATE,type=string,equals=IN_AIR,on_mismatch=wait
   require = check=NATIVE_STATE,var=UAV_LANDED_STATE_AGE,type=double,min=0,max=2,on_mismatch=wait
   require = check=NATIVE_STATE,var=UAV_IS_ARMED,type=double,equals=1,on_mismatch=wait
+}
+
+// Defense-in-depth FSM gate. pLandingCoordinator performs the active yaw
+// transaction; this independent check only permits APPROACHING -> LANDING after
+// the coordinator has confirmed fresh post-command target-relative alignment.
+ProcessConfig = uLandingYawChecks
+{
+  AppTick = 4
+  CommsTick = 4
+  condition = UAV_FSM_LANDING_OPERATIONS_STATE=APPROACHING
+  session_var = UAV_FSM_OPERATION_STATE_LANDING_OPERATIONS_EPOCH
+  result_var = LANDING_YAW_CHECKS
+  result_prefix = LANDING_YAW_CHECK_
+  check = name=ALIGNMENT,timeout=70,max_age=3
+#ifdef YAW_ALIGNMENT true
+  require = check=ALIGNMENT,var=LANDING_OWN_YAW_STATE,type=string,equals=ALIGNED,on_mismatch=wait
+#else
+  // A disabled launch remains explicit and observable rather than bypassing the check.
+  require = check=ALIGNMENT,var=LANDING_OWN_YAW_STATE,type=string,equals=DISABLED,on_mismatch=wait
+#endif
 }
 
 ProcessConfig = uLandingGroundChecks

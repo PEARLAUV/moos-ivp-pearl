@@ -148,7 +148,8 @@ ProcessConfig=uPretakeoffChecks
                   "LANDING_OWN_RENDEZVOUS_PHASE:=COMPLETE", "LANDING_PEER_CLEARANCE:=true")
         self.query("UAV_FSM_LANDING_OPERATIONS_STATE=APPROACHING")
         self.poke("UAV_IS_ARMED=0", "UAV_LANDED_STATE:=ON_GROUND",
-                  "LANDING_GROUND_CHECKS:=success", "LANDING_OWN_PHASE:=COMPLETE")
+                  "LANDING_YAW_CHECKS:=success", "LANDING_GROUND_CHECKS:=success",
+                  "LANDING_OWN_PHASE:=COMPLETE")
         self.query("UAV_FSM_OPERATION_STATE=IDLE", "IVPHELM_STATE=PARK")
         self.poke("NAV_X=0", "TAKEOFF_REQUEST_RESULT:=UNKNOWN", "TAKEOFF_AIRBORNE:=inactive",
                   "LANDING_OWN_PHASE:=IDLE")

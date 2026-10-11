@@ -87,7 +87,7 @@ while True: time.sleep(0.1)
 '''
 
 
-def generate_target(directory, mode, warp):
+def generate_target(directory, mode, warp, yaw_alignment="true"):
     target = Path(directory) / "targ_probe.moos"
     values = {
         "WARP": str(warp), "IP_ADDR": "localhost", "MOOS_PORT": "9001",
@@ -97,7 +97,8 @@ def generate_target(directory, mode, warp):
         "AP_URL": "127.0.0.1:5760", "AP_PROTOCOL": "tcp",
         "SITL_ROUTER_PORT": "5763",
         "SECONDARY_LANDING_X": "10", "SECONDARY_LANDING_Y": "15",
-        "MIN_STATE_TIME": "0", "XMODE": mode, "IS_SIM": str(mode == "SITL").lower(),
+        "MIN_STATE_TIME": "0", "YAW_ALIGNMENT": yaw_alignment,
+        "XMODE": mode, "IS_SIM": str(mode == "SITL").lower(),
         "PEARL_LIB_DIR": str(MISSION.parents[2] / "lib"),
     }
     subprocess.run(
@@ -117,6 +118,20 @@ class SITLLaunchTest(unittest.TestCase):
                 self.assertRegex(source, r"Run = pArduBridge\s+@")
                 self.assertNotIn("launch_sitl_moos.sh", source)
                 self.assertNotIn("SITL_ARGS", source)
+
+    def test_yaw_alignment_switch_expands_coordinator_and_fsm_check(self):
+        with tempfile.TemporaryDirectory(prefix="yaw-switch-config-") as directory:
+            for enabled, state in (("true", "ALIGNED"), ("false", "DISABLED")):
+                source = generate_target(directory, "SITL", 5, enabled).read_text()
+                coordinator = source.split("ProcessConfig = pLandingCoordinator", 1)[1].split("}", 1)[0]
+                yaw_check = source.split("ProcessConfig = uLandingYawChecks", 1)[1].split("}", 1)[0]
+                self.assertIn(f"align_yaw = {enabled}", coordinator)
+                self.assertIn(f"equals={state}", yaw_check)
+                self.assertNotIn("#ifdef YAW_ALIGNMENT", source)
+
+    def test_launch_uav_accepts_both_yaw_alignment_switches(self):
+        for option in ("--yaw-alignment", "--no-yaw-alignment"):
+            self.exercise_launcher(just_make=True, extra_args=(option,))
 
     def exercise_launcher(self, *, mode="SITL", warp=5, just_make=False,
                           overrides=None, expected_exit=0, extra_args=(), expected_drone=None):
@@ -222,6 +237,7 @@ class SITLLaunchTest(unittest.TestCase):
             uav = json.loads((root / "launch_uav.json").read_text())
             self.assertIn("--model=quad-test_2", uav)
             self.assertIn("--drone-params=none", uav)
+            self.assertIn("--no-yaw-alignment", uav)
             for name in ("launch_pearl.json", "launch_shoreside.json"):
                 args = json.loads((root / name).read_text())
                 self.assertFalse(any(arg.startswith("--model=") for arg in args))

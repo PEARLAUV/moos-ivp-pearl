@@ -49,6 +49,17 @@ class IntegrationContract(unittest.TestCase):
         self.assertIn(
             "command_condition = UAV_FSM_LANDING_OPERATIONS_STATE=APPROACHING", config
         )
+        coordinator = config.split("ProcessConfig = pLandingCoordinator", 1)[1].split("}", 1)[0]
+        self.assertIn("align_yaw = $(YAW_ALIGNMENT)", coordinator)
+        self.assertIn("yaw_stability_time = 0.5", coordinator)
+        self.assertNotIn("observation_pose_samples_var", coordinator)
+        self.assertIn("Run = uChecks        @ NewConsole = false ~ uLandingYawChecks", config)
+        yaw_check = config.split("ProcessConfig = uLandingYawChecks", 1)[1].split("}", 1)[0]
+        self.assertIn("condition = UAV_FSM_LANDING_OPERATIONS_STATE=APPROACHING", yaw_check)
+        self.assertIn("var=LANDING_OWN_YAW_STATE,type=string,equals=ALIGNED", yaw_check)
+        self.assertIn("var=LANDING_OWN_YAW_STATE,type=string,equals=DISABLED", yaw_check)
+        committed = recovery["approaching"]["transitions"]["landing_committed"]["when"]
+        self.assertIn("check_result(landing_yaw_checks, success)", committed)
 
     def test_uav_fsm_releases_route_buffer_ownership_without_topology_changes(self):
         model = tomllib.loads((MISSION / "uav_fsm.toml").read_text())
@@ -125,12 +136,14 @@ class IntegrationContract(unittest.TestCase):
             "LANDING_OWN_REASON",
         )
         expected = {
-            "uav": {
-                key: ("1", "coalesce")
-                for key in common
+            "uav": dict.fromkeys(
+                common
                 + (
                     "LANDING_OWN_CHECKS_READY",
                     "LANDING_OWN_TARGET_FRESH",
+                    "LANDING_OWN_YAW_STATE",
+                    "LANDING_OWN_YAW_INPUT_REASON",
+                    "LANDING_YAW_CHECKS",
                     "LANDING_OWN_RENDEZVOUS_PHASE",
                     "LANDING_TARGET_VIEW_ACTIVE",
                     "LANDMARK_EMULATOR_ACTIVE",
@@ -140,24 +153,26 @@ class IntegrationContract(unittest.TestCase):
                     "MAVLINK_SHIP_POSE_ACTIVE",
                     "TAKEOFF_PRECHECKS_SNAPSHOT",
                     "TAKEOFF_AIRBORNE_SNAPSHOT",
-                )
-            },
-            "pearl": {
-                key: ("1", "coalesce")
-                for key in common
+                ),
+                ("1", "coalesce"),
+            ),
+            "pearl": dict.fromkeys(
+                common
                 + (
                     "LANDING_OWN_CLEARANCE",
                     "TAKEOFF_PRECHECKS_STATE_SNAPSHOT",
                     "TAKEOFF_POSTCHECKS_STATE_SNAPSHOT",
                     "RECOVERY_PRECHECKS_STATE_SNAPSHOT",
                     "RECOVERY_POSTCHECKS_STATE_SNAPSHOT",
-                )
-            },
+                ),
+                ("1", "coalesce"),
+            ),
         }
         expected["uav"].update(
             {
                 "NODE_REPORT_LOCAL": ("4", "latest"),
                 "LANDMARK_EMULATOR_DISTANCE": ("2", "latest"),
+                "LANDING_OWN_YAW_ERROR": ("2", "latest"),
                 "NAV_ALTITUDE": ("5", "latest"),
                 "UAV_ALTITUDE_MSL": ("5", "latest"),
             }

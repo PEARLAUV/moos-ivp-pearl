@@ -27,6 +27,7 @@ uav_landed_state = { initial = "UNKNOWN", initialize = false }
 takeoff_airborne = { initial = "inactive", initialize = false }
 landing_airborne_checks = { initial = "inactive", initialize = false }
 landing_ground_checks = { initial = "inactive", initialize = false }
+landing_yaw_checks = { initial = "inactive", initialize = false }
 uav_health_all_ok = { initial = "UNKNOWN", initialize = false }
 uav_gps_available = { initial = "UNKNOWN", initialize = false }
 uav_is_armed = { initial = "UNKNOWN", initialize = false }
@@ -264,7 +265,7 @@ layout = { left = 150, top = 830, width = 300 }
 
 [states.landing_operations.states.approaching.transitions.landing_committed]
 to = "landing"
-when = "(landing_own_phase==LANDING) || (landing_own_phase==COMPLETE)"
+when = "((landing_own_phase==LANDING) || (landing_own_phase==COMPLETE)) && check_result(landing_yaw_checks, success)"
 label = "Landing committed"
 
 [states.landing_operations.states.approaching.transitions.approach_failed]
