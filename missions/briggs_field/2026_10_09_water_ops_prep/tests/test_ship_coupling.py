@@ -29,7 +29,7 @@ class ShipCouplingPolicyTest(unittest.TestCase):
         # Exercise the SITL branch of the actual mission's echo configuration.
         echo_config = "\n".join(line for line in echo.group().splitlines()
                                 if not line.startswith("#"))
-        runtime = (MISSION / "plug_uav_fsm_runtime.moos").read_text()
+        runtime = (MISSION / "uav_fsm/plug_uav_fsm_runtime.moos").read_text()
         with tempfile.TemporaryDirectory(prefix="ship-policy-") as directory:
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))

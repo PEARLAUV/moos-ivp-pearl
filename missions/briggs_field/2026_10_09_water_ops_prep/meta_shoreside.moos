@@ -355,8 +355,8 @@ ProcessConfig = pMarineViewer
   scope = STATION_KEEP
   scope = MOOS_MANUAL_OVERRIDE
   scope = PEARL_ALLSTOP
-#include plug_pearl_fsm_scopes.moos
-#include plug_uav_fsm_scopes.moos
+#include pearl_fsm/plug_pearl_fsm_scopes.moos
+#include uav_fsm/plug_uav_fsm_scopes.moos
   scope = TAKEOFF_REQUEST_ID
   scope = TAKEOFF_REQUEST_STATE
   scope = UAV_TAKEOFF_PROGRESS

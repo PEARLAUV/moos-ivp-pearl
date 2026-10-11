@@ -81,7 +81,7 @@ ProcessConfig = pFSMRuntime
   // Debug/visualization aid. Set by --min_state_time in launch.sh.
   min_state_time = $(MIN_STATE_TIME)
 
-#include plug_pearl_fsm_runtime.moos
+#include pearl_fsm/plug_pearl_fsm_runtime.moos
 }
 
 //----------------------------------------------------
@@ -195,7 +195,7 @@ ProcessConfig = pShare
 
   // State observability uses explicit pShare routes so FSM outputs and inputs
   // do not depend on uFldNodeBroker registration timing.
-#include plug_pearl_fsm_pshare.moos
+#include pearl_fsm/plug_pearl_fsm_pshare.moos
 
   output = src_name=TAKEOFF_REQUEST_ID,       route=$(SHORE_IP):$(SHORE_PSHARE)
   output = src_name=TAKEOFF_REQUEST_STATE,    route=$(SHORE_IP):$(SHORE_PSHARE)

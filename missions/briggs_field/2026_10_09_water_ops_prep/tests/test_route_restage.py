@@ -22,7 +22,7 @@ class RouteRestageTest(unittest.TestCase):
         if route is None:
             self.fail("Missing route buffer configuration")
         self.assertNotIn("uRouteStageHelm", source)
-        runtime = (MISSION / "plug_uav_fsm_runtime.moos").read_text()
+        runtime = (MISSION / "uav_fsm/plug_uav_fsm_runtime.moos").read_text()
         with tempfile.TemporaryDirectory(prefix="route-restage-") as directory:
             root = Path(directory)
             with socket.socket() as sock:

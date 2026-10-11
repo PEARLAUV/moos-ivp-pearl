@@ -482,10 +482,10 @@ Isolated policy/timer/ACK-lease regressions:
 ## PEARL supervisory FSM source
 
 [`pearl_fsm.toml`](pearl_fsm.toml) is the source for the executable
-[`plug_pearl_fsm_runtime.moos`](plug_pearl_fsm_runtime.moos) configuration,
-generated pShare-route and shoreside-scope include fragments, the composed
-[`pearl_fsm/overview.d2`](pearl_fsm/overview.d2) overview and detail boards,
-the linked SVG set under `pearl_fsm/svg/`, and the
+[`pearl_fsm/plug_pearl_fsm_runtime.moos`](pearl_fsm/plug_pearl_fsm_runtime.moos)
+configuration, generated pShare-route and shoreside-scope include fragments in
+`pearl_fsm/`, the composed [`pearl_fsm/overview.d2`](pearl_fsm/overview.d2)
+overview and detail boards, the linked SVG set under `pearl_fsm/svg/`, and the
 [`pearl_fsm/bindings.json`](pearl_fsm/bindings.json) UI binding map. Regenerate
 and check them with:
 
@@ -714,10 +714,10 @@ stale or indeterminate evidence retains the existing RTL behavior; explicit
 RTL/deadman requests and independently pending RTL are not cleared. Neither
 FSM state, low altitude nor simulator attachment is used as ground proof.
 
-The FSM generates the
-[`plug_uav_fsm_runtime.moos`](plug_uav_fsm_runtime.moos), pShare/scope fragments, JSON UI
-bindings, [`uav_fsm/overview.d2`](uav_fsm/overview.d2), and
-`uav_fsm/svg/index.svg`:
+The FSM generates
+[`uav_fsm/plug_uav_fsm_runtime.moos`](uav_fsm/plug_uav_fsm_runtime.moos), the
+pShare/scope fragments and JSON UI bindings under `uav_fsm/`,
+[`uav_fsm/overview.d2`](uav_fsm/overview.d2), and `uav_fsm/svg/index.svg`:
 
 ```bash
 ../../../scripts/generate_fsm.py uav_fsm.toml

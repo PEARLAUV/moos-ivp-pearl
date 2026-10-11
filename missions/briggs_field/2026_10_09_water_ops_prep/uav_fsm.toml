@@ -1,12 +1,12 @@
 version = 2
 
 [outputs]
-runtime = "plug_uav_fsm_runtime.moos"
+runtime = "uav_fsm/plug_uav_fsm_runtime.moos"
 d2 = "uav_fsm/overview.d2"
 svg = "uav_fsm/svg"
 bindings = "uav_fsm/bindings.json"
-pshare = "plug_uav_fsm_pshare.moos"
-scopes = "plug_uav_fsm_scopes.moos"
+pshare = "uav_fsm/plug_uav_fsm_pshare.moos"
+scopes = "uav_fsm/plug_uav_fsm_scopes.moos"
 
 [targets.runtime]
 prefix = "UAV"

@@ -40,7 +40,7 @@ class TakeoffCompletion(unittest.TestCase):
             r"ProcessConfig = uSecondary(?:Land|Sequence)\s*\{[^}]+\}",
             (MISSION / "plug_uav_ardupilot.moos").read_text(),
         )
-        generated = (MISSION / "plug_uav_fsm_runtime.moos").read_text()
+        generated = (MISSION / "uav_fsm/plug_uav_fsm_runtime.moos").read_text()
         with tempfile.TemporaryDirectory(prefix="takeoff-completion-") as temp:
             directory = Path(temp)
             with socket.socket() as sock:

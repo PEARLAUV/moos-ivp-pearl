@@ -58,7 +58,7 @@ ProcessConfig=pFSMRuntime
 {{
  AppTick=4
  CommsTick=4
-{(MISSION / 'plug_pearl_fsm_runtime.moos').read_text()}
+{(MISSION / 'pearl_fsm/plug_pearl_fsm_runtime.moos').read_text()}
 }}
 {config.group()}
 """)

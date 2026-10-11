@@ -1,12 +1,12 @@
 version = 2
 
 [outputs]
-runtime = "plug_pearl_fsm_runtime.moos"
+runtime = "pearl_fsm/plug_pearl_fsm_runtime.moos"
 d2 = "pearl_fsm/overview.d2"
 svg = "pearl_fsm/svg"
 bindings = "pearl_fsm/bindings.json"
-pshare = "plug_pearl_fsm_pshare.moos"
-scopes = "plug_pearl_fsm_scopes.moos"
+pshare = "pearl_fsm/plug_pearl_fsm_pshare.moos"
+scopes = "pearl_fsm/plug_pearl_fsm_scopes.moos"
 
 # Output target configuration.
 [targets.runtime]

@@ -45,6 +45,10 @@ class MakefileSiteTest(unittest.TestCase):
             if path.is_file() and (path.name == "Makefile" or
                                    path.suffix in (".sh", ".moos", ".bhv", ".toml", ".parm")):
                 shutil.copy2(path, cls.mission / path.name)
+        # Shoreside consumes the checked-in generated scope fragments before a
+        # vehicle launcher has an opportunity to regenerate either FSM.
+        for name in ("pearl_fsm", "uav_fsm"):
+            shutil.copytree(MISSION / name, cls.mission / name)
         env = {key: value for key, value in os.environ.items()
                if key not in ("DRONE_MODEL", "DRONE_PARAM_FILE",
                               "MODE_PARAM_FILE", "MISSION_PARAM_FILE")}

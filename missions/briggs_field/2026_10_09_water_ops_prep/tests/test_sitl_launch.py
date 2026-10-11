@@ -136,7 +136,6 @@ class SITLLaunchTest(unittest.TestCase):
     def exercise_launcher(self, *, mode="SITL", warp=5, just_make=False,
                           overrides=None, expected_exit=0, extra_args=(), expected_drone=None):
         targets = [MISSION / "targ_uav.moos", MISSION / "targ_uav.bhv",
-                   *MISSION.glob("plug_uav_fsm_*.moos"),
                    *(path for path in (MISSION / "uav_fsm").rglob("*") if path.is_file())]
         originals = {path: path.read_bytes() if path.exists() else None for path in targets}
         with tempfile.TemporaryDirectory(prefix="sitl-launch-") as directory:

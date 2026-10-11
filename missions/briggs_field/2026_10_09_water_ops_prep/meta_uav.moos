@@ -71,7 +71,7 @@ ProcessConfig = pShare
 
   // UAV FSM observability is sent directly to shoreside. Only the UAV-owned
   // operation and nested phase states needed by PEARL cross the authority boundary.
-#include plug_uav_fsm_pshare.moos
+#include uav_fsm/plug_uav_fsm_pshare.moos
   // Outgoing-only dispatch; each peer receives directly in its native mediator.
   // Protocol paths are always direct, independent of optional peer telemetry.
   output = src_name=MEDIATED_TX_SHORESIDE, dest_name=MEDIATED_MESSAGE, route=$(SHORE_IP):$(SHORE_PSHARE)
@@ -409,7 +409,7 @@ ProcessConfig = pFSMRuntime
   // Debug/visualization aid. Set by --min_state_time in launch.sh.
   min_state_time = $(MIN_STATE_TIME)
 
-#include plug_uav_fsm_runtime.moos
+#include uav_fsm/plug_uav_fsm_runtime.moos
 }
 
 //----------------------------------------------------

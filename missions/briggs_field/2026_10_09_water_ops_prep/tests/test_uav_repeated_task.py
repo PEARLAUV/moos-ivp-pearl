@@ -54,7 +54,7 @@ ProcessConfig=pFSMRuntime
 {{
  AppTick=4
  CommsTick=4
-{(MISSION / 'plug_uav_fsm_runtime.moos').read_text()}
+{(MISSION / 'uav_fsm/plug_uav_fsm_runtime.moos').read_text()}
 }}
 ProcessConfig=pHelmIvP
 {{
