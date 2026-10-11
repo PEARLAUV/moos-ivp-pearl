@@ -4,7 +4,7 @@
 # Default make prints help; real applications start only on an explicit target.
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
-.PHONY: help clean kill logs shoreside-briggs pearl-briggs drone-briggs shoreside-charles pearl-charles drone-charles sim-briggs sim-charles
+.PHONY: help clean kill logs collect-logs-briggs collect-logs-charles collect-logs-sim shoreside-briggs pearl-briggs drone-briggs shoreside-charles pearl-charles drone-charles sim-briggs sim-charles
 
 MISSION_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 PEARL_ROOT := $(abspath $(MISSION_DIR)/../../..)
@@ -50,6 +50,16 @@ LOG_AP_PROTOCOL ?= serial
 LOG_AP_ENDPOINT ?= serial/by-id/usb-ArduPilot_Pixhawk6X_200023000E51333531343838-if00:115200
 LOG_ARGS ?=
 
+# Shoreside retrieval of artifacts already assembled by `make logs` remotely.
+COLLECT_DRONE_HOST ?= pi@$(DRONE_IP)
+COLLECT_PEARL_REAL_HOST ?= pearl@$(PEARL_REAL_IP)
+COLLECT_PEARL_GRASS_HOST ?= pearl@$(PEARL_GRASS_IP)
+COLLECT_REMOTE_ROOT ?= workspace/mit/pearl/moos-ivp-pearl/missions/briggs_field/2026_10_09_water_ops_prep/field_logs
+COLLECT_OUTPUT_ROOT ?= $(LOG_OUTPUT_ROOT)/fetched
+COLLECT_SIM_OUTPUT_ROOT ?= $(LOG_OUTPUT_ROOT)/sim
+COLLECT_ARGS ?=
+COLLECT_SIM_ARGS ?=
+
 help:
 	@printf '%s\n' 'Run locally on the corresponding node host:' \
 	  '  shoreside-briggs  pearl-briggs (GRASS)  drone-briggs' \
@@ -59,6 +69,8 @@ help:
 	  'Preview: make -n TARGET; generate only: make TARGET LAUNCH_ARGS=--just_make' \
 	  'Return/rally markers are provisional; validate before task commit.' \
 	  'logs: after shutdown, assemble the latest local-node artifacts with SHA-256 sums.' \
+	  'collect-logs-briggs/charles: shoreside fetch of drone/PEARL artifacts.' \
+	  'collect-logs-sim: assemble the latest closed local three-community SIM logs.' \
 	  'clean: removes mission logs/targets; kill: host-wide ktm + owned SITL/VNC cleanup.'
 
 # Read-only collection is explicit and never a launch prerequisite. The drone
@@ -73,6 +85,32 @@ logs:
 	  --video-root "$(LOG_VIDEO_ROOT)" \
 	  --ap-protocol "$(LOG_AP_PROTOCOL)" --ap-endpoint "$(LOG_AP_ENDPOINT)" \
 	  --log-directory "$(LOG_DIRECTORY)" $(LOG_ARGS)
+
+# Fetch only: each remote node must have already completed `make logs`.
+collect-logs-briggs:
+	python3 "$(PEARL_ROOT)/scripts/fetch_collected_logs.py" \
+	  --site briggs --shore-ip "$(SHORE_IP)" \
+	  --drone-host "$(COLLECT_DRONE_HOST)" \
+	  --pearl-real-host "$(COLLECT_PEARL_REAL_HOST)" \
+	  --pearl-grass-host "$(COLLECT_PEARL_GRASS_HOST)" \
+	  --remote-root "$(COLLECT_REMOTE_ROOT)" \
+	  --output-root "$(COLLECT_OUTPUT_ROOT)" $(COLLECT_ARGS)
+
+collect-logs-charles:
+	python3 "$(PEARL_ROOT)/scripts/fetch_collected_logs.py" \
+	  --site charles --shore-ip "$(SHORE_IP)" \
+	  --drone-host "$(COLLECT_DRONE_HOST)" \
+	  --pearl-real-host "$(COLLECT_PEARL_REAL_HOST)" \
+	  --pearl-grass-host "$(COLLECT_PEARL_GRASS_HOST)" \
+	  --remote-root "$(COLLECT_REMOTE_ROOT)" \
+	  --output-root "$(COLLECT_OUTPUT_ROOT)" $(COLLECT_ARGS)
+
+# SIM is entirely local: preserve the matching UAV/PEARL/shoreside MOOS logs
+# and the latest owned SITL launcher log after the simulation has stopped.
+collect-logs-sim:
+	python3 "$(PEARL_ROOT)/scripts/collect_sim_logs.py" \
+	  --mission-dir "$(MISSION_DIR)" \
+	  --output-root "$(COLLECT_SIM_OUTPUT_ROOT)" $(COLLECT_SIM_ARGS)
 
 # Destructive operations are explicit, never prerequisites of launch targets.
 clean:

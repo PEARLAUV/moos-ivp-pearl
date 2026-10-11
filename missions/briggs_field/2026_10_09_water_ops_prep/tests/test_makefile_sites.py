@@ -155,6 +155,24 @@ class MakefileSiteTest(unittest.TestCase):
         for target, command in (("clean", "./clean.sh"), ("kill", "ktm")):
             output = run_make(MISSION, "-n", target).stdout
             self.assertIn(command, output)
+        logs = run_make(MISSION, "-n", "logs").stdout
+        self.assertIn("scripts/collect_mission_logs.py", logs)
+        self.assertIn('--node "auto"', logs)
+        self.assertIn('--ap-protocol "serial"', logs)
+        self.assertIn(PIXHAWK_IF00, logs)
+        self.assertNotIn("ssh ", logs)
+        for site in SITES:
+            collect = run_make(MISSION, "-n", f"collect-logs-{site}").stdout
+            self.assertIn("scripts/fetch_collected_logs.py", collect)
+            self.assertIn(f"--site {site}", collect)
+            self.assertIn('--drone-host "pi@100.112.119.114"', collect)
+            self.assertIn('--pearl-real-host "pearl@100.113.99.58"', collect)
+            self.assertIn('--pearl-grass-host "pearl@100.71.137.47"', collect)
+            self.assertIn("field_logs/fetched", collect)
+        collect_sim = run_make(MISSION, "-n", "collect-logs-sim").stdout
+        self.assertIn("scripts/collect_sim_logs.py", collect_sim)
+        self.assertIn("field_logs/sim", collect_sim)
+        self.assertNotIn("--drone-host", collect_sim)
         for site in SITES:
             for node in (*NODES, "sim"):
                 args = self.recipe(node, site)
@@ -179,6 +197,9 @@ class MakefileSiteTest(unittest.TestCase):
         output = run_make(MISSION).stdout
         self.assertIn("Run locally", output)
         self.assertIn("generate only", output)
+        self.assertIn("logs: after shutdown", output)
+        self.assertIn("collect-logs-briggs/charles", output)
+        self.assertIn("collect-logs-sim", output)
 
     def test_modes_models_and_all_tailnet_links(self):
         for site in SITES:

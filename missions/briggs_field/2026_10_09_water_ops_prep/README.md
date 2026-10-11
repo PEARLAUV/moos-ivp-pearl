@@ -128,6 +128,99 @@ for whole-mission orphan recovery. It does not stop unrelated VNC desktops.
 Preview with `make -n clean` / `make -n kill`. Use `clean` only after shutdown;
 it deletes logs/targets, not applications or containers.
 
+### Post-mission local artifact collection
+
+After stopping the local mission, run:
+
+```bash
+make logs
+```
+
+`make logs` identifies the local physical node from the configured Tailnet IP,
+selects its newest MOOS log directory, and creates a timestamped directory under
+`field_logs/`. Each result contains `MANIFEST.json` and `SHA256SUMS`; collection
+uses a staging directory and marks retained partial results `complete: false`.
+Use `LOG_NODE=shoreside|pearl-real|pearl-grass|drone` only when automatic node
+identification is unavailable, and `LOG_DIRECTORY=LOG_...` to override newest-log
+selection. `LOG_OUTPUT_ROOT`, `LOG_VIDEO_ROOT`, `LOG_AP_PROTOCOL`,
+`LOG_AP_ENDPOINT`, and `LOG_ARGS` are also overridable.
+
+Artifact content is node-specific:
+
+- Shoreside and GRASS PEARL: the latest local MOOS log.
+- REAL PEARL: the latest MOOS log. The currently deployed Jetson D455 WebRTC
+  stack explicitly does **not** record, so collection also writes
+  `jetson-video/UNAVAILABLE.txt`, marks the result incomplete, and exits nonzero.
+  A future task-scoped Jetson recorder must publish/provide an authoritative path
+  before this requirement can be completed.
+- Drone: the latest MOOS log, both task-scoped `fpv` and `nadir` camera trees,
+  the newest Pixhawk DataFlash log, and a complete post-flight parameter export.
+  Video must already report `VIDEO_RECORD_STATE=STOPPED`, and both stream
+  directories must be nonempty.
+
+The DataFlash and parameter files do not already exist on the drone filesystem:
+they remain on the Pixhawk until a MAVLink client requests them. The collector
+therefore implements `LOG_REQUEST_LIST`/`LOG_REQUEST_DATA` and
+`PARAM_REQUEST_LIST`/`PARAM_REQUEST_READ`; simply copying MOOS/video directories
+would omit those artifacts. Drone collection requires the mission to be stopped,
+refuses a running `pArduBridge`, exclusively opens Pixhawk `if00`, and admits only
+a freshly observed disarmed, `ON_GROUND` flight controller. It sends no arm,
+mode, flight, parameter-set, reboot, or log-delete command. At 115200 baud a
+multi-megabyte DataFlash download can take several minutes. The independent
+`if02` QGC/mavp2p interface remains untouched.
+
+Verify a result with:
+
+```bash
+cd field_logs/<artifact-directory>
+sha256sum -c SHA256SUMS
+```
+
+After `make logs` has run on both vehicle hosts, fetch their newest bundles from
+**shoreside** with the target for the physical site:
+
+```bash
+make collect-logs-briggs
+make collect-logs-charles
+```
+
+These targets do not execute collection remotely. They use SSH only to select
+the newest site-appropriate bundle, transfer it with `rsync`, and independently
+verify every entry in each remote `SHA256SUMS` plus the manifest node identity.
+Both bundles are placed under one timestamped
+`field_logs/fetched/<timestamp>_remote-artifacts/` directory with a
+`FETCH_MANIFEST.json`. A transferred REAL-PEARL bundle may retain
+`source_complete: false` because of the documented Jetson gap; this produces a
+warning but does not mean the transfer failed.
+
+Defaults assume `pi@100.112.119.114` for the Landmark/drone computer,
+`pearl@100.71.137.47` for Briggs GRASS PEARL, and
+`pearl@100.113.99.58` for Charles REAL PEARL. The remote artifact root is
+`workspace/mit/pearl/moos-ivp-pearl/missions/briggs_field/2026_10_09_water_ops_prep/field_logs`
+relative to each SSH user's home. Override `COLLECT_DRONE_HOST`,
+`COLLECT_PEARL_GRASS_HOST`, `COLLECT_PEARL_REAL_HOST`, `COLLECT_REMOTE_ROOT`,
+`COLLECT_OUTPUT_ROOT`, or `COLLECT_ARGS` for a different deployment. Existing
+SSH host-key and authentication policy is preserved; the targets do not disable
+host-key checking or copy credentials.
+
+For a stopped local three-community simulation, use:
+
+```bash
+make collect-logs-sim
+```
+
+This requires closed logs and selects the newest UAV MOOS log plus PEARL and
+shoreside logs whose native `LOGSTART` values are within ten seconds. It also
+preserves the newest owned `LOG_sitl/moos-sitl-*.log` launcher log and a nonempty
+`LOG_params/` directory when present. The checksummed artifact is written under
+`field_logs/sim/`. Physical camera recordings and Pixhawk DataFlash retrieval do
+not apply to this local post-shutdown SIM target; the container's `/state` is
+temporary and is removed during owned SITL teardown.
+
+Run `make logs` on each physical node before any remote `make clean`; cleanup
+deletes the source MOOS logs. Run the site-specific collection target before
+deleting remote `field_logs`.
+
 ## Task-scoped UAV video recording
 
 Every REAL UAV launch runs `pVideoRecorder`. When recording support is enabled,
