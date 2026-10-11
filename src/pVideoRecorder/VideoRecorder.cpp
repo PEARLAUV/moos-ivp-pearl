@@ -119,7 +119,8 @@ VideoRecorder::VideoRecorder()
       m_logger_directory_var("LOGGER_DIRECTORY"), m_prefix("VIDEO_RECORD"), m_state("IDLE"),
       m_path_index(0), m_http_timeout(2.0), m_valid(true), m_logger_received(false),
       m_recording_id_received(true), m_cleanup_after_start_failure(false),
-      m_api_reachable(false), m_last_http_status(0), m_start_count(0), m_stop_count(0)
+      m_api_reachable(false), m_last_http_status(0), m_start_count(0), m_stop_count(0),
+      m_recording_sequence(0)
 {}
 
 bool VideoRecorder::OnStartUp()
@@ -182,7 +183,11 @@ bool VideoRecorder::OnStartUp()
       handled = setNonWhiteVarOnString(m_logger_directory_var, value);
     else if (key == "recording_id_var")
       handled = setNonWhiteVarOnString(m_recording_id_var, value);
-    else if (key == "status_prefix")
+    else if (key == "recording_id_prefix") {
+      handled = validDirectoryName(value) && tolower(value) != "none";
+      if (handled)
+        m_recording_id_prefix = value;
+    } else if (key == "status_prefix")
       handled = setNonWhiteVarOnString(m_prefix, value);
     else if (key == "http_timeout")
       handled = setPositiveDouble(m_http_timeout, value);
@@ -213,6 +218,12 @@ bool VideoRecorder::OnStartUp()
     m_record_host = m_api_host;
   if (m_record_host.empty() || m_record_host.find_first_of(" \t\r\n,") != string::npos) {
     const string detail = "record_host must be a nonempty host name without whitespace or commas";
+    reportConfigWarning(detail);
+    config_errors.push_back(detail);
+    m_valid = false;
+  }
+  if (!m_recording_id_var.empty() && !m_recording_id_prefix.empty()) {
+    const string detail = "recording_id_var and recording_id_prefix are mutually exclusive";
     reportConfigWarning(detail);
     config_errors.push_back(detail);
     m_valid = false;
@@ -563,6 +574,13 @@ bool VideoRecorder::prepareRecordingDirectory(string &error)
     }
     m_recording_id_latched = m_recording_id;
     m_record_directory += "/" + m_recording_id_latched;
+  } else if (!m_recording_id_prefix.empty()) {
+    ++m_recording_sequence;
+    ostringstream generated_id;
+    generated_id << m_recording_id_prefix << "-" << setfill('0') << setw(3)
+                 << m_recording_sequence;
+    m_recording_id_latched = generated_id.str();
+    m_record_directory += "/" + m_recording_id_latched;
   }
   Notify(m_prefix + "_LOG_DIRECTORY", m_log_directory_name);
   Notify(m_prefix + "_HOST", m_record_host);
@@ -870,6 +888,8 @@ bool VideoRecorder::buildReport()
   m_msgs << "  Logger variable:  " << m_logger_directory_var << endl;
   m_msgs << "  Recording ID var: "
          << (m_recording_id_var.empty() ? "disabled" : m_recording_id_var) << endl;
+  m_msgs << "  Auto ID prefix:   "
+         << (m_recording_id_prefix.empty() ? "disabled" : m_recording_id_prefix) << endl;
   m_msgs << "  HTTP timeout:     " << doubleToStringX(m_http_timeout, 2) << endl;
   m_msgs << "  Authentication:   " << (m_api_user.empty() ? "none" : m_api_user) << endl << endl;
 

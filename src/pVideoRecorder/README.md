@@ -5,10 +5,10 @@ Control API. It performs no video decode, encode, or file I/O. A mission decides
 when to post `START` and `STOP`; application startup alone never starts recording.
 
 Each recording is associated with the local `pLogger` directory. An optional
-recording ID (for example, an immutable task ID) adds another directory level,
-so repeated tasks in one MOOS run do not share an archive directory. When
-MediaMTX is remote, `record_root` and all published recording paths refer to that
-remote host.
+external recording ID (for example, an immutable task ID) or automatically
+sequenced ID adds another directory level, so repeated recordings in one MOOS
+run do not share an archive directory. When MediaMTX is remote, `record_root`
+and all published recording paths refer to that remote host.
 
 ## Configuration
 
@@ -22,9 +22,11 @@ ProcessConfig = pVideoRecorder
   record_root      = /data/mission-video
   segment_duration = 1m
 
-  // LOG directory plus optional per-recording identity.
+  // LOG directory plus optional per-recording identity. Configure either an
+  // external ID variable or an automatic sequence prefix, not both.
   logger_directory_var = LOGGER_DIRECTORY
   recording_id_var     = UAV_ROUTE_ACTIVE_ID
+  // recording_id_prefix = recording
 
   // LOGICAL_NAME:MEDIAMTX_PATH keeps archive camera names independent of
   // existing server path names. With no colon, both names are identical.
@@ -55,9 +57,14 @@ the API host and identifies where the published filesystem path lives.
 `record_root` must be absolute and writable by MediaMTX. Optional
 `segment_duration` accepts one positive MediaMTX duration such as `60s` or `1m`
 and is sent as `recordSegmentDuration` on START. Logical camera names, logger
-basenames, and recording IDs are restricted to letters, digits, dots,
-underscores, and hyphens. A configured recording ID equal to `none` is treated
-as unavailable.
+basenames, recording IDs, and automatic prefixes are restricted to letters,
+digits, dots, underscores, and hyphens. A configured recording ID equal to
+`none` is treated as unavailable.
+
+`recording_id_var` and `recording_id_prefix` are mutually exclusive. With
+`recording_id_prefix=recording`, successive START/STOP cycles in one application
+run use `recording-001`, `recording-002`, and so on. The sequence resets when
+`pVideoRecorder` restarts; a new mission normally has a new logger directory.
 
 An optional `activation=CAMERA:/absolute/command` copies that command into the
 mapped MediaMTX path's `runOnInit` setting on START and enables restart. STOP
@@ -79,8 +86,9 @@ VIDEO_RECORD_COMMAND=START
 VIDEO_RECORD_COMMAND=STOP
 ```
 
-`START` waits in `WAITING_LOGGER` until both `LOGGER_DIRECTORY` and the optional
-recording ID are available. It then PATCHes every path and enters `RECORDING`
+`START` waits in `WAITING_LOGGER` until `LOGGER_DIRECTORY` and any configured
+external recording ID are available. Automatic IDs are allocated when a new
+START is prepared. It then PATCHes every path and enters `RECORDING`
 only after every request returns 2xx. A partial start failure disables every
 configured path before reporting `ERROR`.
 

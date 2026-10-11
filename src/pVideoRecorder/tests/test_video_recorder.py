@@ -81,6 +81,21 @@ ProcessConfig = pVideoRecorder
   http_timeout = 1
 }}
 
+ProcessConfig = pVideoAutoRecorder
+{{
+  AppTick = 20
+  CommsTick = 20
+  api_url = 127.0.0.1:{self.server.server_port}
+  record_root = /data/manual-video
+  command_var = VIDEO_AUTO_COMMAND
+  logger_directory_var = AUTO_LOGGER_DIRECTORY
+  status_prefix = VIDEO_AUTO
+  recording_id_prefix = recording
+  path = nadir:drone_nadir
+  path = fpv:drone_fpv
+  http_timeout = 1
+}}
+
 ProcessConfig = uVideoStart
 {{
   AppTick = 20
@@ -121,6 +136,25 @@ ProcessConfig = uVideoStop
   paused = false
   reset_max = 0
   event = var=VIDEO_RECORD_COMMAND, val=STOP, time=0
+}}
+
+ProcessConfig = uAutoStart
+{{
+  AppTick = 20
+  CommsTick = 20
+  paused = false
+  reset_max = 0
+  event = var=AUTO_LOGGER_DIRECTORY, val=./LOG_manual_session, time=0
+  event = var=VIDEO_AUTO_COMMAND, val=START, time=0.2
+}}
+
+ProcessConfig = uAutoStop
+{{
+  AppTick = 20
+  CommsTick = 20
+  paused = false
+  reset_max = 0
+  event = var=VIDEO_AUTO_COMMAND, val=STOP, time=0
 }}
 """
         )
@@ -289,6 +323,40 @@ ProcessConfig = uVideoStop
         )
         self.launch_script("uVideoStop")
         self.query("VIDEO_RECORD_STATE=STOPPED", "VIDEO_RECORDING=0")
+
+    def test_auto_ids_separate_multiple_manual_recordings(self):
+        auto_recorder = subprocess.Popen(
+            [str(APP), str(self.mission), "pVideoAutoRecorder"],
+            stdout=self.output,
+            stderr=subprocess.STDOUT,
+        )
+        self.processes.append(auto_recorder)
+        self.query("VIDEO_AUTO_STATE=IDLE")
+
+        self.launch_script("uAutoStart")
+        self.query("VIDEO_AUTO_STATE=RECORDING", "VIDEO_AUTO_ID=recording-001")
+        first_start = self.requests()
+        self.assertEqual(len(first_start), 2, first_start)
+        self.assertTrue(
+            all(
+                "/LOG_manual_session/recording-001/" in request["body"]["recordPath"]
+                for request in first_start
+            )
+        )
+        self.assertTrue(all(request["authorization"] is None for request in first_start))
+
+        self.launch_script("uAutoStop")
+        self.query("VIDEO_AUTO_STATE=STOPPED")
+        self.launch_script("uAutoStart")
+        self.query("VIDEO_AUTO_STATE=RECORDING", "VIDEO_AUTO_ID=recording-002")
+        second_start = self.requests()[4:6]
+        self.assertEqual(len(second_start), 2, self.requests())
+        self.assertTrue(
+            all(
+                "/LOG_manual_session/recording-002/" in request["body"]["recordPath"]
+                for request in second_start
+            )
+        )
 
     def test_stop_from_idle_enforces_remote_stop(self):
         self.launch_script("uVideoStop")

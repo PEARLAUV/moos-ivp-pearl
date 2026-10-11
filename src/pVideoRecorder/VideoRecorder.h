@@ -74,6 +74,7 @@ private:
   std::string m_command_var;
   std::string m_logger_directory_var;
   std::string m_recording_id_var;
+  std::string m_recording_id_prefix;
   std::string m_prefix;
   std::string m_logger_directory;
   std::string m_recording_id;
@@ -96,6 +97,7 @@ private:
   int m_last_http_status;
   unsigned int m_start_count;
   unsigned int m_stop_count;
+  unsigned int m_recording_sequence;
 };
 
 #endif
