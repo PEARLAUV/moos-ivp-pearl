@@ -60,6 +60,9 @@ ProcessConfig = pShare
   output = src_name=ACK_TX_UAV, dest_name=ACK_MESSAGE, route=$(UAV_IP):$(UAV_PSHARE)
   output = src_name=MEDIATED_TX_PEARL, dest_name=MEDIATED_MESSAGE, route=$(PEARL_IP):$(PEARL_PSHARE)
   output = src_name=ACK_TX_PEARL, dest_name=ACK_MESSAGE, route=$(PEARL_IP):$(PEARL_PSHARE)
+  // Optional operator recovery/override command. Normal START/STOP is generated
+  // locally by the UAV task/landing FSM and does not depend on shoreside delivery.
+  output = src_name=VIDEO_RECORD_COMMAND, route=$(UAV_IP):$(UAV_PSHARE)
 }
 
 //----------------------------------------------------

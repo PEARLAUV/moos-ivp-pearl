@@ -23,6 +23,9 @@ ProcessConfig = ANTLER
   Run = pShare         @ NewConsole = false
   Run = pHostInfo      @ NewConsole = false
   Run = pLogger        @ NewConsole = false
+#ifdef VIDEO_RECORDING true
+  Run = pVideoRecorder @ NewConsole = false
+#endif
   Run = pNodeReporter  @ NewConsole = false
   Run = uFldNodeBroker @ NewConsole = false
   Run = uFldMessageHandler @ NewConsole = false
@@ -161,6 +164,33 @@ ProcessConfig = pLogger
 }
 
 //----------------------------------------------------
+#ifdef VIDEO_RECORDING true
+ProcessConfig = pVideoRecorder
+{
+  AppTick   = 4
+  CommsTick = 4
+
+  // MediaMTX performs all file I/O on the UAV. This app only controls its API.
+  // The UAV FSM starts it on task admission. It stops after a confirmed nominal
+  // landing or grounded pre-takeoff abort, but continues in OFFNOMINAL.
+  // The API is trusted on the private network and does not require credentials.
+  api_url           = $(VIDEO_API_URL)
+  record_root       = $(VIDEO_RECORD_ROOT)
+  recording_id_var  = UAV_ROUTE_ACTIVE_ID
+  segment_duration  = 1m
+  http_timeout      = 5
+
+  // Logical camera names are independent of the existing MediaMTX path names:
+  // fpv records MediaMTX oak, and nadir records MediaMTX lores. This preserves
+  // the board configuration while giving archives stable camera names.
+  path = fpv:oak
+  path = nadir:lores
+  activation = fpv:/opt/oak-stream/run-on-demand
+  activation = nadir:/opt/landmark-camera-tap/bin/run-lores-on-demand
+}
+#endif
+
+//----------------------------------------------------
 ProcessConfig = pNodeReporter
 {
   AppTick   = 4
@@ -257,6 +287,24 @@ ProcessConfig = uFldNodeBroker
   bridge = src=UAV_BATTERY_VOLTAGE
   bridge = src=UAV_BATTERY_DATA_VALID
   bridge = src=UAV_BATTERY_DATA_AGE
+#ifdef VIDEO_RECORDING true
+  bridge = src=VIDEO_RECORD_STATE
+  bridge = src=VIDEO_RECORDING
+  bridge = src=VIDEO_RECORD_COMMAND_RESULT
+  bridge = src=VIDEO_RECORD_LOG_DIRECTORY
+  bridge = src=VIDEO_RECORD_ID
+  bridge = src=VIDEO_RECORD_HOST
+  bridge = src=VIDEO_RECORD_DIRECTORY
+  bridge = src=VIDEO_RECORD_LOCATION
+  bridge = src=VIDEO_RECORD_STREAMS
+  bridge = src=VIDEO_RECORD_SEGMENT_DURATION
+  bridge = src=VIDEO_RECORD_API_URL
+  bridge = src=VIDEO_RECORD_API_REACHABLE
+  bridge = src=VIDEO_RECORD_LAST_HTTP_STATUS
+  bridge = src=VIDEO_RECORD_LAST_ERROR
+  bridge = src=VIDEO_RECORD_START_COUNT
+  bridge = src=VIDEO_RECORD_STOP_COUNT
+#endif
   // Local uChecks results are unprefixed; preserve their UAV names on shore.
   bridge = src=TAKEOFF_PRECHECK_GPS, alias=UAV_TAKEOFF_PRECHECK_GPS
   bridge = src=TAKEOFF_PRECHECK_GPS_STATE, alias=UAV_TAKEOFF_PRECHECK_GPS_STATE

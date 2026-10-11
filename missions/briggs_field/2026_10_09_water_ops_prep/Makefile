@@ -4,9 +4,10 @@
 # Default make prints help; real applications start only on an explicit target.
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
-.PHONY: help clean kill shoreside-briggs pearl-briggs drone-briggs shoreside-charles pearl-charles drone-charles sim-briggs sim-charles
+.PHONY: help clean kill logs shoreside-briggs pearl-briggs drone-briggs shoreside-charles pearl-charles drone-charles sim-briggs sim-charles
 
 MISSION_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+PEARL_ROOT := $(abspath $(MISSION_DIR)/../../..)
 MODEL ?= x500
 SHORE_IP ?= 100.88.214.50
 DRONE_IP ?= 100.112.119.114
@@ -39,6 +40,16 @@ DRONE_ARGS ?=
 SIM_ARGS ?=
 SIM_WARP ?= 1
 
+# Post-mission, local-node artifact collection. LOG_NODE normally resolves from
+# the configured Tailnet addresses; override it only for diagnostics/tests.
+LOG_NODE ?= auto
+LOG_OUTPUT_ROOT ?= $(MISSION_DIR)field_logs
+LOG_DIRECTORY ?=
+LOG_VIDEO_ROOT ?= /var/lib/landmark-recorder/mission-video
+LOG_AP_PROTOCOL ?= serial
+LOG_AP_ENDPOINT ?= serial/by-id/usb-ArduPilot_Pixhawk6X_200023000E51333531343838-if00:115200
+LOG_ARGS ?=
+
 help:
 	@printf '%s\n' 'Run locally on the corresponding node host:' \
 	  '  shoreside-briggs  pearl-briggs (GRASS)  drone-briggs' \
@@ -47,7 +58,21 @@ help:
 	  'Local simulation: sim-briggs / sim-charles (SIM_WARP=$(SIM_WARP)).' \
 	  'Preview: make -n TARGET; generate only: make TARGET LAUNCH_ARGS=--just_make' \
 	  'Return/rally markers are provisional; validate before task commit.' \
+	  'logs: after shutdown, assemble the latest local-node artifacts with SHA-256 sums.' \
 	  'clean: removes mission logs/targets; kill: host-wide ktm + owned SITL/VNC cleanup.'
+
+# Read-only collection is explicit and never a launch prerequisite. The drone
+# collector refuses a running pArduBridge and uses grounded/disarmed native
+# evidence before requesting parameters or the latest DataFlash log.
+logs:
+	python3 "$(PEARL_ROOT)/scripts/collect_mission_logs.py" \
+	  --mission-dir "$(MISSION_DIR)" --node "$(LOG_NODE)" \
+	  --output-root "$(LOG_OUTPUT_ROOT)" \
+	  --shore-ip "$(SHORE_IP)" --drone-ip "$(DRONE_IP)" \
+	  --pearl-real-ip "$(PEARL_REAL_IP)" --pearl-grass-ip "$(PEARL_GRASS_IP)" \
+	  --video-root "$(LOG_VIDEO_ROOT)" \
+	  --ap-protocol "$(LOG_AP_PROTOCOL)" --ap-endpoint "$(LOG_AP_ENDPOINT)" \
+	  --log-directory "$(LOG_DIRECTORY)" $(LOG_ARGS)
 
 # Destructive operations are explicit, never prerequisites of launch targets.
 clean:
@@ -55,9 +80,9 @@ clean:
 
 # ktm may terminate unrelated MOOS communities on the same host.
 kill:
-	cd "$(MISSION_DIR)" && { ./launch_sitl.sh --cleanup-ui; ui_status=$$?; \
-	  ktm; moos_status=$$?; ./launch_sitl.sh --cleanup-owned; sim_status=$$?; \
-	  test "$$ui_status" -eq 0 && test "$$moos_status" -eq 0 && test "$$sim_status" -eq 0; }
+	cd "$(MISSION_DIR)" && { ./launch_sitl.sh --cleanup-ui; _ui_status=$$?; \
+	  ktm; _moos_status=$$?; ./launch_sitl.sh --cleanup-owned; _sim_status=$$?; \
+	  test "$$_ui_status" -eq 0 && test "$$_moos_status" -eq 0 && test "$$_sim_status" -eq 0; }
 
 shoreside-briggs:
 	cd "$(MISSION_DIR)" && ./launch_shoreside.sh --mode=REAL --site=briggs \

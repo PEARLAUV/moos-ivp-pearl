@@ -128,6 +128,24 @@ for whole-mission orphan recovery. It does not stop unrelated VNC desktops.
 Preview with `make -n clean` / `make -n kill`. Use `clean` only after shutdown;
 it deletes logs/targets, not applications or containers.
 
+## Task-scoped UAV video recording
+
+Every REAL UAV launch runs `pVideoRecorder`. When recording support is enabled,
+assigning a UAV task starts the `fpv` and `nadir` recordings. Recording continues
+through recovery and stops after confirmed nominal landing (or a grounded
+pre-takeoff abort). It deliberately continues after an off-nominal landing until
+an operator sends `VIDEO_RECORD_COMMAND=STOP`. Multiple tasks use separate
+`<LOGGER_DIRECTORY>/<UAV_ROUTE_ACTIVE_ID>/` folders.
+
+SITL leaves physical-UAV recording control disabled unless explicitly enabled
+with `--video-recording`, for example
+`make sim-briggs SIM_ARGS=--video-recording`. Video never traverses MOOS. The
+recording host, task ID, and absolute path are published in the UAV MOOSDB and
+bridged to shoreside. Manual `VIDEO_RECORD_COMMAND` remains available only for
+recovery/override. See [VIDEO_RECORDING.md](VIDEO_RECORDING.md) for lifecycle,
+paths, API access, status variables, one-minute fMP4 segments, and retrieval
+cautions.
+
 ## Shared route tasking
 
 Draw waypoints with the **route** left-click context. **TASK-PEARL** and

@@ -70,6 +70,8 @@ TARGET_RANGE="12"
 YAW_ALIGNMENT="true"
 AP_URL=""
 AP_PROTOCOL=""
+VIDEO_RECORDING="false"
+VIDEO_ARGS=()
 PARAM_ARGS=()
 
 SHORE_MPORT="9000"
@@ -115,6 +117,10 @@ for ARGI; do
     echo "  --mission-params=<PATH|none>  Optional UAV mission profile"
     echo "  --upload-params               REAL: guarded upload before UAV MOOS"
     echo "  --param-system-id=<1> --param-component-id=<1> Native FC identity"
+    echo "  --video-recording          Enable physical-UAV recording control in SITL"
+    echo "  --no-video-recording       Disable it (default)"
+    echo "  --video-api=<HOST:PORT>    Remote MediaMTX API endpoint"
+    echo "  --video-record-root=<PATH> Remote MediaMTX recording root"
     echo
     echo "Ports:"
     echo "  --shore_mport=<9000>          Shoreside MOOSDB port"
@@ -169,6 +175,14 @@ for ARGI; do
           "${ARGI}" == --mission-params=* || "${ARGI}" == --upload-params ||
           "${ARGI}" == --param-system-id=* || "${ARGI}" == --param-component-id=* ]]; then
     PARAM_ARGS+=("$ARGI")
+  elif [[ "${ARGI}" == --video-recording ]]; then
+    VIDEO_RECORDING="true"
+    VIDEO_ARGS+=("$ARGI")
+  elif [[ "${ARGI}" == --no-video-recording ]]; then
+    VIDEO_RECORDING="false"
+    VIDEO_ARGS+=("$ARGI")
+  elif [[ "${ARGI}" == --video-api=* || "${ARGI}" == --video-record-root=* ]]; then
+    VIDEO_ARGS+=("$ARGI")
   elif [[ "${ARGI}" == --shore_mport=* ]]; then
     SHORE_MPORT="${ARGI#*=}"
   elif [[ "${ARGI}" == --uav_mport=* ]]; then
@@ -258,6 +272,7 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "PEARL_PSHARE =      [${PEARL_PSHARE}]"
   echo "MIN_STATE_TIME =    [${MIN_STATE_TIME}]"
   echo "YAW_ALIGNMENT =     [${YAW_ALIGNMENT}]"
+  echo "VIDEO_RECORDING =   [${VIDEO_RECORDING}]"
   echo -n "Hit any key to continue launch "
   read -r _
 fi
@@ -278,7 +293,7 @@ if [[ "$JUST_MAKE" != yes ]]; then
   export SITL_ACTIVE_PROJECT_FILE
   CLEANUP_ACTIVE="yes"
 fi
-UARGS=(--auto "$TIME_WARP" --mode="$UAV_MODE" --site="$SITE" "${PARAM_ARGS[@]}")
+UARGS=(--auto "$TIME_WARP" --mode="$UAV_MODE" --site="$SITE" "${PARAM_ARGS[@]}" "${VIDEO_ARGS[@]}")
 UARGS+=(--mport="$UAV_MPORT" --pshare="$UAV_PSHARE")
 UARGS+=(--shore_pshare="$SHORE_PSHARE")
 UARGS+=(--pearl_ip=localhost --pearl_pshare="$PEARL_PSHARE")

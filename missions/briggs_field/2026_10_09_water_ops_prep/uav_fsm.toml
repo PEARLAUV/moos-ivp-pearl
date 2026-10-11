@@ -56,6 +56,9 @@ route_execute = false
 route_clear = false
 # Clear both Helm execution and the buffer\'s immutable-task ownership.
 route_buffer_command = { initial = "action=clear", initialize = false }
+# When pVideoRecorder is enabled, task admission starts a task-scoped recording.
+# Grounded exits stop it; the recorder is absent when recording is disabled.
+video_record_command = { initial = "STOP", initialize = false }
 uav_task_active = false
 uav_task_cancel = false
 secondary_arrived = false
@@ -71,7 +74,7 @@ initial_layout = { left = 0, top = 514 }
 [states.idle]
 label = "Idle on deck"
 layout = { left = 120, top = 500, width = 200 }
-entry_effects = { sim_uav_on_ship = true, moos_manual_override = true, recover = false, landing_cancel = false, return = false, uav_task_active = false, route_execute = false, route_deploy = false, route_buffer_command = "action=clear" }
+entry_effects = { sim_uav_on_ship = true, moos_manual_override = true, recover = false, landing_cancel = false, return = false, uav_task_active = false, route_execute = false, route_deploy = false, route_buffer_command = "action=clear", video_record_command = "STOP" }
 
 [states.idle.transitions.begin_takeoff_operations]
 to = "takeoff_operations"
@@ -84,7 +87,7 @@ layout = { left = 400, top = 280, width = 250 }
 initial = "establishing_takeoff_readiness"
 diagram = true
 entry_epoch = true
-entry_effects = { task_execute = false, moos_manual_override = false, uav_task_cancel = false, landing_cancel = false }
+entry_effects = { task_execute = false, moos_manual_override = false, uav_task_cancel = false, landing_cancel = false, video_record_command = "START" }
 
 [states.takeoff_operations.sinks.completed_successfully]
 label = "Completed"
@@ -351,6 +354,8 @@ when = "(secondary_arrived==true) && check_result(landing_airborne_checks, succe
 label = "Loiter\nestablished"
 
 [states.offnominal]
+# Keep recording after off-nominal landing for post-landing investigation.
+# The operator must issue VIDEO_RECORD_COMMAND=STOP when capture is complete.
 entry_effects = { moos_manual_override = true, sim_uav_on_ship = false, uav_task_active = false }
 label = "Off-nominal landing\nTakeoff inhibited"
 layout = { left = 400, top = 900, width = 250 }

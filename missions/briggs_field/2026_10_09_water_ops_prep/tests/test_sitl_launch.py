@@ -232,12 +232,16 @@ class SITLLaunchTest(unittest.TestCase):
                 path.chmod(0o755)
             result = subprocess.run(
                 ["bash", str(root / "launch.sh"), "--just_make", "--model=quad-test_2",
-                 "--drone-params=none"], capture_output=True, text=True, check=False)
+                 "--drone-params=none", "--video-recording", "--no-yaw-alignment",
+                 "--video-api=100.112.119.114:9997"],
+                capture_output=True, text=True, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             uav = json.loads((root / "launch_uav.json").read_text())
             self.assertIn("--model=quad-test_2", uav)
             self.assertIn("--drone-params=none", uav)
+            self.assertIn("--video-recording", uav)
             self.assertIn("--no-yaw-alignment", uav)
+            self.assertIn("--video-api=100.112.119.114:9997", uav)
             for name in ("launch_pearl.json", "launch_shoreside.json"):
                 args = json.loads((root / name).read_text())
                 self.assertFalse(any(arg.startswith("--model=") for arg in args))

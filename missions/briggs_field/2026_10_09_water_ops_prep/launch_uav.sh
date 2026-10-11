@@ -54,6 +54,13 @@ UPLOAD_PARAMS="no"
 PARAM_SYSTEM_ID=1
 PARAM_COMPONENT_ID=1
 
+# REAL always runs pVideoRecorder. When enabled, the UAV task lifecycle starts
+# a task-scoped recording and stops it after confirmed landing. SITL may opt in
+# to control the same physical UAV recorder over Tailscale.
+VIDEO_RECORDING="auto"
+VIDEO_API_URL="100.112.119.114:9997"
+VIDEO_RECORD_ROOT="/var/lib/landmark-recorder/mission-video"
+
 #------------------------------------------------------------
 #  Part 3: Parse command-line arguments.
 #------------------------------------------------------------
@@ -91,6 +98,11 @@ for ARGI; do
     echo "  --yaw-alignment            Require target-relative yaw alignment (default)"
     echo "  --no-yaw-alignment         Explicitly bypass target-relative yaw alignment"
     echo
+    echo "Video recording (task-driven START; stop after confirmed landing):"
+    echo "  --video-recording          Enable in SITL (always enabled in REAL)"
+    echo "  --no-video-recording       Disable in SITL; rejected in REAL"
+    echo "  --video-api=<HOST:PORT>    MediaMTX API (default: 100.112.119.114:9997)"
+    echo "  --video-record-root=<PATH> Remote MediaMTX recording root"
     exit 0
   elif [[ "${ARGI}" =~ ^[0-9]+$ && "$TIME_WARP" = 1 ]]; then
     if [ "$ARGI" -lt 1 ]; then
@@ -153,6 +165,14 @@ for ARGI; do
     YAW_ALIGNMENT="true"
   elif [[ "${ARGI}" == --no-yaw-alignment ]]; then
     YAW_ALIGNMENT="false"
+  elif [[ "${ARGI}" == --video-recording ]]; then
+    VIDEO_RECORDING="true"
+  elif [[ "${ARGI}" == --no-video-recording ]]; then
+    VIDEO_RECORDING="false"
+  elif [[ "${ARGI}" == --video-api=* ]]; then
+    VIDEO_API_URL="${ARGI#*=}"
+  elif [[ "${ARGI}" == --video-record-root=* ]]; then
+    VIDEO_RECORD_ROOT="${ARGI#*=}"
   else
     echo "$ME: Bad Arg:[$ARGI]. Exit Code 1."
     exit 1
@@ -212,6 +232,33 @@ else
   exit 1
 fi
 
+if [[ "$VIDEO_RECORDING" == auto ]]; then
+  if [[ "$MODE" == REAL ]]; then
+    VIDEO_RECORDING="true"
+  else
+    VIDEO_RECORDING="false"
+  fi
+fi
+if [[ "$MODE" == REAL && "$VIDEO_RECORDING" != true ]]; then
+  echo "$ME: video recording support is required in REAL mode; omit --no-video-recording." >&2
+  exit 1
+fi
+if [[ ! "$VIDEO_API_URL" =~ ^([A-Za-z0-9._-]+|([0-9]{1,3}[.]){3}[0-9]{1,3}):[0-9]{1,5}$ ]] ||
+   (( 10#${VIDEO_API_URL##*:} < 1 || 10#${VIDEO_API_URL##*:} > 65535 )); then
+  echo "$ME: --video-api must be HOST:PORT without an http:// scheme." >&2
+  exit 1
+fi
+if [[ "$VIDEO_RECORD_ROOT" != /* || "$VIDEO_RECORD_ROOT" == *$'\n'* ]]; then
+  echo "$ME: --video-record-root must be an absolute remote path." >&2
+  exit 1
+fi
+if [[ "$VIDEO_RECORDING" == true && "$JUST_MAKE" != yes ]]; then
+  if ! command -v pVideoRecorder >/dev/null 2>&1; then
+    echo "$ME: pVideoRecorder is required but is not on PATH." >&2
+    exit 1
+  fi
+fi
+
 if [ -z "$AP_URL" ]; then
   if [ "$MODE" = "SITL" ]; then
     AP_URL="127.0.0.1:${SITL_PORT:-5760}"
@@ -263,6 +310,9 @@ if [ "$VERBOSE" = "yes" ]; then
   echo "DRONE_MODEL =       [${DRONE_MODEL}]"
   echo "PARAMETER_STACK =   [${ARDUPILOT_PARAM_ARGS[*]}]"
   echo "UPLOAD_PARAMS =     [${UPLOAD_PARAMS}]"
+  echo "VIDEO_RECORDING =   [${VIDEO_RECORDING}]"
+  echo "VIDEO_API_URL =     [${VIDEO_API_URL}]"
+  echo "VIDEO_RECORD_ROOT = [${VIDEO_RECORD_ROOT}]"
 fi
 
 #------------------------------------------------------------
@@ -288,6 +338,8 @@ nsplug meta_uav.moos "targ_${VNAME}.moos" "${NSFLAGS[@]}" \
   MIN_STATE_TIME="$MIN_STATE_TIME" YAW_ALIGNMENT="$YAW_ALIGNMENT" \
   XMODE="$MODE" IS_SIM="$IS_SIM" \
   SITL_ROUTER_PORT="$SITL_ROUTER_PORT" DECK_ALTITUDE="$DECK_ALTITUDE" TARGET_RANGE="$TARGET_RANGE" \
+  VIDEO_RECORDING="$VIDEO_RECORDING" VIDEO_API_URL="$VIDEO_API_URL" \
+  VIDEO_RECORD_ROOT="$VIDEO_RECORD_ROOT" \
   PEARL_LIB_DIR="$PEARL_ROOT/lib" || exit 1
 
 nsplug meta_uav.bhv "targ_${VNAME}.bhv" "${NSFLAGS[@]}" \
