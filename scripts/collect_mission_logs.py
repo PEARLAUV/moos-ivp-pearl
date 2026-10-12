@@ -22,6 +22,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -414,16 +416,104 @@ def alog_last_values(log_directory: Path, variables: set[str]) -> dict[str, str]
     return values
 
 
-def copy_drone_video(log_directory: Path, video_root: Path, destination: Path) -> dict:
-    variables = {"VIDEO_RECORD_STATE", "VIDEO_RECORD_DIRECTORY", "VIDEO_RECORD_ID"}
-    values = alog_last_values(log_directory, variables)
-    if values.get("VIDEO_RECORD_STATE") != "STOPPED":
+def mediamtx_path_names(api_url: str) -> set[str]:
+    try:
+        with urllib.request.urlopen(f"{api_url.rstrip('/')}/list", timeout=5) as response:
+            payload = json.load(response)
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        raise CollectionError(f"Unable to query MediaMTX recording paths: {exc}") from exc
+    return {str(item.get("name", "")) for item in payload.get("items", [])}
+
+
+def stop_recording_after_mission(mission: Path, api_url: str, evidence_path: Path) -> Path:
+    running = []
+    for name in ("MOOSDB", "pArduBridge", "pVideoRecorder"):
+        result = subprocess.run(["pgrep", "-x", name], capture_output=True, text=True,
+                                check=False)
+        if result.returncode == 0:
+            running.append(name)
+    if running:
         raise CollectionError(
-            "Latest drone recording is not confirmed STOPPED; send VIDEO_RECORD_COMMAND=STOP "
-            "and wait for VIDEO_RECORD_STATE=STOPPED before make logs")
+            "Refusing to stop recording while a local UAV mission is running: "
+            + ", ".join(running))
+
+    log_directory = latest_log_directory(mission, "drone", None)
+    values = alog_last_values(
+        log_directory, {"VIDEO_RECORD_STATE", "VIDEO_RECORD_DIRECTORY", "VIDEO_RECORD_ID"})
     recorded = values.get("VIDEO_RECORD_DIRECTORY")
     if not recorded:
         raise CollectionError("Latest drone MOOS log has no VIDEO_RECORD_DIRECTORY")
+
+    stopped = []
+    names = mediamtx_path_names(api_url)
+    for name in ("pearl-recorder-fpv", "pearl-recorder-nadir"):
+        if name not in names:
+            continue
+        request = urllib.request.Request(
+            f"{api_url.rstrip('/')}/delete/{name}", method="DELETE")
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                if response.status != 200:
+                    raise CollectionError(
+                        f"MediaMTX rejected deletion of {name}: HTTP {response.status}")
+        except (OSError, urllib.error.URLError) as exc:
+            raise CollectionError(f"Unable to stop {name}: {exc}") from exc
+        stopped.append(name)
+
+    remaining = sorted(name for name in mediamtx_path_names(api_url)
+                       if name.startswith("pearl-recorder-"))
+    if remaining:
+        raise CollectionError("Recording paths remain active: " + ", ".join(remaining))
+    evidence = {
+        "schema_version": 1,
+        "created_utc": utc_now(),
+        "host": socket.gethostname(),
+        "log_directory": log_directory.name,
+        "recording_directory": recorded,
+        "recording_id": values.get("VIDEO_RECORD_ID"),
+        "last_logged_state": values.get("VIDEO_RECORD_STATE"),
+        "api_url": api_url,
+        "stopped_paths": stopped,
+        "remaining_recorder_paths": remaining,
+    }
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = evidence_path.with_suffix(evidence_path.suffix + ".tmp")
+    temporary.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+    temporary.replace(evidence_path)
+    return evidence_path
+
+
+def copy_drone_video(
+        log_directory: Path, video_root: Path, destination: Path,
+        evidence_path: Path | None = None,
+        api_url: str = "http://127.0.0.1:9997/v3/config/paths") -> dict:
+    variables = {"VIDEO_RECORD_STATE", "VIDEO_RECORD_DIRECTORY", "VIDEO_RECORD_ID"}
+    values = alog_last_values(log_directory, variables)
+    recorded = values.get("VIDEO_RECORD_DIRECTORY")
+    if not recorded:
+        raise CollectionError("Latest drone MOOS log has no VIDEO_RECORD_DIRECTORY")
+    external_evidence = None
+    if values.get("VIDEO_RECORD_STATE") != "STOPPED":
+        if evidence_path is None:
+            raise CollectionError(
+                "Latest drone recording is not confirmed STOPPED; run make stop-recording "
+                "after the mission exits, then run make logs")
+        try:
+            external_evidence = json.loads(evidence_path.read_text())
+        except (OSError, ValueError) as exc:
+            raise CollectionError(
+                "Latest drone recording is not confirmed STOPPED; run make stop-recording "
+                "after the mission exits, then run make logs") from exc
+        if (external_evidence.get("schema_version") != 1 or
+                external_evidence.get("log_directory") != log_directory.name or
+                external_evidence.get("recording_directory") != recorded or
+                external_evidence.get("remaining_recorder_paths") != []):
+            raise CollectionError("External video-stop evidence does not match the latest log")
+        remaining = sorted(name for name in mediamtx_path_names(api_url)
+                           if name.startswith("pearl-recorder-"))
+        if remaining:
+            raise CollectionError("Recording paths remain active: " + ", ".join(remaining))
+        shutil.copy2(evidence_path, destination / "EXTERNAL_STOP_EVIDENCE.json")
     source = Path(recorded).resolve()
     root = video_root.resolve()
     try:
@@ -435,8 +525,11 @@ def copy_drone_video(log_directory: Path, video_root: Path, destination: Path) -
         if not camera_source.is_dir() or not any(path.is_file() for path in camera_source.rglob("*")):
             raise CollectionError(f"Required drone video stream is missing or empty: {camera_source}")
         shutil.copytree(camera_source, destination / camera, copy_function=shutil.copy2)
-    return {"recording_id": values.get("VIDEO_RECORD_ID"), "source": str(source),
-            "streams": ["fpv", "nadir"]}
+    result = {"recording_id": values.get("VIDEO_RECORD_ID"), "source": str(source),
+              "streams": ["fpv", "nadir"]}
+    if external_evidence is not None:
+        result["stop_evidence"] = "video/EXTERNAL_STOP_EVIDENCE.json"
+    return result
 
 
 def collect_ardupilot(destination: Path, protocol: str, endpoint: str,
@@ -528,6 +621,10 @@ def parse_args(argv=None):
     parser.add_argument("--ap-system-id", type=int, default=1)
     parser.add_argument("--ap-component-id", type=int, default=1)
     parser.add_argument("--ap-timeout", type=float, default=5.0)
+    parser.add_argument("--video-api-url",
+                        default="http://127.0.0.1:9997/v3/config/paths")
+    parser.add_argument("--video-stop-evidence", type=Path)
+    parser.add_argument("--stop-recording-only", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -543,6 +640,13 @@ def main(argv=None) -> int:
     try:
         if not mission.is_dir():
             raise CollectionError(f"Mission directory does not exist: {mission}")
+        evidence_path = (args.video_stop_evidence or
+                         mission / ".video-stop-evidence.json").resolve()
+        if args.stop_recording_only:
+            evidence = stop_recording_after_mission(
+                mission, args.video_api_url, evidence_path)
+            print(evidence)
+            return 0
         if not (1 <= args.ap_system_id <= 255 and 1 <= args.ap_component_id <= 255):
             raise CollectionError("Pixhawk system/component IDs must be 1..255")
         if not math.isfinite(args.ap_timeout) or not 0 < args.ap_timeout <= 30:
@@ -565,7 +669,8 @@ def main(argv=None) -> int:
             assert_drone_apps_stopped()
             (stage / "video").mkdir()
             manifest["video"] = copy_drone_video(
-                log_directory, args.video_root, stage / "video")
+                log_directory, args.video_root, stage / "video", evidence_path,
+                args.video_api_url)
             manifest["ardupilot"] = collect_ardupilot(
                 stage / "ardupilot", args.ap_protocol, args.ap_endpoint,
                 args.ap_system_id, args.ap_component_id, args.ap_timeout)
