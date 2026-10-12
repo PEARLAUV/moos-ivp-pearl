@@ -5,7 +5,7 @@
 # Default make prints help; real applications start only on an explicit target.
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
-.PHONY: help clean kill logs collect-logs-briggs collect-logs-charles collect-logs-sim shoreside-briggs pearl-briggs drone-briggs shoreside-charles pearl-charles drone-charles sim-briggs sim-charles
+.PHONY: help clean kill logs stop-recording collect-logs-briggs collect-logs-charles collect-logs-sim shoreside-briggs pearl-briggs drone-briggs shoreside-charles pearl-charles drone-charles sim-briggs sim-charles
 
 MISSION_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 PEARL_ROOT := $(abspath $(MISSION_DIR)/../../..)
@@ -59,6 +59,7 @@ LOG_VIDEO_ROOT ?= /var/lib/landmark-recorder/mission-video
 LOG_AP_PROTOCOL ?= serial
 LOG_AP_ENDPOINT ?= serial/by-id/usb-ArduPilot_Pixhawk6X_200023000E51333531343838-if00:115200
 LOG_ARGS ?=
+VIDEO_RECORD_API ?= http://127.0.0.1:9997/v3/config/paths
 
 # Shoreside retrieval of artifacts already assembled by `make logs` remotely.
 COLLECT_DRONE_HOST ?= pi@$(DRONE_IP)
@@ -81,6 +82,7 @@ help:
 	  'Preview: make -n TARGET; generate only: make TARGET LAUNCH_ARGS=--just_make' \
 	  'Return/rally markers are provisional; validate before task commit.' \
 	  'logs: after shutdown, assemble the latest local-node artifacts with SHA-256 sums.' \
+	  'stop-recording: on the stopped drone host, remove temporary recording paths.' \
 	  'collect-logs-briggs/charles: shoreside fetch of drone/PEARL artifacts.' \
 	  'collect-logs-sim: assemble the latest closed local three-community SIM logs.' \
 	  'clean: removes mission logs/targets; kill: host-wide ktm + owned SITL/VNC cleanup.'
@@ -97,6 +99,33 @@ logs:
 	  --video-root "$(LOG_VIDEO_ROOT)" \
 	  --ap-protocol "$(LOG_AP_PROTOCOL)" --ap-endpoint "$(LOG_AP_ENDPOINT)" \
 	  --log-directory "$(LOG_DIRECTORY)" $(LOG_ARGS)
+
+# Emergency/post-mission cleanup for a UAV mission that has already exited.
+# Refuse to bypass pVideoRecorder while any local UAV MOOS mission is running.
+stop-recording:
+	@set -eu; \
+	if pgrep -x MOOSDB >/dev/null || pgrep -x pArduBridge >/dev/null || \
+	   pgrep -x pVideoRecorder >/dev/null; then \
+	  echo 'Refusing to stop recording while a local UAV mission is running.' >&2; \
+	  exit 1; \
+	fi; \
+	api='$(VIDEO_RECORD_API)'; \
+	body="$$(curl -fsS --max-time 5 "$$api/list")"; \
+	changed=false; \
+	for path in pearl-recorder-fpv pearl-recorder-nadir; do \
+	  case "$$body" in \
+	    *\"name\":\"$$path\"*) \
+	      curl -fsS --max-time 10 -X DELETE "$$api/delete/$$path" >/dev/null; \
+	      echo "Stopped $$path"; \
+	      changed=true ;; \
+	  esac; \
+	done; \
+	sleep 1; \
+	body="$$(curl -fsS --max-time 5 "$$api/list")"; \
+	case "$$body" in \
+	  *pearl-recorder-*) echo 'Recording path remains active.' >&2; exit 1 ;; \
+	esac; \
+	if test "$$changed" = false; then echo 'Recording already stopped.'; fi
 
 # Fetch only: each remote node must have already completed `make logs`.
 collect-logs-briggs:
