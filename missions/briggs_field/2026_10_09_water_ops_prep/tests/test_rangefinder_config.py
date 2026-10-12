@@ -79,9 +79,11 @@ class RangefinderConfigTest(unittest.TestCase):
             self.assertEqual(values["PLND_RET_BEHAVE"], 1)
             self.assertEqual(values["PLND_EST_TYPE"], 1)
 
-    def test_telemetry_loss_timeout(self):
+    def test_telemetry_and_rc_loss_timeouts(self):
         for mode in ("REAL", "SITL"):
-            self.assertEqual(parameters(mode)["FS_GCS_TIMEOUT"], 8)
+            values = parameters(mode)
+            self.assertEqual(values["FS_GCS_TIMEOUT"], 8)
+            self.assertEqual(values["RC_FS_TIMEOUT"], 8)
 
     def test_approved_rtl_baseline_cone_and_landing(self):
         for mode in ("REAL", "SITL"):

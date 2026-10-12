@@ -22,7 +22,24 @@
 # Parameter: https://ardupilot.org/copter/docs/parameters.html#fs-gcs-timeout
 # Source: ArduCopter/Parameters.cpp and events.cpp in companion
 # ardupilot-sitl/ardupilot (reviewed Copter 4.7.1).
-FS_GCS_TIMEOUT    8
+FS_GCS_TIMEOUT    3
+
+# RC_FS_TIMEOUT -- RC receiver-loss failsafe delay, seconds.
+# Upstream metadata: "RC failsafe will trigger this many seconds after loss of
+# RC"; allowed range is 0.1..10.0 s. Eight seconds is operator-selected so a
+# one-second transmitter/receiver telemetry interruption does not immediately
+# activate the radio failsafe. ArduCopter radio.cpp compares elapsed time since
+# the last valid RC frame against this value before asserting the failsafe.
+# FS_THR_ENABLE still controls the resulting action and remains enabled; once
+# eight seconds elapse, its configured action may enter RTL. This does not alter
+# FS_THR_VALUE, repair an unreliable receiver/SBUS/power path, or delay GCS/MAVLink
+# loss, which is separately controlled by FS_GCS_TIMEOUT. An eight-second loss
+# window also delays automatic protection during a genuine transmitter failure,
+# so the RC path must still be range-tested and repaired.
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#rc-fs-timeout
+# Source: libraries/RC_Channel/RC_Channels_VarInfo.h and ArduCopter/radio.cpp in
+# companion ardupilot-sitl/ardupilot (reviewed Copter 4.7.1).
+RC_FS_TIMEOUT     8
 
 # RTL_ALT_M -- baseline minimum RTL return altitude, metres (Copter 4.7).
 # Upstream metadata: "The minimum alt above home the vehicle will climb to
