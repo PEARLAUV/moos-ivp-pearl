@@ -519,7 +519,7 @@ PLND_EST_TYPE     1
 # Does not require target acquisition to begin search descent. Loss policy and
 # sensor-height exceptions still apply, including the unhealthy-height bypass.
 # https://ardupilot.org/copter/docs/parameters.html#land-spd-high-ms
-LAND_SPD_HIGH_MS  1
+LAND_SPD_HIGH_MS  0.5
 
 # LAND_SPD_MS -- nominal final/lower-stage landing descent speed, metres/sec.
 # Upstream: "The descent speed for the final stage of landing in m/s".
@@ -535,7 +535,7 @@ LAND_SPD_HIGH_MS  1
 # is absent. Native landing detection, not this speed, disarms.
 # Legacy LAND_SPEED uses cm/s (40 here); this file uses the 4.7 metre/sec name.
 # https://ardupilot.org/copter/docs/parameters.html#land-spd-ms
-LAND_SPD_MS       0.4
+LAND_SPD_MS       0.3
 
 # LAND_ALT_LOW_M -- landing height for slowing toward LAND_SPD_MS, metres.
 # Upstream: "Altitude during Landing at which vehicle slows to LAND_SPD_MS";
