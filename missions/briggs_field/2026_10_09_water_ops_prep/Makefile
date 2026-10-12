@@ -1,6 +1,7 @@
 # Run each physical node target on its corresponding host. sim-* starts all
-# three nodes locally via launch.sh, with a new owned SITL instance. No SSH,
-# automatic REAL parameter upload, flight commands or pre-launch cleanup.
+# three nodes locally via launch.sh, with a new owned SITL instance. Physical
+# drone MODEL selection requests guarded model->REAL->mission upload before MOOS.
+# No SSH, flight commands or pre-launch cleanup; --just_make never uploads.
 # Default make prints help; real applications start only on an explicit target.
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
@@ -8,7 +9,16 @@
 
 MISSION_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 PEARL_ROOT := $(abspath $(MISSION_DIR)/../../..)
+# SIM keeps an x500 default; physical drone targets require an explicit choice.
 MODEL ?= x500
+ifneq ($(filter drone-briggs drone-charles,$(MAKECMDGOALS)),)
+ifneq ($(origin MODEL),command line)
+$(error Physical drone targets require an explicit MODEL: make drone-briggs MODEL=x500 or make drone-charles MODEL=x500)
+endif
+ifeq ($(strip $(MODEL)),)
+$(error MODEL must not be empty for physical drone targets)
+endif
+endif
 SHORE_IP ?= 100.88.214.50
 DRONE_IP ?= 100.112.119.114
 PEARL_REAL_IP ?= 100.113.99.58
@@ -30,9 +40,9 @@ BRIGGS_RALLY ?= 15.042299,-51.993939
 CHARLES_RETURN ?= 9.138278,2.997768
 CHARLES_RALLY ?= 7.783478,11.586484
 # Example: make shoreside-charles LAUNCH_ARGS=--just_make
-# Or preview without executing anything: make -n drone-briggs
-# REAL parameter upload remains a separate explicit DRONE_ARGS=--upload-params
-# choice; ordinary targets and --just_make do NOT upload any parameters.
+# Or preview without executing anything: make -n drone-briggs MODEL=x500
+# Physical drone targets include --upload-params for the full ordered stack.
+# MODEL=NAME explicitly requests this guarded upload; --just_make never uploads.
 LAUNCH_ARGS ?=
 SHORESIDE_ARGS ?=
 PEARL_ARGS ?=
@@ -64,7 +74,9 @@ help:
 	@printf '%s\n' 'Run locally on the corresponding node host:' \
 	  '  shoreside-briggs  pearl-briggs (GRASS)  drone-briggs' \
 	  '  shoreside-charles pearl-charles (REAL)  drone-charles' \
-	  'All other physical nodes use REAL; drone profiles use --model=$(MODEL).' \
+	  'All other physical nodes use REAL; drone targets REQUIRE command-line MODEL=NAME.' \
+	  'Example: make drone-briggs MODEL=x500 (or drone-charles MODEL=x500).' \
+	  'Physical drone targets upload/verify model -> REAL -> mission before MOOS.' \
 	  'Local simulation: sim-briggs / sim-charles (SIM_WARP=$(SIM_WARP)).' \
 	  'Preview: make -n TARGET; generate only: make TARGET LAUNCH_ARGS=--just_make' \
 	  'Return/rally markers are provisional; validate before task commit.' \
@@ -135,7 +147,7 @@ pearl-briggs:
 	  $(LAUNCH_ARGS) $(PEARL_ARGS)
 
 drone-briggs:
-	cd "$(MISSION_DIR)" && ./launch_uav.sh --mode=REAL --site=briggs --model="$(MODEL)" \
+	cd "$(MISSION_DIR)" && ./launch_uav.sh --mode=REAL --site=briggs --model="$(MODEL)" --upload-params \
 	  --ip="$(DRONE_IP)" --shore="$(SHORE_IP)" --pearl_ip="$(PEARL_GRASS_IP)" \
 	  --secondary_landing="$(BRIGGS_RALLY)" $(LAUNCH_ARGS) $(DRONE_ARGS)
 
@@ -152,7 +164,7 @@ pearl-charles:
 	  $(LAUNCH_ARGS) $(PEARL_ARGS)
 
 drone-charles:
-	cd "$(MISSION_DIR)" && ./launch_uav.sh --mode=REAL --site=charles --model="$(MODEL)" \
+	cd "$(MISSION_DIR)" && ./launch_uav.sh --mode=REAL --site=charles --model="$(MODEL)" --upload-params \
 	  --ip="$(DRONE_IP)" --shore="$(SHORE_IP)" --pearl_ip="$(PEARL_REAL_IP)" \
 	  --secondary_landing="$(CHARLES_RALLY)" $(LAUNCH_ARGS) $(DRONE_ARGS)
 

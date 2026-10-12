@@ -19,7 +19,8 @@ class PointDefaultsTest(unittest.TestCase):
         for path in MISSION.iterdir():
             if path.is_file() and path.suffix in {".sh", ".moos", ".bhv", ".parm", ".toml"}:
                 shutil.copy2(path, self.mission / path.name)
-        shutil.copytree(MISSION / "operations", self.mission / "operations")
+        for name in ("pearl_fsm", "uav_fsm"):
+            shutil.copytree(MISSION / name, self.mission / name)
         (self.root / "missions/uav_solo").mkdir()
         (self.root / "missions/uav_solo/briggs_test").symlink_to(ROOT / "missions/uav_solo/briggs_test")
         for name in ("scripts", "config"):

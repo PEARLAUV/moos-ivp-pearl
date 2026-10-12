@@ -17,10 +17,20 @@ Run **one target on its corresponding host**, from this mission directory:
 
 | Site | Shoreside host | PEARL host | Drone host |
 |---|---|---|---|
-| Briggs | `make shoreside-briggs` — REAL, `100.88.214.50` | `make pearl-briggs` — GRASS, `100.71.137.47` | `make drone-briggs` — REAL, `100.112.119.114` |
-| Charles | `make shoreside-charles` — REAL, `100.88.214.50` | `make pearl-charles` — REAL, `100.113.99.58` | `make drone-charles` — REAL, `100.112.119.114` |
+| Briggs | `make shoreside-briggs` — REAL, `100.88.214.50` | `make pearl-briggs` — GRASS, `100.71.137.47` | `make drone-briggs MODEL=x500` — REAL, `100.112.119.114` |
+| Charles | `make shoreside-charles` — REAL, `100.88.214.50` | `make pearl-charles` — REAL, `100.113.99.58` | `make drone-charles MODEL=x500` — REAL, `100.112.119.114` |
 
-Both drone targets pass **`--model=x500`**. Every target supplies its own
+Both physical drone targets **require a nonempty command-line `MODEL=NAME`**
+and pass it as `--model=NAME`. Omitting it, setting it empty, or inheriting it
+only from the environment fails before any launcher runs, including previews
+and `--just_make`. `DRONE_ARGS=--model=...` does not replace this requirement.
+Providing `MODEL` on either physical drone target also requests a guarded
+**model → REAL → mission** parameter upload before MOOS starts. Fresh native
+grounded/disarmed admission, independent readback and a `LOG_params/upload-*.json`
+audit are required; failed verification or a required manual reboot blocks
+launch. Readback does not prove sensor health, flight readiness or safety.
+`--just_make` and `make -n` never upload. SIM targets retain their `x500` default.
+Every target supplies its own
 advertised IP and the appropriate shore/peer addresses. These are local
 launch commands, **not SSH orchestration**. Bare `make` prints help, not a live
 launch. No aggregate target starts physical nodes together.
@@ -57,7 +67,7 @@ or issue a flight command. Shoreside return/rally editing remains available.
 Preview or generate only, without starting applications or writing parameters:
 
 ```bash
-make -n drone-briggs
+make -n drone-briggs MODEL=x500
 make shoreside-charles LAUNCH_ARGS=--just_make
 ```
 
@@ -65,8 +75,11 @@ Make variables `BRIGGS_START/RETURN/RALLY`, `CHARLES_START/RETURN/RALLY`,
 `MODEL` and the IP variables are overridable. Start and marker
 overrides are independent: override return/rally too if relocating a start.
 Use `LAUNCH_ARGS` for common flags and `SHORESIDE_ARGS`, `PEARL_ARGS`,
-`DRONE_ARGS` for node-specific options. Parameter upload remains **explicit**
-(`DRONE_ARGS=--upload-params` on REAL); ordinary targets never request it.
+`DRONE_ARGS` for node-specific options. The physical drone Make targets include
+`--upload-params` automatically when the required command-line `MODEL` is supplied.
+Standalone `launch_uav.sh --mode=REAL --model=NAME` still requires its separate
+`--upload-params` flag; merely selecting a model outside these Make targets does
+not apply hardware parameters.
 Do not regenerate a different site's targets over a running mission.
 
 The REAL drone launcher connects `pArduBridge` to the Pixhawk's stable USB
@@ -78,7 +91,7 @@ which changes when USB devices reconnect. The serial endpoint passed to
 override it explicitly, for example:
 
 ```bash
-make drone-briggs \
+make drone-briggs MODEL=x500 \
   DRONE_ARGS='--ap_url=serial/by-id/usb-ArduPilot_NEW_SERIAL-if00:115200'
 ```
 

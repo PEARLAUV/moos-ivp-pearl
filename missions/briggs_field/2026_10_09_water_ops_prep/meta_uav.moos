@@ -180,9 +180,10 @@ ProcessConfig = pVideoRecorder
   segment_duration  = 1m
   http_timeout      = 5
 
-  // Nadir records Landmark's full-resolution 1640x1232 ISP Output0 stream;
-  // lores remains a downscaled viewer preview. Temporary loopback proxy paths
-  // preserve stable source publishers and WebRTC readers.
+  // OAK exposes one 720p30 H.264 stream: the same encoded access units feed
+  // WebRTC and the fpv recording proxy. Nadir records Landmark's full-resolution
+  // 1640x1232 ISP Output0 stream; lores remains a viewer-only preview.
+  // Temporary loopback proxies preserve stable publishers and WebRTC readers.
   path = fpv:oak
   path = nadir:main
   record_proxy = fpv:pearl-recorder-fpv
@@ -608,6 +609,9 @@ ProcessConfig = uRouteClear
   event = var=UAV_TASK_CANCEL, val=true,  time=0
   event = var=ROUTE_DEPLOY,    val=false, time=0
   event = var=ROUTE_EXECUTE,   val=false, time=0
+  // A cleared or inactive Helm behavior does not emit its end flags, so revoke
+  // the staged-route readiness lease explicitly before accepting a replacement.
+  event = var=ROUTE_READY,     val=false, time=0
   // pRouteBuffer terminates the currently active session-named behavior.
   event = var=ROUTE_CLEAR,  val=false, time=0.75
 }

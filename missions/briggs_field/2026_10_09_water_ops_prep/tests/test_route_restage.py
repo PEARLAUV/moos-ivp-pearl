@@ -7,6 +7,7 @@ import signal
 import socket
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -19,8 +20,9 @@ class RouteRestageTest(unittest.TestCase):
     def test_second_route_ready_without_flight_control_handoff(self):
         source = (MISSION / "meta_uav.moos").read_text()
         route = re.search(r"ProcessConfig = pRouteBuffer\s*\{[^}]+\}", source)
-        if route is None:
-            self.fail("Missing route buffer configuration")
+        route_clear = re.search(r"ProcessConfig = uRouteClear\s*\{[^}]+\}", source)
+        if route is None or route_clear is None:
+            self.fail("Missing route buffer or route-clear configuration")
         self.assertNotIn("uRouteStageHelm", source)
         runtime = (MISSION / "uav_fsm/plug_uav_fsm_runtime.moos").read_text()
         with tempfile.TemporaryDirectory(prefix="route-restage-") as directory:
@@ -29,7 +31,12 @@ class RouteRestageTest(unittest.TestCase):
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]
             behavior = root / "route.bhv"
-            behavior.write_text((MISSION / "meta_uav.bhv").read_text())
+            subprocess.run(
+                [str(MOOS / "nsplug"), str(MISSION / "meta_uav.bhv"), str(behavior),
+                 "--strict", "--force", "-x", "SECONDARY_LANDING_X=10",
+                 "SECONDARY_LANDING_Y=15"],
+                check=True, capture_output=True, text=True,
+            )
             mission = root / "route.moos"
             mission.write_text(f"""ServerHost=localhost
 ServerPort={port}
@@ -43,6 +50,7 @@ ProcessConfig=ANTLER
   Run = {ROOT / 'bin/pRouteBuffer'} @ NewConsole=false ~ pRouteBuffer
   Run = {MOOS / 'pHelmIvP'} @ NewConsole=false
   Run = {ROOT / 'bin/pFSMRuntime'} @ NewConsole=false
+  Run = {MOOS / 'uTimerScript'} @ NewConsole=false ~ uRouteClear
 }}
 ProcessConfig=pHelmIvP
 {{
@@ -56,7 +64,8 @@ ProcessConfig=pHelmIvP
   Domain=speed:0:5:51
   Domain=altitude:0:30:61
 }}
-""" + route.group() + "\nProcessConfig=pFSMRuntime\n{\nAppTick=10\nCommsTick=10\n"
+""" + route.group() + "\n" + route_clear.group()
+                                     + "\nProcessConfig=pFSMRuntime\n{\nAppTick=10\nCommsTick=10\n"
                                      + runtime + "\n}\n")
             with (root / "antler.log").open("w") as log:
                 antler = subprocess.Popen([str(MOOS / "pAntler"), str(mission)],
@@ -64,13 +73,22 @@ ProcessConfig=pHelmIvP
                                           start_new_session=True)
                 try:
                     def poke(**values):
+                        assignments = [
+                            f"{key}:={value}" if isinstance(value, str) else f"{key}={value}"
+                            for key, value in values.items()
+                        ]
                         subprocess.run([str(MOOS / "uPokeDB"), str(mission), "--quiet",
-                                        *(f"{key}={value}" for key, value in values.items())],
-                                       cwd=root, capture_output=True, timeout=10, check=True)
+                                        *assignments], cwd=root, capture_output=True,
+                                       timeout=10, check=True)
 
                     def query(condition):
                         result = subprocess.run([str(MOOS / "uQueryDB"), str(mission), "--wait=5",
-                                                 f"--condition={condition}", "--check_var=IVPHELM_STATE"],
+                                                 f"--condition={condition}",
+                                                 "--check_var=IVPHELM_STATE",
+                                                 "--check_var=ROUTE_READY",
+                                                 "--check_var=ROUTE_BUFFER_VEHICLE_STATE",
+                                                 "--check_var=ROUTE_DEPLOY",
+                                                 "--check_var=ROUTE_CLEAR"],
                                                 cwd=root, capture_output=True, text=True,
                                                 timeout=15, check=False)
                         self.assertEqual(result.returncode, 0,
@@ -82,33 +100,43 @@ ProcessConfig=pHelmIvP
                          AUTOPILOT_MODE="HELM_PARKED", HELM_STATUS="false", ARDU_COMMAND="NONE",
                          NAV_X=0, NAV_Y=0, NAV_HEADING=0, NAV_SPEED=0, NAV_ALTITUDE=0)
                     query("(UAV_FSM_OPERATION_STATE=IDLE) and (IVPHELM_STATE=PARK)")
-                    for points in ("{10,10:20,20}", "{30,30:40,40}", "{50,50:60,60}"):
+                    for route_number, points in enumerate(
+                            ("{10,10:20,20}", "{30,30:40,40}", "{50,50:60,60}"), 1):
                         # Exercise the generated entry effect, not a simulated state publication.
                         poke(TAKEOFF_PRECHECKS="pending", TASK_EXECUTE="true")
                         query("(UAV_FSM_OPERATION_STATE=TAKEOFF_OPERATIONS) and (MOOS_MANUAL_OVERRIDE=false)")
-                        poke(ROUTE_BUFFER_COMMAND=f"action=deploy # points={points}")
+                        # ENTER_GUIDED is a legitimate takeoff-readiness effect. Reset
+                        # the sentinel so this assertion covers route staging only.
+                        poke(ARDU_COMMAND="NONE")
+                        poke(ROUTE_BUFFER_COMMAND=(
+                            f"action=deploy # task_id=restage-{route_number} # "
+                            f"task_time={time.time():.6f} # points={points}"
+                        ))
                         query("ROUTE_BUFFER_VEHICLE_STATE=DEPLOY_ACCEPTED")
                         query("ROUTE_READY=true")
                         query("((AUTOPILOT_MODE=HELM_PARKED) and (HELM_STATUS=false)) and (ARDU_COMMAND=NONE)")
                         query("ROUTE_DEPLOY=false")
-                        poke(ROUTE_BUFFER_COMMAND="action=clear")
-                        query("ROUTE_READY=false")
                         poke(MOOS_MANUAL_OVERRIDE="true")
                         # Entry is one-shot: an override issued during takeoff is not cleared again.
                         query("(IVPHELM_STATE=PARK) and (MOOS_MANUAL_OVERRIDE=true)")
                         poke(TAKEOFF_PRECHECKS="fail")
                         query("UAV_FSM_OPERATION_STATE=IDLE")
+                        # IDLE's generated entry effect requests the authoritative clear.
+                        query("(ROUTE_BUFFER_VEHICLE_STATE=CLEAR_ACCEPTED) and "
+                              "((ROUTE_READY=false) and (ROUTE_CLEAR=false))")
                         # CLEAR legitimately posts HOLD_POSITION; reset the fixture
                         # sentinel before checking that restaging sends no new command.
                         poke(ARDU_COMMAND="NONE")
                     # A rejected operator snapshot must not wake the Helm during recovery.
-                    poke(TAKEOFF_PRECHECKS="pending", TASK_EXECUTE="true")
+                    poke(TAKEOFF_PRECHECKS="pending", TASK_EXECUTE="true",
+                         ROUTE_READY="true")
                     query("UAV_FSM_TAKEOFF_OPERATIONS_STATE=ESTABLISHING_TAKEOFF_READINESS")
                     poke(TAKEOFF_PRECHECKS="success")
                     query("UAV_FSM_TAKEOFF_OPERATIONS_STATE=REQUESTING_TAKEOFF_CLEARANCE")
-                    poke(TAKEOFF_REQUEST_RESULT="APPROVED", UAV_LANDED_STATE="IN_AIR")
+                    poke(TAKEOFF_REQUEST_RESULT="APPROVED", UAV_LANDED_STATE="IN_AIR",
+                         UAV_IS_ARMED=1, TAKEOFF_AIRBORNE="success")
                     query("UAV_FSM_OPERATION_STATE=MISSION_EXECUTION")
-                    poke(RETURN="true", UAV_RENDEZVOUS_PHASE="REQUESTING", MOOS_MANUAL_OVERRIDE="true")
+                    poke(RETURN="true", MOOS_MANUAL_OVERRIDE="true")
                     query("(UAV_FSM_OPERATION_STATE=LANDING_OPERATIONS) and (IVPHELM_STATE=PARK)")
                     poke(ROUTE_BUFFER_COMMAND="action=deploy # points={70,70:80,80}")
                     query("ROUTE_BUFFER_VEHICLE_STATE=DEPLOY_REJECTED_AUTHORITY")

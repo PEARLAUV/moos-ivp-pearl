@@ -20,7 +20,7 @@ Archive camera names are:
 
 | Archive camera | Existing MediaMTX path | Source |
 | --- | --- | --- |
-| `fpv` | `oak` | OAK RGB / forward view |
+| `fpv` | `oak` | OAK RGB, H.264 Main, 1280x720 at 30 FPS / 4 Mbit/s |
 | `nadir` | `main` | Landmark ISP Output0, 1640x1232 |
 
 The `nadir` archive deliberately does **not** use MediaMTX `lores`. That
@@ -29,10 +29,13 @@ router reads the exact ISP Output0 buffers consumed by Landmark and performs one
 8 Mbit/s hardware H.264 encoding; its Matroska and local RTSP branches share
 those encoded access units.
 
-START creates temporary `pearl-recorder-fpv` and `pearl-recorder-nadir` paths
-that read `oak` and full-resolution `main` through MediaMTX's loopback RTSP
-endpoint. STOP deletes only the temporary recording paths. Existing WebRTC
-preview sessions stay attached to `oak` and `lores` throughout both operations.
+`oak` is the only OAK video stream. Its camera-encoded H.264 access units feed
+both live WebRTC and the `fpv` archive; there is no separate HQ encoder or
+`oak-record` path. START creates temporary `pearl-recorder-fpv` and
+`pearl-recorder-nadir` paths that read `oak` and full-resolution `main` through
+MediaMTX's loopback RTSP endpoint. STOP deletes only the temporary recording
+paths. Existing WebRTC preview sessions stay attached to `oak` and `lores`
+throughout both operations.
 
 ## Per-task directories
 

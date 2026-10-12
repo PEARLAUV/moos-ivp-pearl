@@ -68,13 +68,15 @@ subscribe to the `UAV_LANDING_TARGET_*` telemetry used by the video overlay.
 
 `pVideoRecorder` records the physical UAV's MediaMTX `oak` FPV source and the
 Landmark `main` source through the trusted, unauthenticated API at
-`100.112.119.114:9997`. `main` is Landmark's full-resolution 1640x1232 ISP
-Output0 frame stream, hardware-encoded once at 8 Mbit/s; it is not the 820x616
-`lores` WebRTC preview. START creates temporary server-local RTSP proxy paths;
-STOP deletes them. The source paths are never reconfigured, so recording
-controls do not disconnect their WebRTC readers. Video remains on the UAV and
-never traverses MOOS. Recording does not affect the passive MAVLink safety
-boundary.
+`100.112.119.114:9997`. `oak` is the only OAK stream: the same camera-encoded
+H.264 Main 1280x720, 30 FPS, 4 Mbit/s access units feed both WebRTC and the
+`fpv` archive, with no separate recording encoder or `oak-record` path. `main`
+is Landmark's full-resolution 1640x1232 ISP Output0 frame stream,
+hardware-encoded once at 8 Mbit/s; it is not the 820x616 `lores` WebRTC
+preview. START creates temporary server-local RTSP proxy paths; STOP deletes
+them. The source paths are never reconfigured, so recording controls do not
+disconnect their WebRTC readers. Video remains on the UAV and never traverses
+MOOS. Recording does not affect the passive MAVLink safety boundary.
 
 pMarineViewer provides two explicit controls:
 

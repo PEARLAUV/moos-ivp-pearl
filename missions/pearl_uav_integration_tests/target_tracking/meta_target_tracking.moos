@@ -53,9 +53,10 @@ ProcessConfig = pVideoRecorder
   segment_duration = 1m
   http_timeout = 5
 
-  // Nadir records Landmark's full-resolution 1640x1232 ISP Output0 stream.
-  // The downscaled lores path remains viewer-only. Temporary loopback proxies
-  // avoid reloading either source path or disconnecting WebRTC readers.
+  // OAK exposes one 720p30 H.264 stream: the same encoded access units feed
+  // WebRTC and the fpv recording proxy. Nadir records Landmark's full-resolution
+  // 1640x1232 ISP Output0 stream; lores remains a viewer-only preview.
+  // Temporary proxies avoid reloading source paths or disconnecting readers.
   path = fpv:oak
   path = nadir:main
   record_proxy = fpv:pearl-recorder-fpv

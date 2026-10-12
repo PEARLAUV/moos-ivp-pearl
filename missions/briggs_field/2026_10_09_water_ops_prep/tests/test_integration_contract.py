@@ -242,13 +242,16 @@ class IntegrationContract(unittest.TestCase):
                     )
             self.assertEqual(actual, expected[name], name)
 
-    def test_no_implicit_shore_coalescing_and_peer_authority_routes_intact(self):
+    def test_protocol_routes_not_coalesced_and_peer_authority_routes_intact(self):
         for name in ("uav", "pearl"):
             config = (MISSION / f"meta_{name}.moos").read_text()
             pshare = config.split("ProcessConfig = pShare", 1)[1].split("}", 1)[0]
             self.assertNotIn("coalesce_route", config)
             self.assertNotIn("behavior=drop", config)
-            self.assertNotIn("frequency=1", pshare)
+            for line in pshare.splitlines():
+                if "src_name=MEDIATED_TX_" in line or "src_name=ACK_TX_" in line:
+                    self.assertNotIn("frequency=", line)
+                    self.assertNotIn("behavior=", line)
             self.assertIn("output = src_name=MEDIATED_TX_SHORESIDE", pshare)
             self.assertIn("output = src_name=ACK_TX_SHORESIDE", pshare)
             self.assertNotIn("src_name=MEDIATED_MESSAGE_LOCAL", pshare)
@@ -335,6 +338,7 @@ class IntegrationContract(unittest.TestCase):
                                 "SITL_ROUTER_PORT": "5763",
                                 "DECK_ALTITUDE": "1",
                                 "TARGET_RANGE": "12",
+                                "YAW_ALIGNMENT": "true",
                                 "SECONDARY_LANDING_X": "10",
                                 "SECONDARY_LANDING_Y": "15",
                                 "RALLY_X": "10",
@@ -433,34 +437,43 @@ class IntegrationContract(unittest.TestCase):
         self.assertIn("comms_pulse_viewable_all = false", config)
         self.assertIn("pulse_duration = 0", config)
 
-    def test_background_image_exists_and_matches_mission_datum(self):
+    def test_background_images_match_each_site_datum(self):
         config = (MISSION / "meta_shoreside.moos").read_text()
-        line = next(
-            line for line in config.splitlines() if line.strip().startswith("tiff_file")
-        )
-        image = (MISSION / line.split("=", 1)[1].strip()).resolve()
-        self.assertTrue(image.is_file(), image)
-        info = image.with_suffix(".info")
-        self.assertTrue(info.is_file(), info)
+        origin_config = (MISSION / "plug_origin_warp.moos").read_text()
 
-        def parameters(path):
-            return dict(
-                line.strip().split("=", 1)
-                for line in path.read_text().splitlines()
-                if "=" in line and not line.strip().startswith("//")
+        def site_branches(source):
+            charles, briggs = source.split("#ifdef SITE charles", 1)[1].split(
+                "#else", 1
             )
+            return {"charles": charles, "briggs": briggs.split("#endif", 1)[0]}
 
-        origin = {
-            key.strip(): value.strip()
-            for key, value in parameters(MISSION / "plug_origin_warp.moos").items()
-        }
-        datum = {key.strip(): value.strip() for key, value in parameters(info).items()}
-        self.assertAlmostEqual(
-            float(origin["LatOrigin"]), float(datum["datum_lat"]), places=9
-        )
-        self.assertAlmostEqual(
-            float(origin["LongOrigin"]), float(datum["datum_lon"]), places=9
-        )
+        def parameters(source):
+            return {
+                key.strip(): value.strip()
+                for line in source.splitlines()
+                if "=" in line and not line.strip().startswith("//")
+                for key, value in (line.strip().split("=", 1),)
+            }
+
+        image_branches = site_branches(config)
+        origin_branches = site_branches(origin_config)
+        for site in ("charles", "briggs"):
+            line = next(
+                line for line in image_branches[site].splitlines()
+                if line.strip().startswith("tiff_file")
+            )
+            image = (MISSION / line.split("=", 1)[1].strip()).resolve()
+            self.assertTrue(image.is_file(), f"{site}: {image}")
+            info = image.with_suffix(".info")
+            self.assertTrue(info.is_file(), f"{site}: {info}")
+            origin = parameters(origin_branches[site])
+            datum = parameters(info.read_text())
+            self.assertAlmostEqual(
+                float(origin["LatOrigin"]), float(datum["datum_lat"]), places=9
+            )
+            self.assertAlmostEqual(
+                float(origin["LongOrigin"]), float(datum["datum_lon"]), places=9
+            )
 
     def test_pearl_default_start_matches_requested_latitude_longitude(self):
         positions = []

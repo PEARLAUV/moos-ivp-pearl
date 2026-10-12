@@ -41,6 +41,7 @@ class VideoRecordingContract(unittest.TestCase):
         self.assertIn("recording_id_var  = UAV_ROUTE_ACTIVE_ID", recorder)
         self.assertIn("segment_duration  = 1m", recorder)
         self.assertIn("path = fpv:oak", recorder)
+        self.assertNotIn("oak-record", recorder)
         self.assertIn("path = nadir:main", recorder)
         self.assertNotIn("path = nadir:lores", recorder)
         self.assertIn("record_proxy = fpv:pearl-recorder-fpv", recorder)

@@ -51,7 +51,7 @@ class MakefileSiteTest(unittest.TestCase):
             shutil.copytree(MISSION / name, cls.mission / name)
         env = {key: value for key, value in os.environ.items()
                if key not in ("DRONE_MODEL", "DRONE_PARAM_FILE",
-                              "MODE_PARAM_FILE", "MISSION_PARAM_FILE")}
+                              "MODE_PARAM_FILE", "MISSION_PARAM_FILE", "MODEL")}
         cls.env = env
         cls.configs = {}
         cls.behaviors = {}
@@ -61,7 +61,8 @@ class MakefileSiteTest(unittest.TestCase):
             for node in NODES:
                 subprocess.run(
                     ["make", "--no-print-directory", "-C", str(cls.mission),
-                     f"{node}-{site}", "LAUNCH_ARGS=--just_make"],
+                     f"{node}-{site}", "LAUNCH_ARGS=--just_make",
+                     *(["MODEL=x500"] if node == "drone" else [])],
                     env=env, capture_output=True, text=True, check=True, timeout=45)
                 community = "uav" if node == "drone" else node
                 cls.configs[node, site] = (
@@ -80,9 +81,28 @@ class MakefileSiteTest(unittest.TestCase):
             cls.sim_behaviors[site] = (cls.mission / "targ_pearl.bhv").read_text()
 
     def recipe(self, node, site):
-        output = run_make(MISSION, "-n", f"{node}-{site}").stdout.replace("\\\n", " ")
+        output = run_make(MISSION, "-n", f"{node}-{site}",
+                          *(["MODEL=x500"] if node == "drone" else [])).stdout.replace("\\\n", " ")
         words = shlex.split(output)
         return words[words.index("&&") + 1:]
+
+    def test_physical_drone_requires_explicit_command_line_model(self):
+        for site in SITES:
+            for extra, env in (([], self.env),
+                               ([], dict(self.env, MODEL="x500", DRONE_MODEL="x500")),
+                               (["MODEL="], self.env),
+                               (["MODEL=   "], self.env),
+                               (["DRONE_ARGS=--model=x500"], self.env)):
+                with self.subTest(site=site, extra=extra, inherited=env.get("MODEL")):
+                    result = subprocess.run(
+                        ["make", "--no-print-directory", "-C", str(self.mission),
+                         f"drone-{site}", "LAUNCH_ARGS=--just_make", *extra],
+                        env=env, capture_output=True, text=True, timeout=10, check=False)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("MODEL", result.stderr)
+                    self.assertNotIn("./launch_uav.sh", result.stdout)
+            result = run_make(self.mission, "-n", f"drone-{site}", "MODEL=chosen-drone")
+            self.assertIn('--model="chosen-drone"', result.stdout)
 
     def test_local_sim_recipes_and_forwarded_geometry(self):
         for site in SITES:
@@ -210,11 +230,14 @@ class MakefileSiteTest(unittest.TestCase):
             pearl_ip = "100.71.137.47" if site == "briggs" else "100.113.99.58"
             for node in NODES:
                 args = self.recipe(node, site)
-                options = dict(arg[2:].split("=", 1) for arg in args[1:])
+                options = dict(arg[2:].split("=", 1) for arg in args[1:] if "=" in arg)
                 self.assertEqual(options["site"], site)
                 self.assertEqual(options["mode"],
                                  "GRASS" if (node, site) == ("pearl", "briggs") else "REAL")
-                self.assertNotIn("--upload-params", args)
+                if node == "drone":
+                    self.assertIn("--upload-params", args)
+                else:
+                    self.assertNotIn("--upload-params", args)
                 if node == "shoreside":
                     self.assertEqual(options["ip"], "100.88.214.50")
                     self.assertEqual(options["uav_ip"], "100.112.119.114")
@@ -263,7 +286,8 @@ class MakefileSiteTest(unittest.TestCase):
         for site in SITES:
             pearl = dict(arg[2:].split("=", 1) for arg in self.recipe("pearl", site)[1:])
             shore = dict(arg[2:].split("=", 1) for arg in self.recipe("shoreside", site)[1:])
-            drone = dict(arg[2:].split("=", 1) for arg in self.recipe("drone", site)[1:])
+            drone = dict(arg[2:].split("=", 1) for arg in self.recipe("drone", site)[1:]
+                         if "=" in arg)
             _, _, heading = map(float, pearl["start_pos"].split(","))
             self.assertEqual(heading, 0)
             if site == "briggs":

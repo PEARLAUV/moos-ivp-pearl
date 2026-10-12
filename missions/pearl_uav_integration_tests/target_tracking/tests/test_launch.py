@@ -65,6 +65,7 @@ class LaunchTest(unittest.TestCase):
         self.assertIn("recording_id_prefix = recording", config)
         self.assertIn("segment_duration = 1m", config)
         self.assertIn("path = fpv:oak", config)
+        self.assertNotIn("oak-record", config)
         self.assertIn("path = nadir:main", config)
         self.assertNotIn("path = nadir:lores", config)
         self.assertIn("record_proxy = fpv:pearl-recorder-fpv", config)
