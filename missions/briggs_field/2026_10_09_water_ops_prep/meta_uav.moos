@@ -180,13 +180,13 @@ ProcessConfig = pVideoRecorder
   segment_duration  = 1m
   http_timeout      = 5
 
-  // Logical camera names are independent of the existing MediaMTX path names:
-  // fpv records MediaMTX oak, and nadir records MediaMTX lores. This preserves
-  // the board configuration while giving archives stable camera names.
+  // Nadir records Landmark's full-resolution 1640x1232 ISP Output0 stream;
+  // lores remains a downscaled viewer preview. Temporary loopback proxy paths
+  // preserve stable source publishers and WebRTC readers.
   path = fpv:oak
-  path = nadir:lores
-  activation = fpv:/opt/oak-stream/run-on-demand
-  activation = nadir:/opt/landmark-camera-tap/bin/run-lores-on-demand
+  path = nadir:main
+  record_proxy = fpv:pearl-recorder-fpv
+  record_proxy = nadir:pearl-recorder-nadir
 }
 #endif
 

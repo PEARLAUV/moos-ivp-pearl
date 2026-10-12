@@ -33,9 +33,15 @@ ProcessConfig = pVideoRecorder
   path = nadir:drone_nadir
   path = fpv:drone_fpv
 
-  // Optional: start and own an on-demand publisher while recording. The
-  // activation key is the logical camera name.
-  activation = nadir:/opt/camera/start-nadir
+  // Recommended for live WebRTC paths: create temporary recorder-only paths
+  // that pull the source paths over MediaMTX's loopback RTSP endpoint.
+  record_proxy = nadir:pearl-recorder-nadir
+  record_proxy = fpv:pearl-recorder-fpv
+  // proxy_rtsp_address = 127.0.0.1:8554
+
+  // Direct-path alternative: start and own an on-demand publisher while
+  // recording. Do not combine activation and record_proxy for one camera.
+  // activation = nadir:/opt/camera/start-nadir
 
   // Optional overrides:
   command_var   = VIDEO_RECORD_COMMAND
@@ -66,18 +72,34 @@ digits, dots, underscores, and hyphens. A configured recording ID equal to
 run use `recording-001`, `recording-002`, and so on. The sequence resets when
 `pVideoRecorder` restarts; a new mission normally has a new logger directory.
 
-An optional `activation=CAMERA:/absolute/command` copies that command into the
-mapped MediaMTX path's `runOnInit` setting on START and enables restart. STOP
-disables recording and clears that recorder-owned command.
+`record_proxy=CAMERA:PROXY_PATH` enables non-disruptive recording for a live
+path. START removes any stale proxy, creates `PROXY_PATH` with a server-local
+RTSP source such as `rtsp://127.0.0.1:8554/drone_nadir`, and enables recording
+on the proxy. The proxy acts as a reader, so it also activates an existing
+`runOnDemand` source when no viewer is open. STOP deletes the proxy. Neither
+operation changes the source path, so existing WebRTC readers remain attached.
+`proxy_rtsp_address` defaults to `127.0.0.1:8554` and accepts a MediaMTX-local
+`HOST:PORT` without a URL scheme.
+
+An optional direct-path `activation=CAMERA:/absolute/command` copies that
+command into the mapped path's `runOnInit` setting on START and enables restart.
+STOP disables recording and clears that recorder-owned command. MediaMTX
+reloads paths when their configuration is patched, so direct mode can interrupt
+publishers and WebRTC readers. `activation` and `record_proxy` are therefore
+mutually exclusive for a camera.
 
 For logger `LOG_uav_...`, ID `task-001`, and the example mappings, START sets:
 
 ```text
-/data/mission-video/LOG_uav_.../task-001/nadir/%Y-%m-%d_%H-%M-%S-%f
-/data/mission-video/LOG_uav_.../task-001/fpv/%Y-%m-%d_%H-%M-%S-%f
+/data/mission-video/LOG_uav_.../task-001/nadir/%path_%Y-%m-%d_%H-%M-%S-%f
+/data/mission-video/LOG_uav_.../task-001/fpv/%path_%Y-%m-%d_%H-%M-%S-%f
 ```
 
-The API still patches `drone_nadir` and `drone_fpv`; only archive names change.
+With recording proxies, the API creates `pearl-recorder-nadir` and
+`pearl-recorder-fpv` while leaving `drone_nadir` and `drone_fpv` unchanged.
+MediaMTX requires `%path` in every recording pattern, so each filename is
+prefixed with its recorder path (for example,
+`pearl-recorder-nadir_2026-...mp4`).
 
 ## Commands
 
@@ -88,13 +110,14 @@ VIDEO_RECORD_COMMAND=STOP
 
 `START` waits in `WAITING_LOGGER` until `LOGGER_DIRECTORY` and any configured
 external recording ID are available. Automatic IDs are allocated when a new
-START is prepared. It then PATCHes every path and enters `RECORDING`
-only after every request returns 2xx. A partial start failure disables every
-configured path before reporting `ERROR`.
+START is prepared. It then configures every direct or proxy recording path and
+enters `RECORDING` only after every request succeeds. A partial start failure
+cleans up every configured path before reporting `ERROR`.
 
-`STOP` enforces `record=false` on every path even from local `IDLE` or `STOPPED`,
-which supports crash recovery. Logger or recording-ID updates never move an
-active recording. A later START latches the newest context.
+`STOP` enforces `record=false` in direct mode and deletes recording proxies even
+from local `IDLE` or `STOPPED`, which supports crash recovery. A START also
+removes stale proxies before recreating them. Logger or recording-ID updates
+never move an active recording. A later START latches the newest context.
 
 ## Publications
 

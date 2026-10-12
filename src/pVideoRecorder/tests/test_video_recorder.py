@@ -21,25 +21,41 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
     fail_start_path: str | None = None
     lock = threading.Lock()
 
-    def do_PATCH(self):  # noqa: N802 - BaseHTTPRequestHandler API
+    def record_request(self, method, missing=False):
         length = int(self.headers.get("Content-Length", "0"))
-        parsed_body = json.loads(self.rfile.read(length).decode())
+        raw_body = self.rfile.read(length) if length else b""
+        parsed_body = json.loads(raw_body.decode()) if raw_body else None
         with self.lock:
             self.requests.append(
                 {
+                    "method": method,
                     "path": self.path,
                     "body": parsed_body,
                     "authorization": self.headers.get("Authorization"),
                 }
             )
-        fail = self.path == self.fail_start_path and parsed_body.get("record") is True
+        fail = (
+            self.path == self.fail_start_path
+            and parsed_body is not None
+            and parsed_body.get("record") is True
+        )
         payload = b'{"status":"error"}' if fail else b'{"status":"ok"}'
-        self.send_response(500 if fail else 200)
+        status = 500 if fail else (404 if missing else 200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(payload)
+
+    def do_PATCH(self):  # noqa: N802 - BaseHTTPRequestHandler API
+        self.record_request("PATCH")
+
+    def do_POST(self):  # noqa: N802 - BaseHTTPRequestHandler API
+        self.record_request("POST")
+
+    def do_DELETE(self):  # noqa: N802 - BaseHTTPRequestHandler API
+        self.record_request("DELETE", missing=True)
 
     def log_message(self, format, *args):  # noqa: A002 - base-class signature
         del format, args
@@ -91,8 +107,11 @@ ProcessConfig = pVideoAutoRecorder
   logger_directory_var = AUTO_LOGGER_DIRECTORY
   status_prefix = VIDEO_AUTO
   recording_id_prefix = recording
+  segment_duration = 1m
   path = nadir:drone_nadir
   path = fpv:drone_fpv
+  record_proxy = nadir:recorder_nadir
+  record_proxy = fpv:recorder_fpv
   http_timeout = 1
 }}
 
@@ -281,7 +300,7 @@ ProcessConfig = uAutoStop
         for request in requests:
             camera = "nadir" if request["path"].endswith("/drone_nadir") else "fpv"
             expected_body = {
-                "recordPath": f"{record_root}/{camera}/%Y-%m-%d_%H-%M-%S-%f",
+                "recordPath": f"{record_root}/{camera}/%path_%Y-%m-%d_%H-%M-%S-%f",
                 "record": True,
                 "recordSegmentDuration": "1m",
             }
@@ -336,25 +355,48 @@ ProcessConfig = uAutoStop
         self.launch_script("uAutoStart")
         self.query("VIDEO_AUTO_STATE=RECORDING", "VIDEO_AUTO_ID=recording-001")
         first_start = self.requests()
-        self.assertEqual(len(first_start), 2, first_start)
-        self.assertTrue(
-            all(
-                "/LOG_manual_session/recording-001/" in request["body"]["recordPath"]
-                for request in first_start
-            )
+        self.assertEqual(len(first_start), 4, first_start)
+        self.assertEqual([request["method"] for request in first_start],
+                         ["DELETE", "POST", "DELETE", "POST"])
+        posts = [request for request in first_start if request["method"] == "POST"]
+        self.assertEqual(
+            {request["path"] for request in posts},
+            {
+                "/v3/config/paths/add/recorder_nadir",
+                "/v3/config/paths/add/recorder_fpv",
+            },
         )
+        expected_sources = {
+            "/v3/config/paths/add/recorder_nadir": "rtsp://127.0.0.1:8554/drone_nadir",
+            "/v3/config/paths/add/recorder_fpv": "rtsp://127.0.0.1:8554/drone_fpv",
+        }
+        for request in posts:
+            self.assertEqual(request["body"]["source"], expected_sources[request["path"]])
+            self.assertFalse(request["body"]["sourceOnDemand"])
+            self.assertTrue(request["body"]["record"])
+            self.assertEqual(request["body"]["recordSegmentDuration"], "1m")
+            self.assertIn("/%path_%Y-%m-%d_%H-%M-%S-%f", request["body"]["recordPath"])
+            self.assertIn(
+                "/LOG_manual_session/recording-001/", request["body"]["recordPath"]
+            )
         self.assertTrue(all(request["authorization"] is None for request in first_start))
 
         self.launch_script("uAutoStop")
         self.query("VIDEO_AUTO_STATE=STOPPED")
+        stop_requests = self.requests()[4:6]
+        self.assertEqual(len(stop_requests), 2, self.requests())
+        self.assertTrue(all(request["method"] == "DELETE" for request in stop_requests))
+
         self.launch_script("uAutoStart")
         self.query("VIDEO_AUTO_STATE=RECORDING", "VIDEO_AUTO_ID=recording-002")
-        second_start = self.requests()[4:6]
-        self.assertEqual(len(second_start), 2, self.requests())
+        second_start = self.requests()[6:10]
+        self.assertEqual(len(second_start), 4, self.requests())
+        second_posts = [request for request in second_start if request["method"] == "POST"]
+        self.assertEqual(len(second_posts), 2, self.requests())
         self.assertTrue(
             all(
                 "/LOG_manual_session/recording-002/" in request["body"]["recordPath"]
-                for request in second_start
+                for request in second_posts
             )
         )
 

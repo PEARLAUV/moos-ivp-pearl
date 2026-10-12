@@ -42,6 +42,7 @@ class LaunchTest(unittest.TestCase):
         self.assertEqual(config.count("ProcessConfig = MOOSDB"), 0)
         self.assertIn("Run = MOOSDB", config)
         self.assertIn("Run = pArduBridge", config)
+        self.assertIn("Run = pVideoRecorder", config)
         self.assertIn("Run = pLandingTargetViewer", config)
         self.assertIn("Run = pWebSocketServer", config)
         self.assertIn("WSPort = 9090", config)
@@ -57,6 +58,28 @@ class LaunchTest(unittest.TestCase):
         self.assertIn("scope = UAV_RANGEFINDER_DISTANCE", config)
         self.assertIn("scope = UAV_RANGEFINDER_ORIENTATION_PITCH", config)
         self.assertIn("Run = moos-vnc-session", config)
+        self.assertIn("api_url = 100.112.119.114:9997", config)
+        self.assertIn(
+            "record_root = /var/lib/landmark-recorder/mission-video", config
+        )
+        self.assertIn("recording_id_prefix = recording", config)
+        self.assertIn("segment_duration = 1m", config)
+        self.assertIn("path = fpv:oak", config)
+        self.assertIn("path = nadir:main", config)
+        self.assertNotIn("path = nadir:lores", config)
+        self.assertIn("record_proxy = fpv:pearl-recorder-fpv", config)
+        self.assertIn("record_proxy = nadir:pearl-recorder-nadir", config)
+        self.assertNotIn("activation =", config)
+        self.assertNotIn("api_user", config)
+        self.assertNotIn("api_password_file", config)
+        self.assertIn(
+            "button_one = RECORD-START # VIDEO_RECORD_COMMAND=START", config
+        )
+        self.assertIn(
+            "button_two = RECORD-STOP  # VIDEO_RECORD_COMMAND=STOP", config
+        )
+        self.assertIn("scope = VIDEO_RECORD_ID", config)
+        self.assertIn("scope = VIDEO_RECORD_LOCATION", config)
         self.assertIn("null_tiff = true", config)
         self.assertNotIn("tiff_file =", config)
         self.assertIn("hash_viewable = true", config)
@@ -88,6 +111,8 @@ class LaunchTest(unittest.TestCase):
             "--lon_origin=-71.2",
             "--target_size=0.75",
             "--observation_timeout=1.25",
+            "--video-api=192.168.10.30:19997",
+            "--video-record-root=/srv/target-recordings",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         config = self.config()
@@ -97,6 +122,8 @@ class LaunchTest(unittest.TestCase):
         self.assertIn("LongOrigin   = -71.2", config)
         self.assertIn("target_size = 0.75", config)
         self.assertIn("observation_timeout = 1.25", config)
+        self.assertIn("api_url = 192.168.10.30:19997", config)
+        self.assertIn("record_root = /srv/target-recordings", config)
         self.assertNotIn("Run = moos-vnc-session", config)
         self.assertNotIn("Run = qgc-vnc-session", config)
         self.assertFalse((self.directory / "LOG_antler").exists())
@@ -113,6 +140,9 @@ class LaunchTest(unittest.TestCase):
             ("--lon_origin=-181",),
             ("--target_size=0",),
             ("--observation_timeout=-1",),
+            ("--video-api=http://100.112.119.114:9997",),
+            ("--video-api=100.112.119.114:0",),
+            ("--video-record-root=relative/path",),
             ("--typo",),
             ("1",),
         )

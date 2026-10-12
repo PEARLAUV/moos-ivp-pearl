@@ -24,6 +24,7 @@ private:
   {
     std::string name;
     std::string api_name;
+    std::string proxy_api_name;
     std::string status;
     std::string activation_command;
     int http_status = 0;
@@ -71,6 +72,7 @@ private:
   std::string m_record_root;
   std::string m_record_host;
   std::string m_segment_duration;
+  std::string m_proxy_rtsp_address;
   std::string m_command_var;
   std::string m_logger_directory_var;
   std::string m_recording_id_var;
@@ -87,6 +89,7 @@ private:
   std::string m_terminal_error;
   std::vector<PathState> m_paths;
   std::map<std::string, std::string> m_activation_commands;
+  std::map<std::string, std::string> m_record_proxies;
   std::size_t m_path_index;
   double m_http_timeout;
   bool m_valid;

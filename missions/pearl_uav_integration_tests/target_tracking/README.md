@@ -41,6 +41,7 @@ Run:
 ```bash
 ./launch.sh
 ./launch.sh --udp_bind=100.112.119.114 --udp_port=14550
+./launch.sh --video-api=100.112.119.114:9997
 ./launch.sh -ng -x
 ./launch.sh -j
 ./launch.sh --help
@@ -63,6 +64,41 @@ This is the default `demo-frontend` MOOS URL. `AllowSubmissions=false` prevents
 WebSocket clients from writing MOOS variables while allowing the frontend to
 subscribe to the `UAV_LANDING_TARGET_*` telemetry used by the video overlay.
 
+## Manual video recording
+
+`pVideoRecorder` records the physical UAV's MediaMTX `oak` FPV source and the
+Landmark `main` source through the trusted, unauthenticated API at
+`100.112.119.114:9997`. `main` is Landmark's full-resolution 1640x1232 ISP
+Output0 frame stream, hardware-encoded once at 8 Mbit/s; it is not the 820x616
+`lores` WebRTC preview. START creates temporary server-local RTSP proxy paths;
+STOP deletes them. The source paths are never reconfigured, so recording
+controls do not disconnect their WebRTC readers. Video remains on the UAV and
+never traverses MOOS. Recording does not affect the passive MAVLink safety
+boundary.
+
+pMarineViewer provides two explicit controls:
+
+- **RECORD-START** posts `VIDEO_RECORD_COMMAND=START`.
+- **RECORD-STOP** posts `VIDEO_RECORD_COMMAND=STOP`.
+
+Every accepted START after a STOP creates a new recording ID in the same MOOS
+logger run: `recording-001`, `recording-002`, and so on. Files are stored as:
+
+```text
+/var/lib/landmark-recorder/mission-video/
+  <LOGGER_DIRECTORY>/<recording-NNN>/fpv/
+  <LOGGER_DIRECTORY>/<recording-NNN>/nadir/
+```
+
+MediaMTX writes one-minute fMP4 segments. Click **RECORD-STOP** and wait for
+`VIDEO_RECORD_STATE=STOPPED` before ending the mission or collecting files.
+Only one recording mission may control the UAV MediaMTX paths at a time. For a
+different deployment, use `--video-api=HOST:PORT` and
+`--video-record-root=/absolute/path`.
+
+The API URL intentionally omits `http://`: MOOS treats `//` as a comment
+separator. No API credentials are used while the private network is trusted.
+
 ## Displayed telemetry
 
 The viewer scopes:
@@ -75,6 +111,8 @@ The viewer scopes:
 - Landing-target availability, age, frame, validity, BODY_FRD position,
   distance, and angular size
 - `LANDING_TARGET_VIEW_ACTIVE`
+- Video recording state, command result, generated recording ID, remote
+  directory/location, and last error
 
 `pLandingTargetViewer` displays only target packets received through the real
 MAVLink connection. This mission does not run `pMavlinkLandingTarget` and cannot
@@ -95,9 +133,10 @@ required for this projection mode.
 
 ## Validation
 
-The configuration safety test does not connect to a drone. The passive UDP test
-uses synthetic heartbeat, attitude, distance-sensor and LANDING_TARGET packets;
-it never sends a command:
+The configuration safety test does not connect to a drone or MediaMTX. It also
+checks the recorder mapping, sequential-ID mode, and pMarineViewer buttons. The
+passive UDP test uses synthetic heartbeat, attitude, distance-sensor and
+LANDING_TARGET packets; it never sends an aircraft command:
 
 ```bash
 python3 tests/test_launch.py

@@ -16,6 +16,8 @@ LAT_ORIGIN=42.358436
 LON_ORIGIN=-71.087448
 TARGET_SIZE=1
 OBSERVATION_TIMEOUT=0.5
+VIDEO_API_URL=100.112.119.114:9997
+VIDEO_RECORD_ROOT=/var/lib/landmark-recorder/mission-video
 
 usage() {
   cat <<EOF
@@ -30,6 +32,9 @@ $ME [OPTIONS]
   --lon_origin=-71.087448       Viewer local-grid longitude origin
   --target_size=1               Fallback target side length in metres
   --observation_timeout=0.5     LANDING_TARGET freshness in real seconds
+  --video-api=100.112.119.114:9997
+                                MediaMTX control API (trusted, no auth)
+  --video-record-root=PATH      MediaMTX recording root
 EOF
 }
 
@@ -46,6 +51,8 @@ for ARGI; do
     --lon_origin=*) LON_ORIGIN=${ARGI#*=} ;;
     --target_size=*) TARGET_SIZE=${ARGI#*=} ;;
     --observation_timeout=*) OBSERVATION_TIMEOUT=${ARGI#*=} ;;
+    --video-api=*) VIDEO_API_URL=${ARGI#*=} ;;
+    --video-record-root=*) VIDEO_RECORD_ROOT=${ARGI#*=} ;;
     *) echo "$ME: Bad argument: $ARGI" >&2; exit 1 ;;
   esac
 done
@@ -68,6 +75,15 @@ valid_ipv4() {
 valid_port "$MOOS_PORT" || { echo "$ME: Invalid MOOS port: $MOOS_PORT" >&2; exit 1; }
 valid_port "$UDP_PORT" || { echo "$ME: Invalid UDP port: $UDP_PORT" >&2; exit 1; }
 valid_ipv4 "$UDP_BIND" || { echo "$ME: --udp_bind requires an IPv4 address" >&2; exit 1; }
+if [[ ! "$VIDEO_API_URL" =~ ^([A-Za-z0-9._-]+|([0-9]{1,3}[.]){3}[0-9]{1,3}):[0-9]{1,5}$ ]] ||
+   ! valid_port "${VIDEO_API_URL##*:}"; then
+  echo "$ME: --video-api must be HOST:PORT without an http:// scheme" >&2
+  exit 1
+fi
+if [[ "$VIDEO_RECORD_ROOT" != /* || "$VIDEO_RECORD_ROOT" == *$'\n'* ]]; then
+  echo "$ME: --video-record-root must be an absolute remote path" >&2
+  exit 1
+fi
 
 NUMBER='^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)$'
 for VALUE in "$LAT_ORIGIN" "$LON_ORIGIN" "$TARGET_SIZE" "$OBSERVATION_TIMEOUT"; do
@@ -84,6 +100,7 @@ nsplug meta_target_tracking.moos targ_target_tracking.moos --strict --force \
   MOOS_PORT="$MOOS_PORT" UDP_BIND="$UDP_BIND" UDP_PORT="$UDP_PORT" \
   LAT_ORIGIN="$LAT_ORIGIN" LON_ORIGIN="$LON_ORIGIN" \
   TARGET_SIZE="$TARGET_SIZE" OBSERVATION_TIMEOUT="$OBSERVATION_TIMEOUT" \
+  VIDEO_API_URL="$VIDEO_API_URL" VIDEO_RECORD_ROOT="$VIDEO_RECORD_ROOT" \
   LAUNCH_GUI="$LAUNCH_GUI"
 
 if [[ "$JUST_MAKE" == yes ]]; then

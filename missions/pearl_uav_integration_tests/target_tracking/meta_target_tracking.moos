@@ -15,6 +15,7 @@ ProcessConfig = ANTLER
 
   Run = MOOSDB @ NewConsole = false
   Run = pLogger @ NewConsole = false
+  Run = pVideoRecorder @ NewConsole = false
   Run = pArduBridge @ NewConsole = false
   Run = pLandingTargetViewer @ NewConsole = false
   Run = pWebSocketServer @ NewConsole = false
@@ -36,6 +37,29 @@ ProcessConfig = pLogger
   WildCardOmitPattern = *_STATUS
   WildCardOmitPattern = DB_VARSUMMARY
   WildCardOmitPattern = DB_RWSUMMARY
+}
+
+// Manual, task-independent recording of the UAV's existing MediaMTX streams.
+// pVideoRecorder only manages recorder-only proxy paths; it never sends MAVLink
+// or aircraft commands. Each accepted START gets a separate sequence ID.
+ProcessConfig = pVideoRecorder
+{
+  AppTick = 4
+  CommsTick = 4
+
+  api_url = $(VIDEO_API_URL)
+  record_root = $(VIDEO_RECORD_ROOT)
+  recording_id_prefix = recording
+  segment_duration = 1m
+  http_timeout = 5
+
+  // Nadir records Landmark's full-resolution 1640x1232 ISP Output0 stream.
+  // The downscaled lores path remains viewer-only. Temporary loopback proxies
+  // avoid reloading either source path or disconnecting WebRTC readers.
+  path = fpv:oak
+  path = nadir:main
+  record_proxy = fpv:pearl-recorder-fpv
+  record_proxy = nadir:pearl-recorder-nadir
 }
 
 // Receive-only MAVLink observer. In passive mode pArduBridge does not register
@@ -62,8 +86,8 @@ ProcessConfig = pArduBridge
 // No synthetic target source is present in this mission.
 ProcessConfig = pWebSocketServer
 {
-  AppTick = 4
-  CommsTick = 4
+  AppTick = 20
+  CommsTick = 20
   WSPort = 9090
   AllowSubmissions = false
 }
@@ -139,4 +163,14 @@ ProcessConfig = pMarineViewer
   scope = UAV_LANDING_TARGET_SIZE_X
   scope = UAV_LANDING_TARGET_SIZE_Y
   scope = LANDING_TARGET_VIEW_ACTIVE
+  scope = VIDEO_RECORD_STATE
+  scope = VIDEO_RECORDING
+  scope = VIDEO_RECORD_COMMAND_RESULT
+  scope = VIDEO_RECORD_ID
+  scope = VIDEO_RECORD_DIRECTORY
+  scope = VIDEO_RECORD_LOCATION
+  scope = VIDEO_RECORD_LAST_ERROR
+
+  button_one = RECORD-START # VIDEO_RECORD_COMMAND=START
+  button_two = RECORD-STOP  # VIDEO_RECORD_COMMAND=STOP
 }

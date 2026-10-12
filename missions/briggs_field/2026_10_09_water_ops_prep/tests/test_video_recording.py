@@ -41,12 +41,11 @@ class VideoRecordingContract(unittest.TestCase):
         self.assertIn("recording_id_var  = UAV_ROUTE_ACTIVE_ID", recorder)
         self.assertIn("segment_duration  = 1m", recorder)
         self.assertIn("path = fpv:oak", recorder)
-        self.assertIn("path = nadir:lores", recorder)
-        self.assertIn("activation = fpv:/opt/oak-stream/run-on-demand", recorder)
-        self.assertIn(
-            "activation = nadir:/opt/landmark-camera-tap/bin/run-lores-on-demand",
-            recorder,
-        )
+        self.assertIn("path = nadir:main", recorder)
+        self.assertNotIn("path = nadir:lores", recorder)
+        self.assertIn("record_proxy = fpv:pearl-recorder-fpv", recorder)
+        self.assertIn("record_proxy = nadir:pearl-recorder-nadir", recorder)
+        self.assertNotIn("activation =", recorder)
         self.assertIn(
             "effect = machine=operation, state=TAKEOFF_OPERATIONS, phase=entry, "
             "var=VIDEO_RECORD_COMMAND, type=string, value=START",

@@ -115,7 +115,8 @@ bool validMediaDuration(const string &value)
 } // namespace
 
 VideoRecorder::VideoRecorder()
-    : m_api_port("9997"), m_command_var("VIDEO_RECORD_COMMAND"),
+    : m_api_port("9997"), m_proxy_rtsp_address("127.0.0.1:8554"),
+      m_command_var("VIDEO_RECORD_COMMAND"),
       m_logger_directory_var("LOGGER_DIRECTORY"), m_prefix("VIDEO_RECORD"), m_state("IDLE"),
       m_path_index(0), m_http_timeout(2.0), m_valid(true), m_logger_received(false),
       m_recording_id_received(true), m_cleanup_after_start_failure(false),
@@ -177,6 +178,17 @@ bool VideoRecorder::OnStartUp()
       activation = stripBlankEnds(activation);
       handled = !path_name.empty() && !activation.empty() && activation[0] == '/' &&
                 m_activation_commands.emplace(path_name, activation).second;
+    } else if (key == "record_proxy") {
+      string proxy = value;
+      const string path_name = stripBlankEnds(biteStringX(proxy, ':'));
+      proxy = stripBlankEnds(proxy);
+      handled = validDirectoryName(path_name) && validDirectoryName(proxy) &&
+                m_record_proxies.emplace(path_name, proxy).second;
+    } else if (key == "proxy_rtsp_address") {
+      handled = !value.empty() && value.find_first_of("/ \t\r\n") == string::npos &&
+                value.find("://") == string::npos;
+      if (handled)
+        m_proxy_rtsp_address = value;
     } else if (key == "command_var")
       handled = setNonWhiteVarOnString(m_command_var, value);
     else if (key == "logger_directory_var")
@@ -246,6 +258,28 @@ bool VideoRecorder::OnStartUp()
       m_valid = false;
     } else {
       path->activation_command = activation.second;
+    }
+  }
+  set<string> proxy_path_names;
+  for (const auto &proxy : m_record_proxies) {
+    auto path = find_if(m_paths.begin(), m_paths.end(), [&](const PathState &candidate) {
+      return candidate.name == proxy.first;
+    });
+    string detail;
+    if (path == m_paths.end())
+      detail = "record_proxy references unknown path: " + proxy.first;
+    else if (proxy.second == path->api_name)
+      detail = "record_proxy must differ from source path: " + proxy.first;
+    else if (!proxy_path_names.insert(proxy.second).second || api_path_names.count(proxy.second) != 0)
+      detail = "record_proxy path is not unique: " + proxy.second;
+    else if (!path->activation_command.empty())
+      detail = "record_proxy and activation are mutually exclusive: " + proxy.first;
+    else
+      path->proxy_api_name = proxy.second;
+    if (!detail.empty()) {
+      reportConfigWarning(detail);
+      config_errors.push_back(detail);
+      m_valid = false;
     }
   }
   if (!loadPassword(error)) {
@@ -593,11 +627,45 @@ bool VideoRecorder::prepareRecordingDirectory(string &error)
 
 bool VideoRecorder::patchPath(const PathState &path, bool record, HttpResponse &response)
 {
+  const string record_pattern =
+      m_record_directory + "/" + path.name + "/%path_%Y-%m-%d_%H-%M-%S-%f";
+
+  // A MediaMTX configuration PATCH destroys and recreates the affected path,
+  // interrupting its publishers and WebRTC readers. A recording proxy avoids
+  // touching the live path: it reads the live path over loopback and is added
+  // only for the lifetime of the recording.
+  if (!path.proxy_api_name.empty()) {
+    const string encoded_proxy = urlEncode(path.proxy_api_name);
+    const string delete_target =
+        m_api_base_path + "/v3/config/paths/delete/" + encoded_proxy;
+    if (!record) {
+      response = request("DELETE", delete_target, "");
+      return response.error.empty() &&
+             ((response.status >= 200 && response.status < 300) || response.status == 404);
+    }
+
+    // Remove a proxy left by a crashed prior run. Missing proxies are normal.
+    response = request("DELETE", delete_target, "");
+    if (!response.error.empty() ||
+        !((response.status >= 200 && response.status < 300) || response.status == 404))
+      return false;
+
+    const string source =
+        "rtsp://" + m_proxy_rtsp_address + "/" + urlEncode(path.api_name);
+    string body = "{\"source\":\"" + jsonEscape(source) +
+                  "\",\"sourceOnDemand\":false,\"recordPath\":\"" +
+                  jsonEscape(record_pattern) + "\",\"record\":true";
+    if (!m_segment_duration.empty())
+      body += ",\"recordSegmentDuration\":\"" + jsonEscape(m_segment_duration) + "\"";
+    body += "}";
+    const string add_target = m_api_base_path + "/v3/config/paths/add/" + encoded_proxy;
+    response = request("POST", add_target, body);
+    return response.error.empty() && response.status >= 200 && response.status < 300;
+  }
+
   const string target = m_api_base_path + "/v3/config/paths/patch/" + urlEncode(path.api_name);
   string body;
   if (record) {
-    const string record_pattern =
-        m_record_directory + "/" + path.name + "/%Y-%m-%d_%H-%M-%S-%f";
     body = "{\"recordPath\":\"" + jsonEscape(record_pattern) + "\",\"record\":true";
     if (!m_segment_duration.empty())
       body += ",\"recordSegmentDuration\":\"" + jsonEscape(m_segment_duration) + "\"";
@@ -884,6 +952,7 @@ bool VideoRecorder::buildReport()
   m_msgs << "  Record host:      " << m_record_host << endl;
   m_msgs << "  Segment duration: "
          << (m_segment_duration.empty() ? "server default" : m_segment_duration) << endl;
+  m_msgs << "  Proxy RTSP:       " << m_proxy_rtsp_address << endl;
   m_msgs << "  Command variable: " << m_command_var << endl;
   m_msgs << "  Logger variable:  " << m_logger_directory_var << endl;
   m_msgs << "  Recording ID var: "
@@ -909,11 +978,13 @@ bool VideoRecorder::buildReport()
   m_msgs << "  Last error:       " << (m_last_error.empty() ? "none" : m_last_error) << endl
          << endl;
 
-  ACTable table(4);
-  table << "Camera | MediaMTX path | State | HTTP";
+  ACTable table(5);
+  table << "Camera | Source path | Record path | State | HTTP";
   table.addHeaderLines();
   for (const auto &path : m_paths)
-    table << path.name << path.api_name << path.status << path.http_status;
+    table << path.name << path.api_name
+          << (path.proxy_api_name.empty() ? path.api_name : path.proxy_api_name)
+          << path.status << path.http_status;
   m_msgs << table.getFormattedString();
   return true;
 }
