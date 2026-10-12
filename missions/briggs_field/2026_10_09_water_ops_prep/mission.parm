@@ -583,3 +583,4 @@ LAND_ALT_LOW_M    2
 # mode_land.cpp (init), reviewed companion Copter 4.7.1.
 LAND_REPOSITION   1
 
+PLND_LAG=0.03
