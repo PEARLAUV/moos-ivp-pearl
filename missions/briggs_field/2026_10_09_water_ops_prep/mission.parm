@@ -39,7 +39,7 @@ FS_GCS_TIMEOUT    3
 # Parameter: https://ardupilot.org/copter/docs/parameters.html#rc-fs-timeout
 # Source: libraries/RC_Channel/RC_Channels_VarInfo.h and ArduCopter/radio.cpp in
 # companion ardupilot-sitl/ardupilot (reviewed Copter 4.7.1).
-RC_FS_TIMEOUT     8
+RC_FS_TIMEOUT    10
 
 # RTL_ALT_M -- baseline minimum RTL return altitude, metres (Copter 4.7).
 # Upstream metadata: "The minimum alt above home the vehicle will climb to
