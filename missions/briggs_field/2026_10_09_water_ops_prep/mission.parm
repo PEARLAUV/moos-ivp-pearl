@@ -6,6 +6,24 @@
 # REAL upload must read existing values first, require fresh native ground/disarm,
 # verify actual readback, and never reboot/arm/change mode on the user's behalf.
 
+# FS_GCS_TIMEOUT -- GCS/telemetry-heartbeat loss timeout, seconds.
+# Upstream metadata: "Timeout before triggering the GCS failsafe"; allowed range
+# is 2..120 s in 1 s increments. ArduCopter measures elapsed time since the last
+# MAVLink heartbeat from the device whose system ID matches SYSID_MYGCS. Eight
+# seconds was operator-selected to tolerate short telemetry interruptions without
+# immediately declaring the GCS link lost. This value does not itself enable the
+# failsafe or select its response: FS_GCS_ENABLE controls whether loss acts and
+# chooses RTL/Land/other behavior, while FS_OPTIONS may permit continuation in
+# particular flight modes. The currently observed FS_GCS_ENABLE=0 means this
+# timeout remains dormant until GCS failsafe is deliberately enabled. It is not
+# the RC receiver failsafe timeout (RC_FS_TIMEOUT), a MOOS-health watchdog, or a
+# guarantee that pArduBridge and the rest of MOOS are healthy merely because a
+# MAVLink heartbeat is present.
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#fs-gcs-timeout
+# Source: ArduCopter/Parameters.cpp and events.cpp in companion
+# ardupilot-sitl/ardupilot (reviewed Copter 4.7.1).
+FS_GCS_TIMEOUT    8
+
 # RTL_ALT_M -- baseline minimum RTL return altitude, metres (Copter 4.7).
 # Upstream metadata: "The minimum alt above home the vehicle will climb to
 # before returning. If the vehicle is flying higher than this value it will
@@ -583,4 +601,18 @@ LAND_ALT_LOW_M    2
 # mode_land.cpp (init), reviewed companion Copter 4.7.1.
 LAND_REPOSITION   1
 
-PLND_LAG=0.03
+# PLND_LAG -- assumed precision-landing observation latency, seconds.
+# Upstream metadata: "Precision Landing sensor lag, to cope with variable
+# landing_target latency"; allowed range is 0.02..0.250 s and changing it
+# requires an autopilot reboot. The existing operator-selected 0.03 s value is
+# retained here. It compensates only a fixed assumed delay; it does not repair
+# detector stalls, timestamp errors, network jitter, or target-vector jumps, and
+# the actual camera-to-Pixhawk latency still needs measurement before retuning.
+# This whitespace-separated spelling is required by the repository's strict
+# parameter uploader; `PLND_LAG=0.03` was malformed and prevented the complete
+# ordered profile from loading. This is an upstream ArduPilot parameter, not a
+# custom PEARL delay implementation.
+# Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-lag
+# Source: libraries/AC_PrecLand/AC_PrecLand.cpp in companion
+# ardupilot-sitl/ardupilot (reviewed Copter 4.7.1).
+PLND_LAG          0.03

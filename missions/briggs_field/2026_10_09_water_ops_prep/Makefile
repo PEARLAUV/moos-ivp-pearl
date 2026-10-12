@@ -81,8 +81,8 @@ help:
 	  'Local simulation: sim-briggs / sim-charles (SIM_WARP=$(SIM_WARP)).' \
 	  'Preview: make -n TARGET; generate only: make TARGET LAUNCH_ARGS=--just_make' \
 	  'Return/rally markers are provisional; validate before task commit.' \
-	  'logs: after shutdown, assemble the latest local-node artifacts with SHA-256 sums.' \
-	  'stop-recording: on the stopped drone host, remove temporary recording paths.' \
+	  'logs: after shutdown, stop recording if needed and assemble artifacts with SHA-256 sums.' \
+	  'stop-recording: optional stopped-drone recording cleanup without full collection.' \
 	  'collect-logs-briggs/charles: shoreside fetch of drone/PEARL artifacts.' \
 	  'collect-logs-sim: assemble the latest closed local three-community SIM logs.' \
 	  'clean: removes mission logs/targets; kill: host-wide ktm + owned SITL/VNC cleanup.'
@@ -96,12 +96,12 @@ logs:
 	  --output-root "$(LOG_OUTPUT_ROOT)" \
 	  --shore-ip "$(SHORE_IP)" --drone-ip "$(DRONE_IP)" \
 	  --pearl-real-ip "$(PEARL_REAL_IP)" --pearl-grass-ip "$(PEARL_GRASS_IP)" \
-	  --video-root "$(LOG_VIDEO_ROOT)" \
+	  --video-root "$(LOG_VIDEO_ROOT)" --video-api-url "$(VIDEO_RECORD_API)" \
 	  --ap-protocol "$(LOG_AP_PROTOCOL)" --ap-endpoint "$(LOG_AP_ENDPOINT)" \
 	  --log-directory "$(LOG_DIRECTORY)" $(LOG_ARGS)
 
-# Emergency/post-mission cleanup for a UAV mission that has already exited.
-# It writes log-bound evidence that `make logs` verifies against MediaMTX.
+# Optional post-mission cleanup without full artifact collection. `make logs`
+# performs the same exact-log-bound cleanup automatically when needed.
 stop-recording:
 	python3 "$(PEARL_ROOT)/scripts/collect_mission_logs.py" \
 	  --mission-dir "$(MISSION_DIR)" --stop-recording-only \

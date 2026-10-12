@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 from typing import Any, cast
 
 SCRIPT = Path(__file__).resolve().parents[1] / "collect_mission_logs.py"
@@ -147,6 +148,35 @@ class CollectorTest(unittest.TestCase):
             self.assertTrue((artifact / "moos" / log.name).is_dir())
             self.assertTrue((artifact / "jetson-video" / "UNAVAILABLE.txt").is_file())
             self.validate_sums(artifact)
+
+    def test_drone_collection_refreshes_stop_evidence_for_selected_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mission = root / "mission"
+            mission.mkdir()
+            recording = root / "video" / "recording"
+            log = self.make_log(
+                mission, "LOG_uav_",
+                "1 VIDEO_RECORD_STATE pVideoRecorder RECORDING\n"
+                f"2 VIDEO_RECORD_DIRECTORY pVideoRecorder {recording}\n")
+            evidence = mission / ".video-stop-evidence.json"
+            evidence.write_text('{"log_directory": "stale-log"}\n')
+            with mock.patch.object(
+                    collector, "stop_recording_after_mission",
+                    return_value=evidence) as stop:
+                result = collector.ensure_drone_recording_stopped(
+                    mission, log, "http://video-api", evidence)
+            self.assertEqual(result, evidence)
+            stop.assert_called_once_with(
+                mission, "http://video-api", evidence, log_directory=log)
+
+            (log / f"{log.name}.alog").write_text(
+                "1 VIDEO_RECORD_STATE pVideoRecorder STOPPED\n")
+            with mock.patch.object(collector, "stop_recording_after_mission") as stop:
+                result = collector.ensure_drone_recording_stopped(
+                    mission, log, "http://video-api", evidence)
+            self.assertIsNone(result)
+            stop.assert_not_called()
 
     def test_drone_video_requires_stopped_two_stream_recording(self):
         with tempfile.TemporaryDirectory() as directory:

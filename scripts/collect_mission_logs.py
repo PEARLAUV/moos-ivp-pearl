@@ -425,7 +425,9 @@ def mediamtx_path_names(api_url: str) -> set[str]:
     return {str(item.get("name", "")) for item in payload.get("items", [])}
 
 
-def stop_recording_after_mission(mission: Path, api_url: str, evidence_path: Path) -> Path:
+def stop_recording_after_mission(
+        mission: Path, api_url: str, evidence_path: Path,
+        log_directory: Path | None = None) -> Path:
     running = []
     for name in ("MOOSDB", "pArduBridge", "pVideoRecorder"):
         result = subprocess.run(["pgrep", "-x", name], capture_output=True, text=True,
@@ -437,7 +439,7 @@ def stop_recording_after_mission(mission: Path, api_url: str, evidence_path: Pat
             "Refusing to stop recording while a local UAV mission is running: "
             + ", ".join(running))
 
-    log_directory = latest_log_directory(mission, "drone", None)
+    log_directory = log_directory or latest_log_directory(mission, "drone", None)
     values = alog_last_values(
         log_directory, {"VIDEO_RECORD_STATE", "VIDEO_RECORD_DIRECTORY", "VIDEO_RECORD_ID"})
     recorded = values.get("VIDEO_RECORD_DIRECTORY")
@@ -481,6 +483,17 @@ def stop_recording_after_mission(mission: Path, api_url: str, evidence_path: Pat
     temporary.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
     temporary.replace(evidence_path)
     return evidence_path
+
+
+def ensure_drone_recording_stopped(
+        mission: Path, log_directory: Path, api_url: str,
+        evidence_path: Path) -> Path | None:
+    """Create fresh stop evidence when the closed log lacks a STOPPED event."""
+    values = alog_last_values(log_directory, {"VIDEO_RECORD_STATE"})
+    if values.get("VIDEO_RECORD_STATE") == "STOPPED":
+        return None
+    return stop_recording_after_mission(
+        mission, api_url, evidence_path, log_directory=log_directory)
 
 
 def copy_drone_video(
@@ -659,6 +672,10 @@ def main(argv=None) -> int:
             raise CollectionError(
                 "Latest MOOS log is still open; stop the local mission before make logs: "
                 + "; ".join(opened[:5]))
+        if node == "drone":
+            assert_drone_apps_stopped()
+            ensure_drone_recording_stopped(
+                mission, log_directory, args.video_api_url, evidence_path)
         output_root.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix=".collecting-", dir=output_root))
         manifest.update({"node": node, "host": socket.gethostname(),
@@ -666,7 +683,6 @@ def main(argv=None) -> int:
         shutil.copytree(log_directory, stage / "moos" / log_directory.name,
                         copy_function=shutil.copy2)
         if node == "drone":
-            assert_drone_apps_stopped()
             (stage / "video").mkdir()
             manifest["video"] = copy_drone_video(
                 log_directory, args.video_root, stage / "video", evidence_path,

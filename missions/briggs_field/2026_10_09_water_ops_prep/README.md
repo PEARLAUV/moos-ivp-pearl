@@ -168,8 +168,9 @@ Artifact content is node-specific:
   before this requirement can be completed.
 - Drone: the latest MOOS log, both task-scoped `fpv` and `nadir` camera trees,
   the newest Pixhawk DataFlash log, and a complete post-flight parameter export.
-  Video must already report `VIDEO_RECORD_STATE=STOPPED`, and both stream
-  directories must be nonempty.
+  If the closed log lacks a final `VIDEO_RECORD_STATE=STOPPED`, `make logs`
+  automatically stops and verifies the MediaMTX recorder paths and writes fresh
+  evidence bound to that exact log. Both stream directories must be nonempty.
 
 The DataFlash and parameter files do not already exist on the drone filesystem:
 they remain on the Pixhawk until a MAVLink client requests them. The collector
