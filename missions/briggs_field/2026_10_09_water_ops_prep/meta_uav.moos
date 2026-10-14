@@ -145,6 +145,16 @@ ProcessConfig = pHostInfo
   // Pin the broker-advertised address to --ip. This prevents automatic
   // interface discovery from selecting Wi-Fi, Ethernet, or Tailscale.
   default_hostip_force = $(IP_ADDR=localhost)
+#ifdef XMODE REAL
+  // UAV-board RX RSSI, not Sherlock/AP-side RSSI or RC receiver strength.
+  // Optional pHostInfo extension in the sibling moos-ivp checkout is required.
+  // The Alfa is wlan1 on the inspected UAV; verify interface identity on deployment.
+  wifi_interface = wlan1
+  wifi_prefix = UAV_WIFI
+  wifi_poll_interval = 2
+  // Local system-journal evidence first; independent of shoreside connectivity.
+  wifi_syslog = true
+#endif
 }
 
 //----------------------------------------------------
@@ -288,6 +298,14 @@ ProcessConfig = uFldNodeBroker
   bridge = src=UAV_BATTERY_VOLTAGE
   bridge = src=UAV_BATTERY_DATA_VALID
   bridge = src=UAV_BATTERY_DATA_AGE
+  // Scope source time as well as validity: delivery can cease with the Wi-Fi link.
+  bridge = src=UAV_WIFI_INTERFACE
+  bridge = src=UAV_WIFI_STATUS
+  bridge = src=UAV_WIFI_STATUS_VALID
+  bridge = src=UAV_WIFI_LINK_UP
+  bridge = src=UAV_WIFI_SIGNAL_DBM,frequency=1,behavior=latest
+  bridge = src=UAV_WIFI_SIGNAL_VALID
+  bridge = src=UAV_WIFI_SAMPLE_TIME,frequency=1,behavior=latest
 #ifdef VIDEO_RECORDING true
   bridge = src=VIDEO_RECORD_STATE
   bridge = src=VIDEO_RECORDING

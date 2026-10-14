@@ -70,6 +70,21 @@ class WifiEvidenceTest(unittest.TestCase):
         self.assertFalse(any(token in argv for argv in self.commands
                              for token in ("ssh", "sudo", "scan", "set", "delete", "restart")))
 
+    def test_dedicated_board_sampler_journal_is_collected(self):
+        def sampler(argv, *, stdout, stderr, **kwargs):
+            if "SYSLOG_IDENTIFIER=pHostInfo-wifi" in argv:
+                stdout.write((json.dumps({"__REALTIME_TIMESTAMP": "1800000005000000",
+                    "_BOOT_ID": "flight-boot", "SYSLOG_IDENTIFIER": "pHostInfo-wifi",
+                    "MESSAGE": "interface=wlan1 status_valid=1 link_up=1 signal_valid=1 signal=-61.0 dBm sample_time=1800000005.0"}) + "\n").encode())
+            return subprocess.CompletedProcess(argv, 0)
+        with mock.patch.object(wifi.subprocess, "run", side_effect=sampler):
+            result = self.collect()
+        self.assertEqual(result["journal_rssi_candidates"], 1)
+        sample = json.loads((self.root / "evidence/journal-rssi-candidates.json").read_text())[0]
+        self.assertEqual(sample["source"], "journal-wifi-samples.stdout")
+        self.assertEqual(sample["units"], "dBm")
+        self.assertEqual(sample["interface"], "wlan1")
+
     def test_missing_journals_do_not_turn_current_rssi_into_history(self):
         with mock.patch.object(wifi.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)):
             result = self.collect()

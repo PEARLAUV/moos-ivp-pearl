@@ -272,6 +272,22 @@ class MakefileSiteTest(unittest.TestCase):
                     self.assertNotIn("url          = ttyACM0:115200",
                                      self.configs[node, site])
 
+    def test_wifi_observability_is_uav_local_and_not_a_sherlock_dependency(self):
+        variables = ("INTERFACE", "STATUS", "STATUS_VALID", "LINK_UP", "SIGNAL_DBM",
+                     "SIGNAL_VALID", "SAMPLE_TIME")
+        for site in SITES:
+            drone = self.configs["drone", site]
+            self.assertIn("wifi_interface = wlan1", drone)
+            self.assertIn("wifi_prefix = UAV_WIFI", drone)
+            self.assertIn("wifi_poll_interval = 2", drone)
+            self.assertIn("wifi_syslog = true", drone)
+            self.assertNotIn("Run = iSherlockTelemetry", drone)
+            self.assertNotIn("wifi_interface =", self.sim_configs["drone", site])
+            self.assertIn("WildCardLogging     = true", drone)
+            for suffix in variables:
+                self.assertIn("bridge = src=UAV_WIFI_" + suffix, drone)
+                self.assertIn("scope = UAV_WIFI_" + suffix, self.configs["shoreside", site])
+
     def test_same_site_datum_on_every_node(self):
         for site, latitude, longitude in (("briggs", 42.3569186052, -71.0990291116),
                                           ("charles", 42.358436, -71.087448)):

@@ -179,6 +179,16 @@ Artifact content is node-specific:
   native retrieval: available evidence is preserved in a checksummed **incomplete**
   bundle and the command returns nonzero.
 
+Drone bundles also include **board-local Wi-Fi system evidence** under
+`system-wifi/`: mission-window network/kernel and dedicated Wi-Fi-sample journals,
+retained rotated logs, boot coverage, and separately labelled current `iw`/proc
+snapshots. Capture errors and unavailable historical RSSI remain explicit and do
+not block the independent core evidence. See [UAV-board Wi-Fi RSSI](WIFI_RSSI.md)
+for the recovery findings and the existing `pHostInfo` extension: local journal
+history first, then `UAV_WIFI_*` publication/logging and direct shoreside scope.
+This path does not use Sherlock; its updated binary/configuration still requires
+deployment. Current signal readings cannot reconstruct missing flight history.
+
 The DataFlash and parameter files do not already exist on the drone filesystem:
 they remain on the Pixhawk until a MAVLink client requests them. The collector
 therefore implements `LOG_REQUEST_LIST`/`LOG_REQUEST_DATA` and

@@ -435,6 +435,14 @@ ProcessConfig = pMarineViewer
   scope = PEARL_WIND_SPEED
   scope = PEARL_WIND_DATA_VALID
   scope = PEARL_AIRMAR_DATA_AGE
+  // Board-local Wi-Fi; SAMPLE_TIME must advance before trusting held RSSI.
+  scope = UAV_WIFI_INTERFACE
+  scope = UAV_WIFI_STATUS
+  scope = UAV_WIFI_STATUS_VALID
+  scope = UAV_WIFI_LINK_UP
+  scope = UAV_WIFI_SIGNAL_DBM
+  scope = UAV_WIFI_SIGNAL_VALID
+  scope = UAV_WIFI_SAMPLE_TIME
   scope = ALFA_LINK_UP
   scope = ALFA_STATION_COUNT
   scope = ALFA_SIGNAL_DBM

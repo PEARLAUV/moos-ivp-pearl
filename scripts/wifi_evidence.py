@@ -128,7 +128,8 @@ def collect_wifi_evidence(log_directory: Path, destination: Path, start: float,
     iw = shutil.which("iw") or "/usr/sbin/iw"
     commands["current-iw-dev"] = [iw, "dev"]
     for interface in sorted(sys_net.glob("*")):
-        if (interface / "wireless").is_dir() and re.fullmatch(r"[A-Za-z0-9_.-]{1,15}", interface.name):
+        wireless = (interface / "wireless").is_dir() or (interface / "phy80211").is_dir()
+        if wireless and re.fullmatch(r"[A-Za-z0-9_.-]{1,15}", interface.name):
             for query in ("link", "info", "station"):
                 argv = [iw, "dev", interface.name, query]
                 if query == "station":
@@ -155,7 +156,7 @@ def collect_wifi_evidence(log_directory: Path, destination: Path, start: float,
     rotated.mkdir()
     files = sorted({path for pattern in LOG_PATTERNS for path in log_root.glob(pattern)})
     for source in files:
-        row = {"source": str(source), "destination": f"rotated/{source.name}"}
+        row: dict[str, Any] = {"source": str(source), "destination": f"rotated/{source.name}"}
         try:
             if source.is_symlink() or not source.is_file():
                 raise OSError("not a regular non-symlink file")
@@ -188,10 +189,19 @@ def collect_wifi_evidence(log_directory: Path, destination: Path, start: float,
         count, found = journal_candidates(destination / f"{name}.stdout")
         records += count
         candidates.extend(found)
+    journal_complete = all(metadata["commands"][name]["exit_code"] == 0 and
+                           metadata["commands"][name]["stderr_bytes"] == 0
+                           for name in ("journal-network", "journal-kernel", "journal-wifi-samples"))
+    metadata["capture_complete"] = (
+        all(row["exit_code"] == 0 and row["stderr_bytes"] == 0 for row in metadata["commands"].values())
+        and all("error" not in row for row in metadata["snapshots"])
+        and all("error" not in row and not row.get("truncated") and not row.get("source_changed")
+                for row in metadata["rotated_logs"]))
     metadata["journal_records"] = records
     metadata["journal_rssi_candidates"] = len(candidates)
     metadata["rssi_history_status"] = (
-        "journal_candidates_require_review" if candidates else "not_found_in_exported_journals")
+        "journal_candidates_require_review" if candidates else
+        "not_found_in_exported_journals" if journal_complete else "journal_unavailable_or_partial")
     if not candidates:
         metadata["warnings"].append(
             "No historical RSSI candidates in journal exports. Rotated files need separate review; "
