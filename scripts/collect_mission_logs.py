@@ -664,22 +664,55 @@ def collect_ardupilot(destination: Path, protocol: str, endpoint: str,
         except StopIteration as exc:
             raise CollectionError(
                 f"Pixhawk latest DataFlash log {latest_id} was absent from its log list") from exc
-        ordered = [latest, *(entry for entry in entries if entry.id != latest_id)]
+        # AP_Logger_Backend::log_num_from_list_entry defines these as
+        # chronological list IDs (oldest=1), NOT wrapping on-disk filenames.
+        # A dated pre-mission boundary excludes all older files, including
+        # undated historical logs, without probing their contents.
+        ordered = sorted(entries, key=lambda entry: entry.id, reverse=True)
+        if ordered[0] != latest:
+            raise CollectionError("Pixhawk latest DataFlash ID contradicts chronological catalog order")
+        metadata["catalog_order"] = "ArduPilot chronological list IDs, newest first"
+        older_boundary: dict[str, Any] | None = None
         errors = []
         selected = []
         for entry in ordered:
             selection: dict[str, Any] = {"id": entry.id, "decision": "excluded"}
             metadata["selection_results"].append(selection)
-            # ArduPilot's catalog UTC is file mtime/current RTC, NOT log start.
-            # It can exclude a closed old log, but cannot establish overlap.
+            if older_boundary is not None:
+                selection.update(reason="chronologically older than pre-mission boundary",
+                                 boundary_log_id=older_boundary["id"])
+                continue
+            # Catalog UTC is file mtime/current RTC, NOT log start. A credible
+            # pre-mission mtime also bounds every chronologically older log.
             if 946_684_800 <= entry.time_utc < window["since_unix"]:
                 selection["reason"] = "catalog mtime precedes mission window"
+                older_boundary = {"id": entry.id, "basis": "catalog_mtime",
+                                  "end_upper_bound_unix": entry.time_utc}
+                metadata["older_log_boundary"] = older_boundary
                 continue
             try:
                 timing = probe_interval(
                     entry.size, lambda start, end: client.read_log_range(entry, start, end),
                     window["until_unix"])
                 selection["native_timing"] = timing
+                # When recollecting an older mission, a dated later file also
+                # proves any already-probed newer unknown files are unrelated.
+                if timing.get("end_unix", timing["start_unix"]) > window["until_unix"]:
+                    for newer in metadata["selection_results"][:-1]:
+                        if newer["decision"] == "unknown":
+                            newer.update(decision="excluded",
+                                         reason="chronologically newer than post-mission boundary",
+                                         boundary_log_id=entry.id)
+                if timing.get("end_unix", float("inf")) < window["since_unix"]:
+                    older_boundary = {"id": entry.id, "basis": "native_end",
+                                      "end_upper_bound_unix": timing["end_unix"]}
+                elif timing["start_unix"] < window["since_unix"]:
+                    # An overlapping file already open before this mission
+                    # likewise proves older files ended before the window.
+                    older_boundary = {"id": entry.id, "basis": "native_start_before_mission",
+                                      "end_upper_bound_unix": timing["start_unix"]}
+                if older_boundary is not None:
+                    metadata["older_log_boundary"] = older_boundary
                 overlaps = (timing["start_unix"] <= window["until_unix"] and
                             timing.get("end_unix", -1) >= window["since_unix"])
                 if overlaps:
@@ -689,9 +722,10 @@ def collect_ardupilot(destination: Path, protocol: str, endpoint: str,
                     selection["reason"] = "native UTC interval outside mission"
             except (TimingError, CollectionError, OSError, mav.UploadError) as exc:
                 selection.update(decision="unknown", error=str(exc))
-                errors.append(f"DataFlash log {entry.id} selection: {exc}")
                 client.guard()
                 client.send(122, struct.pack("<BB", system, component))
+        errors.extend(f"DataFlash log {row['id']} selection: {row['error']}"
+                      for row in metadata["selection_results"] if row["decision"] == "unknown")
         metadata["selected_log_ids"] = [entry.id for entry in selected]
         if not selected:
             errors.append("No DataFlash log could be matched to the selected MOOS mission")

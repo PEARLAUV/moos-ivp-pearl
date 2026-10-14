@@ -246,7 +246,7 @@ class CollectorTest(unittest.TestCase):
         peer.logs[9] = native_log(BASE_TIME + 45, BASE_TIME + 50)
         original = collector.ReadOnlyPixhawk.download_log
         def fail_older(client, entry, destination):
-            if entry.id == 7:
+            if entry.id == 8:
                 destination.write_bytes(b"partial")
                 raise collector.CollectionError("interrupted old log")
             return original(client, entry, destination)
@@ -264,7 +264,7 @@ class CollectorTest(unittest.TestCase):
             self.assertTrue(inventory["logs"][0]["complete"])
             self.assertFalse(inventory["logs"][1]["complete"])
             self.assertTrue(inventory["logs"][2]["complete"])
-            self.assertEqual([row["id"] for row in inventory["logs"]], [9, 7, 8])
+            self.assertEqual([row["id"] for row in inventory["logs"]], [9, 8, 7])
             self.assertEqual(len(list((root / "dataflash").glob("*.bin"))), 2)
             self.assertEqual(len(list((root / "dataflash").glob("*.partial"))), 1)
 
@@ -303,6 +303,100 @@ class CollectorTest(unittest.TestCase):
             with self.assertRaisesRegex(collector.CollectionError, "catalog changed"):
                 collector.collect_ardupilot(Path(directory), "tcp", "fixture", 1, 1, 0.1, mission)
             self.assertFalse(json.loads((Path(directory) / "NATIVE_INVENTORY.json").read_text())["complete"])
+
+    def collect_native_fixture(self, peer, root):
+        mission = self.native_mission(root, BASE_TIME + 25, 20)
+        with mock.patch.object(collector, "assert_drone_apps_stopped"), \
+                mock.patch.object(collector.mav, "Link", return_value=peer):
+            return collector.collect_ardupilot(root / "native", "tcp", "fixture", 1, 1, 0.1, mission)
+
+    def peer_with_undated_history(self):
+        peer = PixhawkPeer()
+        peer.logs = {log_id: b"undated historical log" for log_id in range(1, 67)}
+        peer.log_times = {log_id: 0 for log_id in peer.logs}
+        peer.logs[66] = native_log(BASE_TIME + 30, BASE_TIME + 40)
+        peer.log_times[66] = BASE_TIME + 40
+        return peer
+
+    def test_66_entry_catalog_excludes_undated_history_without_probing(self):
+        # Regression for the board run: log 66 downloaded, but dozens of old
+        # undated files incorrectly turned an otherwise valid bundle incomplete.
+        for boundary_kind in ("catalog_mtime", "native_end", "native_start_before_mission"):
+            with self.subTest(boundary=boundary_kind), tempfile.TemporaryDirectory() as directory:
+                peer = self.peer_with_undated_history()
+                boundary_id = 65
+                expected_probes = {66}
+                if boundary_kind == "catalog_mtime":
+                    peer.log_times[65] = BASE_TIME + 20
+                elif boundary_kind == "native_end":
+                    peer.logs[65] = native_log(BASE_TIME + 10, BASE_TIME + 20)
+                    expected_probes.add(65)
+                else:
+                    peer.logs[66] = native_log(BASE_TIME + 10, BASE_TIME + 40)
+                    boundary_id = 66
+                meta = self.collect_native_fixture(peer, Path(directory))
+                self.assertTrue(meta["complete"])
+                self.assertEqual(meta["selected_log_ids"], [66])
+                self.assertEqual([row["id"] for row in meta["logs"]], [66])
+                self.assertEqual(meta["older_log_boundary"]["id"], boundary_id)
+                self.assertEqual(meta["older_log_boundary"]["basis"], boundary_kind)
+                self.assertEqual({request[0] for request in peer.requests}, expected_probes)
+                self.assertEqual([row["id"] for row in meta["selection_results"]],
+                                 list(range(66, 0, -1)))
+                self.assertTrue(all(row["decision"] == "excluded" for row in
+                                    meta["selection_results"] if row["id"] < boundary_id))
+
+    def test_multiple_mission_logs_before_historical_cutoff(self):
+        peer = self.peer_with_undated_history()
+        peer.logs[65] = native_log(BASE_TIME + 26, BASE_TIME + 29)
+        peer.logs[64] = native_log(BASE_TIME + 10, BASE_TIME + 20)
+        with tempfile.TemporaryDirectory() as directory:
+            meta = self.collect_native_fixture(peer, Path(directory))
+            self.assertTrue(meta["complete"])
+            self.assertEqual(meta["selected_log_ids"], [66, 65])
+            self.assertEqual({request[0] for request in peer.requests}, {66, 65, 64})
+            self.assertEqual(meta["older_log_boundary"]["id"], 64)
+
+    def test_undated_log_inside_possible_mission_range_still_fails(self):
+        peer = self.peer_with_undated_history()
+        peer.logs[64] = native_log(BASE_TIME + 26, BASE_TIME + 29)
+        peer.logs[63] = native_log(BASE_TIME + 10, BASE_TIME + 20)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(collector.CollectionError, "DataFlash log 65 selection"):
+                self.collect_native_fixture(peer, root)
+            meta = json.loads((root / "native/NATIVE_INVENTORY.json").read_text())
+            self.assertFalse(meta["complete"])
+            self.assertEqual(meta["selected_log_ids"], [66, 64])
+            self.assertEqual([row["id"] for row in meta["selection_results"]
+                              if row["decision"] == "unknown"], [65])
+            self.assertEqual({request[0] for request in peer.requests}, {66, 65, 64, 63})
+
+    def test_dated_future_log_bounds_newer_undated_files_for_older_mission(self):
+        peer = self.peer_with_undated_history()
+        peer.logs[66] = b"undated future log"
+        peer.log_times[66] = 0
+        peer.logs[65] = native_log(BASE_TIME + 70, BASE_TIME + 80)
+        peer.logs[64] = native_log(BASE_TIME + 30, BASE_TIME + 40)
+        peer.log_times[63] = BASE_TIME + 20
+        with tempfile.TemporaryDirectory() as directory:
+            meta = self.collect_native_fixture(peer, Path(directory))
+            self.assertTrue(meta["complete"])
+            self.assertEqual(meta["selected_log_ids"], [64])
+            self.assertEqual(meta["selection_results"][0]["decision"], "excluded")
+            self.assertEqual(meta["selection_results"][0]["boundary_log_id"], 65)
+            self.assertIn("error", meta["selection_results"][0])  # retain probe limitation
+            self.assertEqual({request[0] for request in peer.requests}, {66, 65, 64})
+
+    def test_contradictory_catalog_order_fails_before_probing(self):
+        peer = PixhawkPeer()
+        entries = [collector.LogEntry(key, len(value), peer.log_times[key], 2, 7)
+                   for key, value in peer.logs.items()]
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(collector.ReadOnlyPixhawk, "get_log_entries", return_value=entries):
+            with self.assertRaisesRegex(collector.CollectionError, "chronological catalog order"):
+                self.collect_native_fixture(peer, Path(directory))
+            self.assertEqual(peer.requests, [])
 
     def test_native_scope_excludes_old_and_later_logs(self):
         peer = PixhawkPeer()

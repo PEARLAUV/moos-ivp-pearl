@@ -206,21 +206,31 @@ multi-megabyte DataFlash download can take several minutes. Collection is now
   window, with a two-second clock/boundary tolerance. `LOG_DIRECTORY=LOG_...`
   scopes native collection to that explicit older session too.
 - The catalog timestamp is ArduPilot file mtime/current RTC, **not log start**.
-  Clearly older catalog entries are skipped. Remaining candidates get bounded,
-  temporary native timing probes (up to 256 KiB at the head and 64 KiB at the
-  tail), using DataFlash `TimeUS` and RTC/GPS UTC anchors. These probes are not
-  archived as additional FC logs; only matching logs are downloaded in full.
+  Catalog IDs are chronological list positions, not wrapping disk filenames
+  (`AP_Logger_Backend::log_num_from_list_entry`). Selection scans **newest to
+  oldest**. A dated pre-mission file—or an overlapping file already open before
+  the mission window—establishes a boundary: every older entry is excluded
+  **without probing**, including undated historical logs. This avoids old
+  bench logs making a current mission collection incomplete.
+- Remaining candidates get bounded, temporary native timing probes (up to
+  256 KiB at the head and 64 KiB at the tail), using DataFlash `TimeUS` and
+  RTC/GPS UTC anchors. These probes are not archived as additional FC logs;
+  only matching logs are downloaded in full. When collecting an older mission,
+  a dated later file can also exclude chronologically newer undated files.
 - Multiple matching files are retained, including a file that starts before
   the mission and continues through it. Files remain whole: unrelated portions
   of an overlapping native file are not trimmed. Clock synchronization between
   the MOOS host and FC is required. GPS conversion follows ArduPilot's current
   18-second GPS/UTC offset; conflicting clock anchors are rejected.
-- Missing/ambiguous timing or no match makes collection explicitly incomplete;
-  there is **no fallback to all logs or the newest unrelated log**. Successfully
-  matched evidence is still preserved if another candidate cannot be classified.
+- Missing/ambiguous timing **inside the possible mission range**, or no match,
+  makes collection explicitly incomplete; there is **no fallback to all logs
+  or the newest unrelated log**. Successfully matched evidence is still
+  preserved if another possible mission file cannot be classified. Undated
+  files outside an established chronological boundary are not errors.
 
 `ardupilot/NATIVE_INVENTORY.json` records the mission window, catalog, selection
-reasons/native bounds, selected IDs, and per-log completion. A changing catalog
+reasons/native bounds, chronological exclusion boundaries, selected IDs, and
+per-log completion. A changing catalog
 fails collection; interrupted downloads remain `.bin.partial`, never complete
 `.bin` files.
 The parameter export is a current readback, not historical parameters for older
