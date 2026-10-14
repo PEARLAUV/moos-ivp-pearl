@@ -501,10 +501,11 @@ PLND_TIMEOUT      1
 PLND_RET_BEHAVE   1
 
 # PLND_EST_TYPE -- precision-landing target estimator (enum, no physical units).
-# Upstream choices: "0:RawSensor, 1:KalmanFilter". User-approved 1 retains the
-# upstream default/previously observed estimator rather than switching to raw
-# measurements. This selects the precision-target estimator, NOT the aircraft
-# navigation EKF; no navigation source, EKF reset or readiness shortcut is added.
+# Upstream choices: "0:RawSensor, 1:KalmanFilter". User-selected 0 switches REAL
+# and SITL to raw-sensor estimation for comparison with the observed oscillatory
+# Kalman-filtered approach. This is not a demonstrated fix for oscillation.
+# It selects the precision-target estimator, NOT the aircraft navigation EKF;
+# no navigation source, EKF reset or readiness shortcut is added.
 # Kalman mode fuses horizontal target observations with native aircraft inertial
 # motion to estimate relative North/East position and velocity, predicts between
 # observations and can reject inconsistent measurements. This can reduce noisy
@@ -512,6 +513,9 @@ PLND_RET_BEHAVE   1
 # With PLND_OPTIONS bit 0 set, native guidance can use estimated target velocity
 # as feed-forward. Raw mode instead returns zero target-velocity feed-forward;
 # raw position still undergoes attitude/mount transforms and motion compensation.
+# Selecting raw removes Kalman smoothing/outlier handling and may expose more
+# measurement noise to guidance. Moving-pad velocity feed-forward is unavailable
+# in raw mode even when PLND_OPTIONS bit 0 is set. Validate before autonomous LAND.
 # Reviewed Kalman init requires about 2 FC seconds of sufficiently continuous
 # accepted observations; a >500 ms accepted-update gap during init can fail it.
 # A received LANDING_TARGET packet is not proof of FC target acquisition. Filter
@@ -528,7 +532,7 @@ PLND_RET_BEHAVE   1
 # Parameter: https://ardupilot.org/copter/docs/parameters.html#plnd-est-type
 # Source: libraries/AC_PrecLand/AC_PrecLand.cpp, var_info/run_estimator/
 # check_ekf_init_timeout/get_target_velocity_ms, reviewed Copter 4.7.1.
-PLND_EST_TYPE     1
+PLND_EST_TYPE     0
 
 # Native landing speed profile shared by LAND and RTL's final landing stage.
 # User selected high=1 m/s, low=0.4 m/s, slowdown height=2 m. These are nominal

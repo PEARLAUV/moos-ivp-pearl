@@ -77,7 +77,7 @@ class RangefinderConfigTest(unittest.TestCase):
             self.assertEqual(values["PLND_RET_MAX"], 3)
             self.assertEqual(values["PLND_TIMEOUT"], 1)
             self.assertEqual(values["PLND_RET_BEHAVE"], 1)
-            self.assertEqual(values["PLND_EST_TYPE"], 1)
+            self.assertEqual(values["PLND_EST_TYPE"], 0)
 
     def test_telemetry_and_rc_loss_timeouts(self):
         for mode in ("REAL", "SITL"):
