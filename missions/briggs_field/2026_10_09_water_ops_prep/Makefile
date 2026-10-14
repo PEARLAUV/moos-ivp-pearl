@@ -91,7 +91,7 @@ help:
 
 # Read-only collection is explicit and never a launch prerequisite. The drone
 # collector refuses a running pArduBridge and uses grounded/disarmed native
-# evidence before requesting parameters or all available DataFlash logs.
+# evidence before requesting parameters or mission-overlapping DataFlash logs.
 logs:
 	python3 "$(PEARL_ROOT)/scripts/collect_mission_logs.py" \
 	  --mission-dir "$(MISSION_DIR)" --node "$(LOG_NODE)" \

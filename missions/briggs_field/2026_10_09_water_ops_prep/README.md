@@ -167,8 +167,9 @@ Artifact content is node-specific:
   A future task-scoped Jetson recorder must publish/provide an authoritative path
   before this requirement can be completed.
 - Drone: the selected MOOS log, `fpv` and `nadir` camera trees from **every**
-  `VIDEO_RECORD_DIRECTORY` published during that session, **all** DataFlash logs
-  still advertised by the Pixhawk, and a complete collection-time parameter export.
+  `VIDEO_RECORD_DIRECTORY` published during that session, **only DataFlash logs
+  whose native UTC intervals overlap that MOOS mission**, and a complete
+  collection-time parameter export.
   Repeated path publications are deduplicated; multiple tasks are kept separately
   under `video/tasks/0001/`, `0002/`, etc. Single-task bundles retain `video/fpv/`
   and `video/nadir/`. `video/VIDEO_INVENTORY.json` maps exact source paths to copies.
@@ -198,13 +199,30 @@ refuses running `MOOSDB`, `pArduBridge`, or `pVideoRecorder` processes,
 exclusively opens Pixhawk `if00`, and admits only
 a freshly observed disarmed, `ON_GROUND` flight controller. It sends no arm,
 mode, flight, parameter-set, reboot, or log-delete command. At 115200 baud a
-multi-megabyte DataFlash download can take several minutes; archiving the entire
-available native log catalog on each collection may take substantially longer and
-consume significant storage. Latest log first, then all remaining IDs: this is
-conservative preservation, **not** a claim that every native log belongs to the
-selected MOOS session. `ardupilot/NATIVE_INVENTORY.json` records the before/after
-catalogs, per-log completion and scope. A changing catalog fails collection;
-interrupted downloads remain `.bin.partial`, never complete `.bin` files.
+multi-megabyte DataFlash download can take several minutes. Collection is now
+**mission-scoped**, not an archive of the entire FC:
+
+- The selected MOOS `LOGSTART` and last alog elapsed time define the mission
+  window, with a two-second clock/boundary tolerance. `LOG_DIRECTORY=LOG_...`
+  scopes native collection to that explicit older session too.
+- The catalog timestamp is ArduPilot file mtime/current RTC, **not log start**.
+  Clearly older catalog entries are skipped. Remaining candidates get bounded,
+  temporary native timing probes (up to 256 KiB at the head and 64 KiB at the
+  tail), using DataFlash `TimeUS` and RTC/GPS UTC anchors. These probes are not
+  archived as additional FC logs; only matching logs are downloaded in full.
+- Multiple matching files are retained, including a file that starts before
+  the mission and continues through it. Files remain whole: unrelated portions
+  of an overlapping native file are not trimmed. Clock synchronization between
+  the MOOS host and FC is required. GPS conversion follows ArduPilot's current
+  18-second GPS/UTC offset; conflicting clock anchors are rejected.
+- Missing/ambiguous timing or no match makes collection explicitly incomplete;
+  there is **no fallback to all logs or the newest unrelated log**. Successfully
+  matched evidence is still preserved if another candidate cannot be classified.
+
+`ardupilot/NATIVE_INVENTORY.json` records the mission window, catalog, selection
+reasons/native bounds, selected IDs, and per-log completion. A changing catalog
+fails collection; interrupted downloads remain `.bin.partial`, never complete
+`.bin` files.
 The parameter export is a current readback, not historical parameters for older
 flights. The independent `if02` QGC/mavp2p interface remains untouched.
 

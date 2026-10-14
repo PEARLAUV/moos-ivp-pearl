@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Assemble the latest local mission artifacts into a checksummed directory.
 
-The collector is deliberately local-node only. On the drone it obtains all
-available DataFlash logs and a complete parameter snapshot directly from a stopped,
+The collector is deliberately local-node only. On the drone it obtains only
+mission-overlapping DataFlash logs and a parameter snapshot directly from a stopped,
 disarmed, grounded Pixhawk using read-only MAVLink requests.  It never arms,
 changes mode, sets parameters, deletes logs, or sends a flight command.
 """
@@ -29,7 +29,8 @@ from pathlib import Path
 from typing import Any
 
 import ardupilot_params as mav
-from wifi_evidence import collect_wifi_evidence
+from wifi_evidence import collect_wifi_evidence, mission_window
+from dataflash_timing import TimingError, probe_interval
 
 # MAVLink common.xml CRC extras used only for read-only artifact retrieval.
 mav.EXTRAS.update({21: 159, 117: 128, 118: 56, 119: 116, 120: 134, 122: 203})
@@ -234,24 +235,35 @@ class ReadOnlyPixhawk:
         return sorted(self.log_entries.values(), key=lambda entry: entry.id)
 
     def download_log(self, entry: LogEntry, destination: Path) -> None:
+        self._download_log_range(entry, destination, 0, entry.size)
+
+    def read_log_range(self, entry: LogEntry, start: int, end: int) -> bytes:
+        # Selection probes are bounded and temporary, not archived full logs.
+        with tempfile.TemporaryDirectory(prefix="dataflash-probe-") as directory:
+            path = Path(directory) / "probe.bin"
+            self._download_log_range(entry, path, start, end)
+            return path.read_bytes()
+
+    def _download_log_range(self, entry: LogEntry, destination: Path,
+                            start: int, end: int) -> None:
         self.guard()
-        if entry.size <= 0:
-            raise CollectionError(f"Pixhawk DataFlash log {entry.id} is empty")
+        if not (0 <= start < end <= entry.size) or start % 90 or (end != entry.size and end % 90):
+            raise CollectionError(f"Invalid DataFlash byte range {start}:{end} for log {entry.id}")
         block_size = 90
-        blocks = (entry.size + block_size - 1) // block_size
+        blocks = (end - start + block_size - 1) // block_size
         received = bytearray(blocks)
         complete = 0
         attempts_without_progress = 0
         last_report = -1
         with destination.open("xb+") as output:
-            output.truncate(entry.size)
+            output.truncate(end - start)
             while complete < blocks:
                 try:
                     first = received.index(0)
                 except ValueError:
                     break
-                offset = first * block_size
-                request_bytes = min(block_size * 100, entry.size - offset)
+                offset = start + first * block_size
+                request_bytes = min(block_size * 100, end - offset)
                 self.log_blocks.clear()
                 self.send(119, struct.pack("<IIHBB", offset, request_bytes, entry.id,
                                            self.system, self.component))
@@ -268,11 +280,13 @@ class ReadOnlyPixhawk:
                             raise CollectionError("Pixhawk LOG_DATA offset outside advertised log")
                         if packet_offset % block_size:
                             raise CollectionError("Pixhawk LOG_DATA offset is not 90-byte aligned")
-                        index = packet_offset // block_size
-                        expected_size = min(block_size, entry.size - packet_offset)
+                        if packet_offset < start or packet_offset >= end:
+                            continue  # delayed response from another probe/request
+                        index = (packet_offset - start) // block_size
+                        expected_size = min(block_size, end - packet_offset)
                         if len(data) != expected_size:
                             continue
-                        output.seek(packet_offset)
+                        output.seek(packet_offset - start)
                         output.write(data)
                         if not received[index]:
                             received[index] = 1
@@ -292,7 +306,8 @@ class ReadOnlyPixhawk:
                     attempts_without_progress = 0
                 percent = complete * 100 // blocks
                 if percent // 10 != last_report // 10:
-                    print(f"DataFlash log {entry.id}: {percent}%", file=sys.stderr)
+                    if start == 0 and end == entry.size:
+                        print(f"DataFlash log {entry.id}: {percent}%", file=sys.stderr)
                     last_report = percent
             output.flush()
             os.fsync(output.fileno())
@@ -611,17 +626,22 @@ def copy_drone_video(
 
 
 def collect_ardupilot(destination: Path, protocol: str, endpoint: str,
-                      system: int, component: int, timeout: float) -> dict:
+                      system: int, component: int, timeout: float,
+                      log_directory: Path) -> dict:
     assert_drone_apps_stopped()
     link = None
     metadata: dict[str, Any] = {
-        "selection": "all available logs; not a claim of flight/session membership",
+        "selection": "native UTC log intervals overlapping the selected MOOS mission",
+        "selection_results": [], "selected_log_ids": [],
         "parameter_scope": "collection-time readback, not historical per-flight parameters",
         "complete": False, "logs": [], "protocol": protocol, "endpoint": endpoint,
         "system_id": system, "component_id": component,
     }
     destination.mkdir(parents=True, exist_ok=True)
     try:
+        window = mission_window(log_directory, log_start(log_directory), padding=2)
+        metadata["mission_window"] = window
+        metadata["moos_log_source"] = str(log_directory)
         link = mav.Link(protocol, endpoint)
         client = ReadOnlyPixhawk(link, system, component, timeout)
         client.admit()
@@ -644,13 +664,40 @@ def collect_ardupilot(destination: Path, protocol: str, endpoint: str,
         except StopIteration as exc:
             raise CollectionError(
                 f"Pixhawk latest DataFlash log {latest_id} was absent from its log list") from exc
-        print(f"Collecting all {len(entries)} available DataFlash logs "
-              f"({sum(entry.size for entry in entries):,} bytes)", file=sys.stderr)
-        # Latest first so that an interruption of a large historical archive does
-        # not prevent retaining the most recent flight. Every other ID follows.
         ordered = [latest, *(entry for entry in entries if entry.id != latest_id)]
         errors = []
+        selected = []
         for entry in ordered:
+            selection: dict[str, Any] = {"id": entry.id, "decision": "excluded"}
+            metadata["selection_results"].append(selection)
+            # ArduPilot's catalog UTC is file mtime/current RTC, NOT log start.
+            # It can exclude a closed old log, but cannot establish overlap.
+            if 946_684_800 <= entry.time_utc < window["since_unix"]:
+                selection["reason"] = "catalog mtime precedes mission window"
+                continue
+            try:
+                timing = probe_interval(
+                    entry.size, lambda start, end: client.read_log_range(entry, start, end),
+                    window["until_unix"])
+                selection["native_timing"] = timing
+                overlaps = (timing["start_unix"] <= window["until_unix"] and
+                            timing.get("end_unix", -1) >= window["since_unix"])
+                if overlaps:
+                    selected.append(entry)
+                    selection.update(decision="selected", reason="native UTC interval overlaps mission")
+                else:
+                    selection["reason"] = "native UTC interval outside mission"
+            except (TimingError, CollectionError, OSError, mav.UploadError) as exc:
+                selection.update(decision="unknown", error=str(exc))
+                errors.append(f"DataFlash log {entry.id} selection: {exc}")
+                client.guard()
+                client.send(122, struct.pack("<BB", system, component))
+        metadata["selected_log_ids"] = [entry.id for entry in selected]
+        if not selected:
+            errors.append("No DataFlash log could be matched to the selected MOOS mission")
+        print(f"Collecting {len(selected)} mission DataFlash logs from {len(entries)} catalog entries "
+              f"({sum(entry.size for entry in selected):,} bytes)", file=sys.stderr)
+        for entry in selected:
             stamp = (dt.datetime.fromtimestamp(entry.time_utc, dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
                      if entry.time_utc else "unknown-time")
             log_path = dataflash / f"log_{entry.id}_{stamp}.bin"
@@ -670,7 +717,7 @@ def collect_ardupilot(destination: Path, protocol: str, endpoint: str,
                 continue
             row["complete"] = True
             if entry.id == latest_id:
-                # Retain legacy latest-log metadata, but not latest-only selection.
+                # Retain legacy latest-log metadata only when that log belongs to this mission.
                 metadata.update(dataflash_id=entry.id, dataflash_size=entry.size,
                                 dataflash_time_utc=entry.time_utc, dataflash_file=log_path.name)
         after = client.get_log_entries()
@@ -682,7 +729,8 @@ def collect_ardupilot(destination: Path, protocol: str, endpoint: str,
             raise CollectionError("; ".join(errors))
         metadata["complete"] = True
         return metadata
-    except (OSError, UnicodeError, mav.UploadError) as exc:
+    except (CollectionError, OSError, ValueError, mav.UploadError) as exc:
+        metadata["error"] = str(exc)
         raise CollectionError(str(exc)) from exc
     finally:
         try:
@@ -815,7 +863,7 @@ def main(argv=None) -> int:
             try:
                 manifest["ardupilot"] = collect_ardupilot(
                     stage / "ardupilot", args.ap_protocol, args.ap_endpoint,
-                    args.ap_system_id, args.ap_component_id, args.ap_timeout)
+                    args.ap_system_id, args.ap_component_id, args.ap_timeout, log_directory)
             except (CollectionError, OSError, ValueError) as exc:
                 errors.append(f"ArduPilot: {exc}")
                 manifest["ardupilot"] = {"complete": False, "error": str(exc)}

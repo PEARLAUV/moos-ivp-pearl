@@ -21,6 +21,17 @@ sys.modules[spec.name] = collector
 spec.loader.exec_module(collector)
 
 
+BASE_TIME = 1_800_000_000
+
+
+def native_log(start, end):
+    fmt = b"\xa3\x95\x80" + struct.pack(
+        "<BB4s16s64s", 129, 19, b"RTC", b"QQ", b"TimeUS,TimeUTC")
+    def rtc(boot, utc):
+        return b"\xa3\x95\x81" + struct.pack("<QQ", int(boot * 1e6), int(utc * 1e6))
+    return fmt + rtc(1, start) + rtc(1 + end - start, end)
+
+
 class PixhawkPeer:
     protocol = "tcp"
 
@@ -28,7 +39,10 @@ class PixhawkPeer:
         self.queue = bytearray()
         self.reader = collector.mav.Reader()
         self.params = [("P_INT", 4.0, 6), ("P_FLOAT", 0.25, 9)]
-        self.logs = {7: b"previous", 8: bytes(range(256)) * 3}
+        self.logs = {7: native_log(BASE_TIME + 10, BASE_TIME + 20),
+                     8: native_log(BASE_TIME + 30, BASE_TIME + 40)}
+        self.log_times = {7: BASE_TIME + 20, 8: BASE_TIME + 40}
+        self.requests = []
         self.sent = []
 
     def close(self):
@@ -62,11 +76,12 @@ class PixhawkPeer:
                 self.queue += self.frame(22, body)
             elif message_id == 117:
                 for log_id, data in self.logs.items():
-                    body = struct.pack("<IIHHH", 1_800_000_000 + log_id, len(data),
+                    body = struct.pack("<IIHHH", self.log_times.get(log_id, BASE_TIME + 100), len(data),
                                        log_id, len(self.logs), max(self.logs))
                     self.queue += self.frame(118, body)
             elif message_id == 119:
                 offset, count, log_id = struct.unpack_from("<IIH", payload)
+                self.requests.append((log_id, offset, count))
                 data = self.logs[log_id]
                 for packet_offset in range(offset, min(offset + count, len(data)), 90):
                     block = data[packet_offset:packet_offset + 90]
@@ -85,6 +100,9 @@ class CollectorTest(unittest.TestCase):
         (directory / f"{directory.name}.alog").write_text(body or "0 X source value\n")
         (directory / f"{directory.name}._moos").write_text("LOGSTART 1\n")
         return directory
+
+    def native_mission(self, root, start=BASE_TIME, duration=100):
+        return self.make_log(root, "LOG_uav_", f"% LOGSTART {start}\n0 X src start\n{duration} X src end\n")
 
     def validate_sums(self, artifact):
         for line in (artifact / "SHA256SUMS").read_text().splitlines():
@@ -205,13 +223,14 @@ class CollectorTest(unittest.TestCase):
             with self.assertRaises(collector.CollectionError):
                 collector.copy_drone_video(log, root / "video", empty_copy)
 
-    def test_all_native_logs_are_archived_and_catalog_checked(self):
+    def test_multiple_mission_native_logs_are_archived_and_catalog_checked(self):
         peer = PixhawkPeer()
         with tempfile.TemporaryDirectory() as directory, \
                 mock.patch.object(collector, "assert_drone_apps_stopped"), \
                 mock.patch.object(collector.mav, "Link", return_value=peer):
             root = Path(directory) / "native"
-            metadata = collector.collect_ardupilot(root, "tcp", "fixture", 1, 1, 0.1)
+            mission = self.native_mission(Path(directory))
+            metadata = collector.collect_ardupilot(root, "tcp", "fixture", 1, 1, 0.1, mission)
             self.assertTrue(metadata["complete"])
             self.assertEqual([row["id"] for row in metadata["logs"]], [8, 7])
             self.assertEqual(metadata["catalog_before"], metadata["catalog_after"])
@@ -224,7 +243,7 @@ class CollectorTest(unittest.TestCase):
 
     def test_native_partial_download_does_not_block_other_safe_downloads(self):
         peer = PixhawkPeer()
-        peer.logs[9] = b"newest"
+        peer.logs[9] = native_log(BASE_TIME + 45, BASE_TIME + 50)
         original = collector.ReadOnlyPixhawk.download_log
         def fail_older(client, entry, destination):
             if entry.id == 7:
@@ -237,8 +256,9 @@ class CollectorTest(unittest.TestCase):
                 mock.patch.object(collector.ReadOnlyPixhawk, "download_log", autospec=True,
                                   side_effect=fail_older):
             root = Path(directory) / "native"
+            mission = self.native_mission(Path(directory))
             with self.assertRaises(collector.CollectionError):
-                collector.collect_ardupilot(root, "tcp", "fixture", 1, 1, 0.1)
+                collector.collect_ardupilot(root, "tcp", "fixture", 1, 1, 0.1, mission)
             inventory = json.loads((root / "NATIVE_INVENTORY.json").read_text())
             self.assertFalse(inventory["complete"])
             self.assertTrue(inventory["logs"][0]["complete"])
@@ -258,8 +278,13 @@ class CollectorTest(unittest.TestCase):
                 mock.patch.object(collector.mav, "Link", return_value=peer), \
                 mock.patch.object(collector.ReadOnlyPixhawk, "download_log", autospec=True,
                                   side_effect=unsafe) as download:
+            mission = self.native_mission(Path(directory))
+            def unsafe_after_probe(client, entry, destination):
+                peer.sent.clear()
+                return unsafe(client, entry, destination)
+            download.side_effect = unsafe_after_probe
             with self.assertRaisesRegex(collector.CollectionError, "armed or became airborne"):
-                collector.collect_ardupilot(Path(directory), "tcp", "fixture", 1, 1, 0.1)
+                collector.collect_ardupilot(Path(directory), "tcp", "fixture", 1, 1, 0.1, mission)
             download.assert_called_once()
             self.assertNotIn(122, peer.sent)  # no further request after unsafe evidence
             self.assertFalse(json.loads((Path(directory) / "NATIVE_INVENTORY.json").read_text())["complete"])
@@ -274,9 +299,110 @@ class CollectorTest(unittest.TestCase):
                 mock.patch.object(collector.mav, "Link", return_value=peer), \
                 mock.patch.object(collector.ReadOnlyPixhawk, "get_log_entries",
                                   side_effect=[entries, changed]):
+            mission = self.native_mission(Path(directory))
             with self.assertRaisesRegex(collector.CollectionError, "catalog changed"):
-                collector.collect_ardupilot(Path(directory), "tcp", "fixture", 1, 1, 0.1)
+                collector.collect_ardupilot(Path(directory), "tcp", "fixture", 1, 1, 0.1, mission)
             self.assertFalse(json.loads((Path(directory) / "NATIVE_INVENTORY.json").read_text())["complete"])
+
+    def test_native_scope_excludes_old_and_later_logs(self):
+        peer = PixhawkPeer()
+        peer.logs[9] = native_log(BASE_TIME + 70, BASE_TIME + 80)
+        original = collector.ReadOnlyPixhawk.download_log
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(collector, "assert_drone_apps_stopped"), \
+                mock.patch.object(collector.mav, "Link", return_value=peer), \
+                mock.patch.object(collector.ReadOnlyPixhawk, "download_log", autospec=True,
+                                  side_effect=original) as download:
+            root = Path(directory)
+            mission = self.native_mission(root, BASE_TIME + 25, 20)
+            meta = collector.collect_ardupilot(root / "native", "tcp", "fixture", 1, 1, 0.1, mission)
+            self.assertEqual(meta["selected_log_ids"], [8])
+            self.assertEqual([row["id"] for row in meta["logs"]], [8])
+            download.assert_called_once()
+            self.assertFalse(any(request[0] == 7 for request in peer.requests))
+            self.assertNotIn("dataflash_id", meta)  # newest catalog ID was not selected
+
+    def test_native_scope_includes_log_straddling_mission(self):
+        peer = PixhawkPeer()
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(collector, "assert_drone_apps_stopped"), \
+                mock.patch.object(collector.mav, "Link", return_value=peer):
+            root = Path(directory)
+            mission = self.native_mission(root, BASE_TIME + 35, 1)
+            meta = collector.collect_ardupilot(root / "native", "tcp", "fixture", 1, 1, 0.1, mission)
+            self.assertEqual(meta["selected_log_ids"], [8])
+            self.assertGreater(peer.log_times[8], meta["mission_window"]["until_unix"])
+
+    def test_native_explicit_older_mission_does_not_collect_latest(self):
+        peer = PixhawkPeer()
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(collector, "assert_drone_apps_stopped"), \
+                mock.patch.object(collector.mav, "Link", return_value=peer):
+            root = Path(directory)
+            mission = self.native_mission(root, BASE_TIME + 12, 4)
+            meta = collector.collect_ardupilot(root / "native", "tcp", "fixture", 1, 1, 0.1, mission)
+            self.assertEqual(meta["selected_log_ids"], [7])
+            self.assertNotIn("dataflash_id", meta)
+
+    def test_native_unknown_timing_never_falls_back_to_all(self):
+        peer = PixhawkPeer()
+        peer.log_times[8] = 0  # native UTC still permits matching this file
+        peer.logs[9] = b"no native clock"
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(collector, "assert_drone_apps_stopped"), \
+                mock.patch.object(collector.mav, "Link", return_value=peer):
+            root = Path(directory)
+            mission = self.native_mission(root, BASE_TIME + 25, 20)
+            with self.assertRaisesRegex(collector.CollectionError, "selection"):
+                collector.collect_ardupilot(root / "native", "tcp", "fixture", 1, 1, 0.1, mission)
+            meta = json.loads((root / "native/NATIVE_INVENTORY.json").read_text())
+            self.assertFalse(meta["complete"])
+            self.assertEqual(meta["selected_log_ids"], [8])
+            self.assertEqual([row["id"] for row in meta["logs"]], [8])
+            self.assertEqual(meta["selection_results"][0]["decision"], "unknown")
+
+    def test_native_no_match_does_not_download_unrelated_files(self):
+        peer = PixhawkPeer()
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(collector, "assert_drone_apps_stopped"), \
+                mock.patch.object(collector.mav, "Link", return_value=peer):
+            root = Path(directory)
+            mission = self.native_mission(root, BASE_TIME + 200, 10)
+            with self.assertRaisesRegex(collector.CollectionError, "No DataFlash log"):
+                collector.collect_ardupilot(root / "native", "tcp", "fixture", 1, 1, 0.1, mission)
+            self.assertEqual(peer.requests, [])
+            self.assertEqual(list((root / "native/dataflash").iterdir()), [])
+
+    def test_probe_range_alignment_and_bytes(self):
+        peer = PixhawkPeer()
+        peer.logs[8] = bytes(range(256)) * 3
+        client = collector.ReadOnlyPixhawk(peer, response_timeout=0.1)
+        client.admit()
+        entry = client.get_log_entries()[-1]
+        self.assertEqual(client.read_log_range(entry, 90, 270), peer.logs[8][90:270])
+        self.assertEqual(client.read_log_range(entry, 630, entry.size), peer.logs[8][630:])
+        self.assertEqual(peer.requests, [(8, 90, 180), (8, 630, 138)])
+        for start, end in ((1, 90), (0, 91), (0, 999), (90, 90)):
+            with self.assertRaises(collector.CollectionError):
+                client.read_log_range(entry, start, end)
+
+    def test_unsafe_state_during_probe_aborts_selection(self):
+        peer = PixhawkPeer()
+        def unsafe(client, *_args):
+            peer.sent.clear()
+            client.unsafe_seen = True
+            raise collector.CollectionError("armed during probe")
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(collector, "assert_drone_apps_stopped"), \
+                mock.patch.object(collector.mav, "Link", return_value=peer), \
+                mock.patch.object(collector.ReadOnlyPixhawk, "read_log_range", autospec=True,
+                                  side_effect=unsafe) as probe:
+            root = Path(directory)
+            mission = self.native_mission(root)
+            with self.assertRaisesRegex(collector.CollectionError, "armed or became airborne"):
+                collector.collect_ardupilot(root / "native", "tcp", "fixture", 1, 1, 0.1, mission)
+            probe.assert_called_once()
+            self.assertEqual(peer.sent, [])
 
     def test_native_guard_still_refuses_armed_stale_and_airborne(self):
         peer = PixhawkPeer()
