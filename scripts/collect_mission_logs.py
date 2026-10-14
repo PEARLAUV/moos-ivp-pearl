@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Assemble the latest local mission artifacts into a checksummed directory.
 
-The collector is deliberately local-node only.  On the drone it obtains one
-latest DataFlash log and a complete parameter snapshot directly from a stopped,
+The collector is deliberately local-node only. On the drone it obtains all
+available DataFlash logs and a complete parameter snapshot directly from a stopped,
 disarmed, grounded Pixhawk using read-only MAVLink requests.  It never arms,
 changes mode, sets parameters, deletes logs, or sends a flight command.
 """
@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 import ardupilot_params as mav
+from wifi_evidence import collect_wifi_evidence
 
 # MAVLink common.xml CRC extras used only for read-only artifact retrieval.
 mav.EXTRAS.update({21: 159, 117: 128, 118: 56, 119: 116, 120: 134, 122: 203})
@@ -336,6 +337,27 @@ def determine_node(requested: str, shore_ip: str, drone_ip: str,
     return matches[0]
 
 
+def log_start(directory: Path) -> float:
+    """Use the recorded session clock, never directory modification time."""
+    # Older logs may omit the .alog header. Use their native config header.
+    sources = [*sorted(directory.glob("*.alog")), *sorted(directory.glob("*._moos"))]
+    for source in sources:
+        with source.open(errors="replace") as stream:
+            for _ in range(100):
+                line = stream.readline()
+                if not line:
+                    break
+                fields = line.lstrip("% ").split()
+                if len(fields) == 2 and fields[0] == "LOGSTART":
+                    try:
+                        value = float(fields[1])
+                    except ValueError as exc:
+                        raise CollectionError(f"Invalid LOGSTART in {source}") from exc
+                    if math.isfinite(value) and value > 0:
+                        return value
+    raise CollectionError(f"Missing/invalid LOGSTART in {directory}; select LOG_DIRECTORY explicitly")
+
+
 def latest_log_directory(mission: Path, node: str, explicit: str | None) -> Path:
     if explicit:
         candidate = Path(explicit)
@@ -347,7 +369,8 @@ def latest_log_directory(mission: Path, node: str, explicit: str | None) -> Path
         candidates = [path for path in mission.glob(prefix + "*") if path.is_dir()]
     if not candidates:
         raise CollectionError(f"No local {NODE_LOG_PREFIX[node]}* MOOS log directory found")
-    selected = max(candidates, key=lambda path: path.stat().st_mtime).resolve()
+    selected = (candidates[0] if explicit else
+                max(candidates, key=lambda path: (log_start(path), path.name))).resolve()
     try:
         selected.relative_to(mission.resolve())
     except ValueError as exc:
@@ -389,20 +412,20 @@ def assert_drone_apps_stopped() -> None:
         if not process.name.isdigit():
             continue
         try:
-            command = (process / "cmdline").read_bytes().replace(bytes(1), b" ").decode(
-                errors="replace")
+            command = (process / "comm").read_text().strip()
         except OSError:
             continue
-        if "pArduBridge" in command:
-            found.append(f"pid={process.name} {command.strip()}")
+        if command in {"MOOSDB", "pArduBridge", "pVideoRecorder"}:
+            found.append(f"pid={process.name} {command}")
     if found:
         raise CollectionError(
-            "Drone mission must be stopped before Pixhawk retrieval; pArduBridge is running: "
+            "Drone mission must be stopped before Pixhawk retrieval; mission apps are running: "
             + "; ".join(found))
 
 
-def alog_last_values(log_directory: Path, variables: set[str]) -> dict[str, str]:
-    values: dict[str, str] = {}
+def alog_values(log_directory: Path, variables: set[str]) -> list[tuple[str, str]]:
+    """Retain every publication, including directories from earlier tasks."""
+    values: list[tuple[str, str]] = []
     alogs = list(log_directory.glob("*.alog"))
     if len(alogs) != 1:
         raise CollectionError(f"Expected exactly one .alog in {log_directory}")
@@ -412,8 +435,12 @@ def alog_last_values(log_directory: Path, variables: set[str]) -> dict[str, str]
                 continue
             fields = line.split(None, 3)
             if len(fields) == 4 and fields[1] in variables:
-                values[fields[1]] = fields[3].strip()
+                values.append((fields[1], fields[3].strip()))
     return values
+
+
+def alog_last_values(log_directory: Path, variables: set[str]) -> dict[str, str]:
+    return dict(alog_values(log_directory, variables))
 
 
 def mediamtx_path_names(api_url: str) -> set[str]:
@@ -527,21 +554,59 @@ def copy_drone_video(
         if remaining:
             raise CollectionError("Recording paths remain active: " + ", ".join(remaining))
         shutil.copy2(evidence_path, destination / "EXTERNAL_STOP_EVIDENCE.json")
-    source = Path(recorded).resolve()
+    # A session may contain multiple launches/tasks. Never replace this history
+    # with its last value or scan unrelated recording directories by mtime.
+    recorded_paths = list(dict.fromkeys(value for _, value in alog_values(
+        log_directory, {"VIDEO_RECORD_DIRECTORY"}) if value))
     root = video_root.resolve()
-    try:
-        source.relative_to(root)
-    except ValueError as exc:
-        raise CollectionError(f"Recorded video directory is outside configured root {root}") from exc
-    for camera in ("fpv", "nadir"):
-        camera_source = source / camera
-        if not camera_source.is_dir() or not any(path.is_file() for path in camera_source.rglob("*")):
-            raise CollectionError(f"Required drone video stream is missing or empty: {camera_source}")
-        shutil.copytree(camera_source, destination / camera, copy_function=shutil.copy2)
-    result = {"recording_id": values.get("VIDEO_RECORD_ID"), "source": str(source),
-              "streams": ["fpv", "nadir"]}
+    result: dict[str, Any] = {"recordings": [], "streams": ["fpv", "nadir"],
+                              "selection": "all published VIDEO_RECORD_DIRECTORY values"}
     if external_evidence is not None:
         result["stop_evidence"] = "video/EXTERNAL_STOP_EVIDENCE.json"
+    errors = []
+    for index, recorded_path in enumerate(recorded_paths, 1):
+        source = Path(recorded_path).resolve()
+        # Keep the existing single-task layout; multi-task bundles have distinct
+        # destinations even if two recording directories share a basename.
+        relative = "." if len(recorded_paths) == 1 else f"tasks/{index:04d}"
+        target = destination / relative
+        row: dict[str, Any] = {"source": str(source), "published_path": recorded_path,
+                               "destination": relative, "streams": {}}
+        result["recordings"].append(row)
+        try:
+            source.relative_to(root)
+            if source == root:
+                raise ValueError("recording directory is the video root")
+        except ValueError:
+            message = f"Recorded video directory is outside or equal to configured root: {source}"
+            row["error"] = message
+            errors.append(message)
+            continue
+        for camera in ("fpv", "nadir"):
+            camera_source = source / camera
+            try:
+                if camera_source.is_symlink() or any(
+                        path.is_symlink() for path in camera_source.rglob("*")):
+                    raise CollectionError(f"Symlink in video stream: {camera_source}")
+                if (not camera_source.is_dir() or not any(
+                        path.is_file() and path.stat().st_size > 0
+                        for path in camera_source.rglob("*.mp4"))):
+                    raise CollectionError(f"Required drone video stream is missing or empty: {camera_source}")
+                if open_files_below(camera_source):
+                    raise CollectionError(f"Video stream is still open: {camera_source}")
+                before = file_checksums(camera_source)
+                shutil.copytree(camera_source, target / camera, copy_function=shutil.copy2)
+                if before != file_checksums(camera_source) or before != file_checksums(target / camera):
+                    raise CollectionError(f"Video stream changed during collection: {camera_source}")
+                row["streams"][camera] = {"complete": True, "files": len(before)}
+            except (CollectionError, OSError) as exc:
+                row["streams"][camera] = {"complete": False, "error": str(exc)}
+                errors.append(str(exc))
+    result["complete"] = not errors
+    (destination / "VIDEO_INVENTORY.json").write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n")
+    if errors:
+        raise CollectionError("; ".join(errors))
     return result
 
 
@@ -549,6 +614,13 @@ def collect_ardupilot(destination: Path, protocol: str, endpoint: str,
                       system: int, component: int, timeout: float) -> dict:
     assert_drone_apps_stopped()
     link = None
+    metadata: dict[str, Any] = {
+        "selection": "all available logs; not a claim of flight/session membership",
+        "parameter_scope": "collection-time readback, not historical per-flight parameters",
+        "complete": False, "logs": [], "protocol": protocol, "endpoint": endpoint,
+        "system_id": system, "component_id": component,
+    }
+    destination.mkdir(parents=True, exist_ok=True)
     try:
         link = mav.Link(protocol, endpoint)
         client = ReadOnlyPixhawk(link, system, component, timeout)
@@ -559,7 +631,10 @@ def collect_ardupilot(destination: Path, protocol: str, endpoint: str,
         dataflash.mkdir(parents=True)
         parameter_path = parameters / f"{dt.datetime.now(dt.timezone.utc):%Y%m%dT%H%M%SZ}-postflight.params"
         parameter_count = client.download_parameters(parameter_path)
+        metadata.update(parameter_count=parameter_count, parameter_file=parameter_path.name)
         entries = client.get_log_entries()
+        metadata["catalog_before"] = [vars(entry) for entry in entries]
+        metadata["available_log_ids"] = [entry.id for entry in entries]
         latest_ids = {entry.last_log_num for entry in entries}
         if len(latest_ids) != 1:
             raise CollectionError("Inconsistent Pixhawk latest DataFlash log ID")
@@ -569,26 +644,59 @@ def collect_ardupilot(destination: Path, protocol: str, endpoint: str,
         except StopIteration as exc:
             raise CollectionError(
                 f"Pixhawk latest DataFlash log {latest_id} was absent from its log list") from exc
-        stamp = (dt.datetime.fromtimestamp(latest.time_utc, dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-                 if latest.time_utc else "unknown-time")
-        log_path = dataflash / f"log_{latest.id}_{stamp}.bin"
-        client.download_log(latest, log_path)
+        print(f"Collecting all {len(entries)} available DataFlash logs "
+              f"({sum(entry.size for entry in entries):,} bytes)", file=sys.stderr)
+        # Latest first so that an interruption of a large historical archive does
+        # not prevent retaining the most recent flight. Every other ID follows.
+        ordered = [latest, *(entry for entry in entries if entry.id != latest_id)]
+        errors = []
+        for entry in ordered:
+            stamp = (dt.datetime.fromtimestamp(entry.time_utc, dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                     if entry.time_utc else "unknown-time")
+            log_path = dataflash / f"log_{entry.id}_{stamp}.bin"
+            row = {**vars(entry), "file": log_path.name, "complete": False}
+            metadata["logs"].append(row)
+            temporary = log_path.with_suffix(".bin.partial")
+            try:
+                client.download_log(entry, temporary)
+                temporary.rename(log_path)
+            except (CollectionError, OSError, mav.UploadError) as exc:
+                row["error"] = str(exc)
+                errors.append(f"DataFlash log {entry.id}: {exc}")
+                # A bad/stalled file must not hide other logs. Continue only if
+                # the native safety evidence is still fresh, disarmed and grounded.
+                client.guard()
+                client.send(122, struct.pack("<BB", system, component))
+                continue
+            row["complete"] = True
+            if entry.id == latest_id:
+                # Retain legacy latest-log metadata, but not latest-only selection.
+                metadata.update(dataflash_id=entry.id, dataflash_size=entry.size,
+                                dataflash_time_utc=entry.time_utc, dataflash_file=log_path.name)
+        after = client.get_log_entries()
+        metadata["catalog_after"] = [vars(entry) for entry in after]
+        if entries != after:
+            raise CollectionError("Pixhawk DataFlash catalog changed during collection; retry after shutdown")
         client.guard()
-        return {"parameter_count": parameter_count, "parameter_file": str(parameter_path.name),
-                "dataflash_id": latest.id, "dataflash_size": latest.size,
-                "dataflash_time_utc": latest.time_utc, "dataflash_file": str(log_path.name),
-                "available_log_ids": [entry.id for entry in entries]}
+        if errors:
+            raise CollectionError("; ".join(errors))
+        metadata["complete"] = True
+        return metadata
     except (OSError, UnicodeError, mav.UploadError) as exc:
         raise CollectionError(str(exc)) from exc
     finally:
-        if link is not None:
-            link.close()
+        try:
+            if link is not None:
+                link.close()
+        finally:
+            (destination / "NATIVE_INVENTORY.json").write_text(
+                json.dumps(metadata, indent=2, sort_keys=True) + "\n")
 
 
 def file_checksums(root: Path) -> list[tuple[str, str]]:
     rows = []
     for path in sorted(item for item in root.rglob("*") if item.is_file()
-                       and item.name != "SHA256SUMS"):
+                       and item != root / "SHA256SUMS"):
         digest = hashlib.sha256()
         with path.open("rb") as source:
             for chunk in iter(lambda: source.read(1024 * 1024), b""):
@@ -674,8 +782,6 @@ def main(argv=None) -> int:
                 + "; ".join(opened[:5]))
         if node == "drone":
             assert_drone_apps_stopped()
-            ensure_drone_recording_stopped(
-                mission, log_directory, args.video_api_url, evidence_path)
         output_root.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix=".collecting-", dir=output_root))
         manifest.update({"node": node, "host": socket.gethostname(),
@@ -683,13 +789,38 @@ def main(argv=None) -> int:
         shutil.copytree(log_directory, stage / "moos" / log_directory.name,
                         copy_function=shutil.copy2)
         if node == "drone":
+            errors = []
+            # Recover host evidence first, before potentially lengthy video/native
+            # copies. Missing historical RSSI is an explicit availability gap, not
+            # a reason to discard the independent flight evidence.
+            try:
+                manifest["system_wifi"] = collect_wifi_evidence(
+                    log_directory, stage / "system-wifi", log_start(log_directory))
+                for warning in manifest["system_wifi"]["warnings"]:
+                    print(f"Wi-Fi evidence: {warning}", file=sys.stderr)
+            except (OSError, ValueError, CollectionError) as exc:
+                manifest["system_wifi"] = {"error": str(exc), "rssi_history_status": "unknown"}
+                print(f"Wi-Fi evidence unavailable: {exc}", file=sys.stderr)
             (stage / "video").mkdir()
-            manifest["video"] = copy_drone_video(
-                log_directory, args.video_root, stage / "video", evidence_path,
-                args.video_api_url)
-            manifest["ardupilot"] = collect_ardupilot(
-                stage / "ardupilot", args.ap_protocol, args.ap_endpoint,
-                args.ap_system_id, args.ap_component_id, args.ap_timeout)
+            try:
+                ensure_drone_recording_stopped(
+                    mission, log_directory, args.video_api_url, evidence_path)
+                manifest["video"] = copy_drone_video(
+                    log_directory, args.video_root, stage / "video", evidence_path,
+                    args.video_api_url)
+            except (CollectionError, OSError, ValueError) as exc:
+                errors.append(f"Video: {exc}")
+                manifest["video"] = {"complete": False, "error": str(exc)}
+            # Missing video must not prevent preserving native flight evidence.
+            try:
+                manifest["ardupilot"] = collect_ardupilot(
+                    stage / "ardupilot", args.ap_protocol, args.ap_endpoint,
+                    args.ap_system_id, args.ap_component_id, args.ap_timeout)
+            except (CollectionError, OSError, ValueError) as exc:
+                errors.append(f"ArduPilot: {exc}")
+                manifest["ardupilot"] = {"complete": False, "error": str(exc)}
+            if errors:
+                raise CollectionError("; ".join(errors))
         elif node == "pearl-real":
             gap = (
                 "PEARL Jetson video was not collected. The deployed pearl-d455 MediaMTX "
@@ -719,8 +850,7 @@ def main(argv=None) -> int:
                 stage = None
                 print(f"INCOMPLETE artifact directory: {final}", file=sys.stderr)
             except OSError:
-                if stage is not None:
-                    shutil.rmtree(stage, ignore_errors=True)
+                print(f"Retained collection staging directory: {stage}", file=sys.stderr)
         print(f"Log collection failed: {message}", file=sys.stderr)
         return 1
 

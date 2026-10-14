@@ -31,6 +31,9 @@ class PixhawkPeer:
         self.logs = {7: b"previous", 8: bytes(range(256)) * 3}
         self.sent = []
 
+    def close(self):
+        self.closed = True
+
     def frame(self, message_id, payload):
         return collector.mav.encode(message_id, payload, system=1, component=1)
 
@@ -201,6 +204,179 @@ class CollectorTest(unittest.TestCase):
             empty_copy.mkdir()
             with self.assertRaises(collector.CollectionError):
                 collector.copy_drone_video(log, root / "video", empty_copy)
+
+    def test_all_native_logs_are_archived_and_catalog_checked(self):
+        peer = PixhawkPeer()
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(collector, "assert_drone_apps_stopped"), \
+                mock.patch.object(collector.mav, "Link", return_value=peer):
+            root = Path(directory) / "native"
+            metadata = collector.collect_ardupilot(root, "tcp", "fixture", 1, 1, 0.1)
+            self.assertTrue(metadata["complete"])
+            self.assertEqual([row["id"] for row in metadata["logs"]], [8, 7])
+            self.assertEqual(metadata["catalog_before"], metadata["catalog_after"])
+            for row in metadata["logs"]:
+                self.assertEqual((root / "dataflash" / row["file"]).read_bytes(), peer.logs[row["id"]])
+            self.assertEqual(json.loads((root / "NATIVE_INVENTORY.json").read_text()), metadata)
+        self.assertTrue(peer.closed)
+        self.assertNotIn(23, peer.sent)
+        self.assertNotIn(121, peer.sent)
+
+    def test_native_partial_download_does_not_block_other_safe_downloads(self):
+        peer = PixhawkPeer()
+        peer.logs[9] = b"newest"
+        original = collector.ReadOnlyPixhawk.download_log
+        def fail_older(client, entry, destination):
+            if entry.id == 7:
+                destination.write_bytes(b"partial")
+                raise collector.CollectionError("interrupted old log")
+            return original(client, entry, destination)
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(collector, "assert_drone_apps_stopped"), \
+                mock.patch.object(collector.mav, "Link", return_value=peer), \
+                mock.patch.object(collector.ReadOnlyPixhawk, "download_log", autospec=True,
+                                  side_effect=fail_older):
+            root = Path(directory) / "native"
+            with self.assertRaises(collector.CollectionError):
+                collector.collect_ardupilot(root, "tcp", "fixture", 1, 1, 0.1)
+            inventory = json.loads((root / "NATIVE_INVENTORY.json").read_text())
+            self.assertFalse(inventory["complete"])
+            self.assertTrue(inventory["logs"][0]["complete"])
+            self.assertFalse(inventory["logs"][1]["complete"])
+            self.assertTrue(inventory["logs"][2]["complete"])
+            self.assertEqual([row["id"] for row in inventory["logs"]], [9, 7, 8])
+            self.assertEqual(len(list((root / "dataflash").glob("*.bin"))), 2)
+            self.assertEqual(len(list((root / "dataflash").glob("*.partial"))), 1)
+
+    def test_native_unsafe_state_aborts_remaining_downloads(self):
+        peer = PixhawkPeer()
+        def unsafe(client, _entry, _destination):
+            client.unsafe_seen = True
+            raise collector.CollectionError("armed during download")
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(collector, "assert_drone_apps_stopped"), \
+                mock.patch.object(collector.mav, "Link", return_value=peer), \
+                mock.patch.object(collector.ReadOnlyPixhawk, "download_log", autospec=True,
+                                  side_effect=unsafe) as download:
+            with self.assertRaisesRegex(collector.CollectionError, "armed or became airborne"):
+                collector.collect_ardupilot(Path(directory), "tcp", "fixture", 1, 1, 0.1)
+            download.assert_called_once()
+            self.assertNotIn(122, peer.sent)  # no further request after unsafe evidence
+            self.assertFalse(json.loads((Path(directory) / "NATIVE_INVENTORY.json").read_text())["complete"])
+
+    def test_native_catalog_changes_fail_closed(self):
+        peer = PixhawkPeer()
+        entries = [collector.LogEntry(key, len(value), 1_800_000_000 + key, 2, 8)
+                   for key, value in peer.logs.items()]
+        changed = [entries[0], collector.LogEntry(8, 999, entries[1].time_utc, 2, 8)]
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(collector, "assert_drone_apps_stopped"), \
+                mock.patch.object(collector.mav, "Link", return_value=peer), \
+                mock.patch.object(collector.ReadOnlyPixhawk, "get_log_entries",
+                                  side_effect=[entries, changed]):
+            with self.assertRaisesRegex(collector.CollectionError, "catalog changed"):
+                collector.collect_ardupilot(Path(directory), "tcp", "fixture", 1, 1, 0.1)
+            self.assertFalse(json.loads((Path(directory) / "NATIVE_INVENTORY.json").read_text())["complete"])
+
+    def test_native_guard_still_refuses_armed_stale_and_airborne(self):
+        peer = PixhawkPeer()
+        client = collector.ReadOnlyPixhawk(peer, response_timeout=0.1)
+        client.admit()
+        now = collector.time.monotonic()
+        for heartbeat, ground in (((True, now), (True, now)),
+                                  ((False, now - 10), (True, now)),
+                                  ((False, now), (False, now))):
+            client.heartbeat, client.ground = heartbeat, ground
+            with self.assertRaises(collector.CollectionError):
+                client.guard()
+
+    def test_two_task_video_keeps_both_and_deduplicates_publications(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mission = root / "mission"
+            mission.mkdir()
+            video_root = root / "video"
+            tasks = [video_root / "session" / f"task-{index}" for index in (1, 2)]
+            for task in tasks:
+                for camera in ("fpv", "nadir"):
+                    (task / camera).mkdir(parents=True)
+                    (task / camera / "clip.mp4").write_bytes(f"{task.name}/{camera}".encode())
+            log = self.make_log(mission, "LOG_uav_", "".join(
+                f"{index} VIDEO_RECORD_DIRECTORY pVideoRecorder {task}\n"
+                for index, task in enumerate([tasks[0], tasks[0], tasks[1]])) +
+                "4 VIDEO_RECORD_STATE pVideoRecorder STOPPED\n")
+            destination = root / "copy"
+            destination.mkdir()
+            metadata = collector.copy_drone_video(log, video_root, destination)
+            self.assertEqual(len(metadata["recordings"]), 2)
+            for index, task in enumerate(tasks, 1):
+                for camera in ("fpv", "nadir"):
+                    self.assertEqual((destination / f"tasks/{index:04d}" / camera / "clip.mp4").read_bytes(),
+                                     (task / camera / "clip.mp4").read_bytes())
+            (tasks[0] / "fpv" / "clip.mp4").unlink()
+            partial = root / "partial"
+            partial.mkdir()
+            with self.assertRaises(collector.CollectionError):
+                collector.copy_drone_video(log, video_root, partial)
+            self.assertTrue((partial / "tasks/0002/fpv/clip.mp4").is_file())
+            self.assertTrue((partial / "tasks/0001/nadir/clip.mp4").is_file())
+            self.assertFalse(json.loads((partial / "VIDEO_INVENTORY.json").read_text())["complete"])
+
+    def test_video_open_files_and_outside_root_are_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mission = root / "mission"
+            mission.mkdir()
+            task = root / "video" / "task"
+            for camera in ("fpv", "nadir"):
+                (task / camera).mkdir(parents=True)
+                (task / camera / "clip.mp4").write_bytes(b"fixture")
+            log = self.make_log(mission, "LOG_uav_",
+                                f"1 VIDEO_RECORD_DIRECTORY recorder {task}\n"
+                                "2 VIDEO_RECORD_STATE recorder STOPPED\n")
+            for video_root, opened in ((root / "different-root", []), (root / "video", ["open"])):
+                destination = Path(tempfile.mkdtemp(dir=root))
+                with mock.patch.object(collector, "open_files_below", return_value=opened):
+                    with self.assertRaises(collector.CollectionError):
+                        collector.copy_drone_video(log, video_root, destination)
+                self.assertEqual(list(destination.rglob("*.mp4")), [])
+
+    def test_missing_video_does_not_prevent_native_collection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            mission = Path(directory)
+            self.make_log(mission, "LOG_uav_")
+            output = mission / "artifacts"
+            def native(destination, *_args):
+                destination.mkdir()
+                (destination / "native.bin").write_bytes(b"native evidence")
+                return {"complete": True}
+            with mock.patch.object(collector, "assert_drone_apps_stopped"), \
+                    mock.patch.object(collector, "collect_wifi_evidence", return_value={"warnings": []}) as wifi, \
+                    mock.patch.object(collector, "ensure_drone_recording_stopped",
+                                      side_effect=collector.CollectionError("missing video")), \
+                    mock.patch.object(collector, "collect_ardupilot", side_effect=native) as capture:
+                result = collector.main(["--mission-dir", str(mission), "--node", "drone",
+                                         "--output-root", str(output)])
+            self.assertEqual(result, 1)
+            capture.assert_called_once()
+            wifi.assert_called_once()
+            artifact = next(output.iterdir())
+            manifest = json.loads((artifact / "MANIFEST.json").read_text())
+            self.assertFalse(manifest["complete"])
+            self.assertTrue(manifest["ardupilot"]["complete"])
+            self.assertEqual((artifact / "ardupilot/native.bin").read_bytes(), b"native evidence")
+            self.validate_sums(artifact)
+
+    def test_log_selection_uses_native_start_not_directory_mtime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            mission = Path(directory)
+            older = self.make_log(mission, "LOG_SHORESIDE_", stamp="10_10_2026_____12_00_00")
+            newer = self.make_log(mission, "LOG_SHORESIDE_", stamp="11_10_2026_____12_00_00")
+            (older / f"{older.name}.alog").write_text("% LOGSTART 100\n0 X src old\n")
+            (newer / f"{newer.name}.alog").write_text("% LOGSTART 200\n0 X src new\n")
+            collector.os.utime(older, (9999999999, 9999999999))
+            self.assertEqual(collector.latest_log_directory(mission, "shoreside", None), newer)
+            self.assertEqual(collector.latest_log_directory(mission, "shoreside", older.name), older)
 
 
 if __name__ == "__main__":

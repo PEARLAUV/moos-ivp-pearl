@@ -65,7 +65,9 @@ VIDEO_RECORD_API ?= http://127.0.0.1:9997/v3/config/paths
 COLLECT_DRONE_HOST ?= pi@$(DRONE_IP)
 COLLECT_PEARL_REAL_HOST ?= pearl@$(PEARL_REAL_IP)
 COLLECT_PEARL_GRASS_HOST ?= pearl@$(PEARL_GRASS_IP)
-COLLECT_REMOTE_ROOT ?= workspace/mit/pearl/moos-ivp-pearl/missions/briggs_field/2026_10_09_water_ops_prep/field_logs
+COLLECT_REMOTE_ROOT ?= /home/pearl/moos-ivp-pearl/missions/briggs_field/2026_10_09_water_ops_prep/field_logs
+COLLECT_DRONE_REMOTE_ROOT ?= $(COLLECT_REMOTE_ROOT)
+COLLECT_PEARL_REMOTE_ROOT ?= $(COLLECT_REMOTE_ROOT)
 COLLECT_OUTPUT_ROOT ?= $(LOG_OUTPUT_ROOT)/fetched
 COLLECT_SIM_OUTPUT_ROOT ?= $(LOG_OUTPUT_ROOT)/sim
 COLLECT_ARGS ?=
@@ -83,13 +85,13 @@ help:
 	  'Return/rally markers are provisional; validate before task commit.' \
 	  'logs: after shutdown, stop recording if needed and assemble artifacts with SHA-256 sums.' \
 	  'stop-recording: optional stopped-drone recording cleanup without full collection.' \
-	  'collect-logs-briggs/charles: shoreside fetch of drone/PEARL artifacts.' \
+	  'collect-logs-briggs/charles: fetch all saved drone/PEARL bundles; reuse verified local copies.' \
 	  'collect-logs-sim: assemble the latest closed local three-community SIM logs.' \
 	  'clean: removes mission logs/targets; kill: host-wide ktm + owned SITL/VNC cleanup.'
 
 # Read-only collection is explicit and never a launch prerequisite. The drone
 # collector refuses a running pArduBridge and uses grounded/disarmed native
-# evidence before requesting parameters or the latest DataFlash log.
+# evidence before requesting parameters or all available DataFlash logs.
 logs:
 	python3 "$(PEARL_ROOT)/scripts/collect_mission_logs.py" \
 	  --mission-dir "$(MISSION_DIR)" --node "$(LOG_NODE)" \
@@ -107,14 +109,16 @@ stop-recording:
 	  --mission-dir "$(MISSION_DIR)" --stop-recording-only \
 	  --video-api-url "$(VIDEO_RECORD_API)"
 
-# Fetch only: each remote node must have already completed `make logs`.
+# Fetch only: each remote node must have already run `make logs`. Retrieve every
+# finalized bundle (including partial ones), not just a latest-by-mtime pair.
 collect-logs-briggs:
 	python3 "$(PEARL_ROOT)/scripts/fetch_collected_logs.py" \
 	  --site briggs --shore-ip "$(SHORE_IP)" \
 	  --drone-host "$(COLLECT_DRONE_HOST)" \
 	  --pearl-real-host "$(COLLECT_PEARL_REAL_HOST)" \
 	  --pearl-grass-host "$(COLLECT_PEARL_GRASS_HOST)" \
-	  --remote-root "$(COLLECT_REMOTE_ROOT)" \
+	  --drone-remote-root "$(COLLECT_DRONE_REMOTE_ROOT)" \
+	  --pearl-remote-root "$(COLLECT_PEARL_REMOTE_ROOT)" \
 	  --output-root "$(COLLECT_OUTPUT_ROOT)" $(COLLECT_ARGS)
 
 collect-logs-charles:
@@ -123,7 +127,8 @@ collect-logs-charles:
 	  --drone-host "$(COLLECT_DRONE_HOST)" \
 	  --pearl-real-host "$(COLLECT_PEARL_REAL_HOST)" \
 	  --pearl-grass-host "$(COLLECT_PEARL_GRASS_HOST)" \
-	  --remote-root "$(COLLECT_REMOTE_ROOT)" \
+	  --drone-remote-root "$(COLLECT_DRONE_REMOTE_ROOT)" \
+	  --pearl-remote-root "$(COLLECT_PEARL_REMOTE_ROOT)" \
 	  --output-root "$(COLLECT_OUTPUT_ROOT)" $(COLLECT_ARGS)
 
 # SIM is entirely local: preserve the matching UAV/PEARL/shoreside MOOS logs

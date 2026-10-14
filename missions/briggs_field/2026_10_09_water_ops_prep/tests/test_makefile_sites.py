@@ -193,6 +193,16 @@ class MakefileSiteTest(unittest.TestCase):
             self.assertIn('--pearl-real-host "pearl@100.113.99.58"', collect)
             self.assertIn('--pearl-grass-host "pearl@100.71.137.47"', collect)
             self.assertIn("field_logs/fetched", collect)
+            remote_root = ("/home/pearl/moos-ivp-pearl/missions/briggs_field/"
+                           "2026_10_09_water_ops_prep/field_logs")
+            self.assertIn(f'--drone-remote-root "{remote_root}"', collect)
+            self.assertIn(f'--pearl-remote-root "{remote_root}"', collect)
+            self.assertNotIn("scripts/collect_mission_logs.py", collect)
+            overridden = run_make(MISSION, "-n", f"collect-logs-{site}",
+                                  "COLLECT_DRONE_REMOTE_ROOT=/drone",
+                                  "COLLECT_PEARL_REMOTE_ROOT=/pearl").stdout
+            self.assertIn('--drone-remote-root "/drone"', overridden)
+            self.assertIn('--pearl-remote-root "/pearl"', overridden)
         collect_sim = run_make(MISSION, "-n", "collect-logs-sim").stdout
         self.assertIn("scripts/collect_sim_logs.py", collect_sim)
         self.assertIn("field_logs/sim", collect_sim)

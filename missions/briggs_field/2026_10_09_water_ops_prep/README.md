@@ -150,7 +150,7 @@ make logs
 ```
 
 `make logs` identifies the local physical node from the configured Tailnet IP,
-selects its newest MOOS log directory, and creates a timestamped directory under
+selects its newest MOOS log by recorded `LOGSTART` (not directory mtime), and creates a timestamped directory under
 `field_logs/`. Each result contains `MANIFEST.json` and `SHA256SUMS`; collection
 uses a staging directory and marks retained partial results `complete: false`.
 Use `LOG_NODE=shoreside|pearl-real|pearl-grass|drone` only when automatic node
@@ -166,22 +166,37 @@ Artifact content is node-specific:
   `jetson-video/UNAVAILABLE.txt`, marks the result incomplete, and exits nonzero.
   A future task-scoped Jetson recorder must publish/provide an authoritative path
   before this requirement can be completed.
-- Drone: the latest MOOS log, both task-scoped `fpv` and `nadir` camera trees,
-  the newest Pixhawk DataFlash log, and a complete post-flight parameter export.
+- Drone: the selected MOOS log, `fpv` and `nadir` camera trees from **every**
+  `VIDEO_RECORD_DIRECTORY` published during that session, **all** DataFlash logs
+  still advertised by the Pixhawk, and a complete collection-time parameter export.
+  Repeated path publications are deduplicated; multiple tasks are kept separately
+  under `video/tasks/0001/`, `0002/`, etc. Single-task bundles retain `video/fpv/`
+  and `video/nadir/`. `video/VIDEO_INVENTORY.json` maps exact source paths to copies.
   If the closed log lacks a final `VIDEO_RECORD_STATE=STOPPED`, `make logs`
   automatically stops and verifies the MediaMTX recorder paths and writes fresh
-  evidence bound to that exact log. Both stream directories must be nonempty.
+  evidence bound to that exact log. Both streams of every task must contain a
+  nonempty MP4. Open/changing streams are refused. Missing video does not block
+  native retrieval: available evidence is preserved in a checksummed **incomplete**
+  bundle and the command returns nonzero.
 
 The DataFlash and parameter files do not already exist on the drone filesystem:
 they remain on the Pixhawk until a MAVLink client requests them. The collector
 therefore implements `LOG_REQUEST_LIST`/`LOG_REQUEST_DATA` and
 `PARAM_REQUEST_LIST`/`PARAM_REQUEST_READ`; simply copying MOOS/video directories
 would omit those artifacts. Drone collection requires the mission to be stopped,
-refuses a running `pArduBridge`, exclusively opens Pixhawk `if00`, and admits only
+refuses running `MOOSDB`, `pArduBridge`, or `pVideoRecorder` processes,
+exclusively opens Pixhawk `if00`, and admits only
 a freshly observed disarmed, `ON_GROUND` flight controller. It sends no arm,
 mode, flight, parameter-set, reboot, or log-delete command. At 115200 baud a
-multi-megabyte DataFlash download can take several minutes. The independent
-`if02` QGC/mavp2p interface remains untouched.
+multi-megabyte DataFlash download can take several minutes; archiving the entire
+available native log catalog on each collection may take substantially longer and
+consume significant storage. Latest log first, then all remaining IDs: this is
+conservative preservation, **not** a claim that every native log belongs to the
+selected MOOS session. `ardupilot/NATIVE_INVENTORY.json` records the before/after
+catalogs, per-log completion and scope. A changing catalog fails collection;
+interrupted downloads remain `.bin.partial`, never complete `.bin` files.
+The parameter export is a current readback, not historical parameters for older
+flights. The independent `if02` QGC/mavp2p interface remains untouched.
 
 Verify a result with:
 
@@ -190,7 +205,7 @@ cd field_logs/<artifact-directory>
 sha256sum -c SHA256SUMS
 ```
 
-After `make logs` has run on both vehicle hosts, fetch their newest bundles from
+After `make logs` has run on both vehicle hosts, fetch **all saved bundles** from
 **shoreside** with the target for the physical site:
 
 ```bash
@@ -198,22 +213,38 @@ make collect-logs-briggs
 make collect-logs-charles
 ```
 
-These targets do not execute collection remotely. They use SSH only to select
-the newest site-appropriate bundle, transfer it with `rsync`, and independently
-verify every entry in each remote `SHA256SUMS` plus the manifest node identity.
-Both bundles are placed under one timestamped
-`field_logs/fetched/<timestamp>_remote-artifacts/` directory with a
-`FETCH_MANIFEST.json`. A transferred REAL-PEARL bundle may retain
-`source_complete: false` because of the documented Jetson gap; this produces a
-warning but does not mean the transfer failed.
+These targets remain **fetch-only**: no remote `make logs`, recorder/service
+operations, or Pixhawk access. SSH inventories every finalized site-appropriate
+bundle, including partial collections; `rsync` copies missing bundles. Verification
+requires full checksum coverage (including the manifest), the expected node,
+no symlinks/path escapes, and unchanged remote checksum inventories. One failed
+bundle or offline host does not prevent fetching the others. A failed transfer,
+changed source, or new bundle arriving during the fetch makes the command return
+nonzero; rerun to catch up.
+
+New copies go under `field_logs/fetched/<timestamp>_remote-artifacts/` with a
+schema-v2 `FETCH_MANIFEST.json`. Subsequent runs rehash previously verified copies
+and reuse them without another download. Each artifact's `local_path` is relative
+to `field_logs/fetched/`, so it may refer to an **earlier** fetch directory: retain
+the entire fetched tree, not just its newest directory. Damaged copies are preserved
+and a fresh copy is downloaded. Existing pre-v2 fetch manifests are not trusted as
+reuse indexes; the first new run can download those bundles again.
+
+The fetch manifest records per-node inventories, per-bundle status/provenance,
+and pending/error details. It does **not** claim the nodes form a matched sortie.
+`transfer_complete` means the inventory was retrieved and verified, not that the
+source recordings are report-complete. Incomplete source bundles remain
+`source_complete: false` with warnings (including the REAL-PEARL Jetson gap).
 
 Defaults assume `pi@100.112.119.114` for the Landmark/drone computer,
 `pearl@100.71.137.47` for Briggs GRASS PEARL, and
 `pearl@100.113.99.58` for Charles REAL PEARL. The remote artifact root is
-`workspace/mit/pearl/moos-ivp-pearl/missions/briggs_field/2026_10_09_water_ops_prep/field_logs`
-relative to each SSH user's home. Override `COLLECT_DRONE_HOST`,
+`/home/pearl/moos-ivp-pearl/missions/briggs_field/2026_10_09_water_ops_prep/field_logs`
+(an absolute path on the field hosts, not the stale SSH-home-relative workspace).
+There is no silent fallback to another root. Override `COLLECT_DRONE_HOST`,
 `COLLECT_PEARL_GRASS_HOST`, `COLLECT_PEARL_REAL_HOST`, `COLLECT_REMOTE_ROOT`,
-`COLLECT_OUTPUT_ROOT`, or `COLLECT_ARGS` for a different deployment. Existing
+`COLLECT_DRONE_REMOTE_ROOT`, `COLLECT_PEARL_REMOTE_ROOT`, `COLLECT_OUTPUT_ROOT`,
+or `COLLECT_ARGS` for a different deployment. Existing
 SSH host-key and authentication policy is preserved; the targets do not disable
 host-key checking or copy credentials.
 
@@ -231,9 +262,15 @@ preserves the newest owned `LOG_sitl/moos-sitl-*.log` launcher log and a nonempt
 not apply to this local post-shutdown SIM target; the container's `/state` is
 temporary and is removed during owned SITL teardown.
 
-Run `make logs` on each physical node before any remote `make clean`; cleanup
-deletes the source MOOS logs. Run the site-specific collection target before
-deleting remote `field_logs`.
+Run `make logs` on **each physical node, including shoreside, after each stopped
+mission** and before `make clean`; cleanup deletes source MOOS logs. For an older
+retained session, run `make logs LOG_DIRECTORY=LOG_...` explicitly on that node;
+this does not reconstruct historical parameter readbacks. Fetching does not bundle
+raw sessions or repair old incomplete bundles. Recollect retained multi-task
+sessions with the updated collector to recover omitted task footage, then fetch
+again. Run the site-specific fetch before deleting remote `field_logs`.
+Unavailable journals, unrecorded camera footage, erased native logs, and missing
+startup events cannot be recreated by these commands.
 
 ## Task-scoped UAV video recording
 
