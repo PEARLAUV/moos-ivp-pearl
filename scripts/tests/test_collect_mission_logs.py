@@ -3,6 +3,7 @@
 
 import hashlib
 import importlib.util
+import io
 import json
 import struct
 import sys
@@ -129,6 +130,45 @@ class CollectorTest(unittest.TestCase):
                             for message in peer.sent))
         self.assertNotIn(23, peer.sent)  # PARAM_SET
         self.assertNotIn(121, peer.sent)  # LOG_ERASE
+
+    def test_fc_progress_counts_unique_bytes_not_duplicate_packets(self):
+        peer = PixhawkPeer()
+        receive = peer.recv
+        def duplicated(_timeout):
+            data = receive(_timeout)
+            return data + data
+        peer.recv = duplicated
+        client = collector.ReadOnlyPixhawk(peer, response_timeout=0.1)
+        client.admit()
+        entry = client.get_log_entries()[-1]
+        stderr, stdout = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(collector.sys, "stderr", stderr), \
+                mock.patch.object(collector.sys, "stdout", stdout):
+            path = Path(directory) / "log.bin"
+            client.download_log(entry, path)
+            self.assertEqual(path.read_bytes(), peer.logs[8])
+        self.assertIn("DataFlash log 8", stderr.getvalue())
+        self.assertIn("100.0%", stderr.getvalue())
+        self.assertIn(f"{entry.size:.1f} B/{entry.size:.1f} B", stderr.getvalue())
+        self.assertIn("ETA", stderr.getvalue())
+        self.assertEqual(stdout.getvalue(), "")
+
+    def test_fc_stalled_transfer_reports_retries_and_failure(self):
+        peer = PixhawkPeer()
+        client = collector.ReadOnlyPixhawk(peer, response_timeout=0.1)
+        client.admit()
+        entry = client.get_log_entries()[-1]
+        client.response_timeout = 0  # expire each response window without accepting queued data
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(collector.sys, "stderr", stderr):
+            path = Path(directory) / "log.bin.partial"
+            with self.assertRaisesRegex(collector.CollectionError, "stalled"):
+                client.download_log(entry, path)
+            self.assertEqual(path.stat().st_size, entry.size)  # reservation is not received-byte progress
+        self.assertIn("retry 1/10", stderr.getvalue())
+        self.assertIn("failed", stderr.getvalue())
+        self.assertNotIn("100.0%", stderr.getvalue())
 
     def test_shoreside_collects_latest_log_and_checksums(self):
         with tempfile.TemporaryDirectory() as directory:

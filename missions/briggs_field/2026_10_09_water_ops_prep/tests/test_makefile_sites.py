@@ -189,7 +189,7 @@ class MakefileSiteTest(unittest.TestCase):
             collect = run_make(MISSION, "-n", f"collect-logs-{site}").stdout
             self.assertIn("scripts/fetch_collected_logs.py", collect)
             self.assertIn(f"--site {site}", collect)
-            self.assertIn('--drone-host "pi@100.112.119.114"', collect)
+            self.assertIn('--drone-host "pearl@100.112.119.114"', collect)
             self.assertIn('--pearl-real-host "pearl@100.113.99.58"', collect)
             self.assertIn('--pearl-grass-host "pearl@100.71.137.47"', collect)
             self.assertIn("field_logs/fetched", collect)
@@ -199,8 +199,10 @@ class MakefileSiteTest(unittest.TestCase):
             self.assertIn(f'--pearl-remote-root "{remote_root}"', collect)
             self.assertNotIn("scripts/collect_mission_logs.py", collect)
             overridden = run_make(MISSION, "-n", f"collect-logs-{site}",
+                                  "COLLECT_DRONE_HOST=archive@drone.test",
                                   "COLLECT_DRONE_REMOTE_ROOT=/drone",
                                   "COLLECT_PEARL_REMOTE_ROOT=/pearl").stdout
+            self.assertIn('--drone-host "archive@drone.test"', overridden)
             self.assertIn('--drone-remote-root "/drone"', overridden)
             self.assertIn('--pearl-remote-root "/pearl"', overridden)
         collect_sim = run_make(MISSION, "-n", "collect-logs-sim").stdout

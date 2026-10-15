@@ -62,7 +62,7 @@ LOG_ARGS ?=
 VIDEO_RECORD_API ?= http://127.0.0.1:9997/v3/config/paths
 
 # Shoreside retrieval of artifacts already assembled by `make logs` remotely.
-COLLECT_DRONE_HOST ?= pi@$(DRONE_IP)
+COLLECT_DRONE_HOST ?= pearl@$(DRONE_IP)
 COLLECT_PEARL_REAL_HOST ?= pearl@$(PEARL_REAL_IP)
 COLLECT_PEARL_GRASS_HOST ?= pearl@$(PEARL_GRASS_IP)
 COLLECT_REMOTE_ROOT ?= /home/pearl/moos-ivp-pearl/missions/briggs_field/2026_10_09_water_ops_prep/field_logs

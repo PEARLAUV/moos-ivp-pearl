@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import fnmatch
-import hashlib
 import json
 import re
 import shlex
@@ -21,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import collect_mission_logs as local_collector
+from log_progress import Progress, hash_file, run_streaming, status
 
 SAFE_NAME = re.compile(r"[A-Za-z0-9_.-]+\Z")
 DEFAULT_REMOTE_ROOT = (
@@ -76,6 +76,7 @@ for path in sorted(root.iterdir()):
     rows.append(row)
 print(json.dumps({"root": str(root), "artifacts": rows}))
 '''
+    status(f"SSH inventory: {host}:{remote_root} (timeout 60s)")
     command = ssh_command(host, ssh_options,
                           ["python3", "-c", script, remote_root, node_pattern])
     try:
@@ -112,23 +113,21 @@ def rsync_artifact(host: str, remote_root: str, name: str, destination: Path,
     destination.mkdir(parents=True, exist_ok=False)
     ssh_transport = shlex.join(["ssh", *ssh_options])
     source = f"{host}:{remote_root.rstrip('/')}/{name}/"
-    command = ["rsync", "-a", "--partial", "--protect-args", "-e", ssh_transport,
-               source, str(destination) + "/"]
+    command = ["rsync", "-a", "--partial", "--protect-args",
+               "--info=progress2", "--outbuf=L", "--no-inc-recursive", "--human-readable",
+               "-e", ssh_transport, source, str(destination) + "/"]
+    status(f"Transfer: {host}:{name} (rsync listing/transferring; progress is per bundle)")
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        returncode, output_tail = run_streaming(command, f"rsync {host}:{name}")
     except OSError as exc:
         raise FetchError(f"rsync failed for {host}:{name}: {exc}") from exc
-    if result.returncode != 0:
-        detail = result.stderr.strip() or f"exit {result.returncode}"
-        raise FetchError(f"rsync failed for {host}:{name}: {detail}")
+    if returncode != 0:
+        detail = output_tail.strip() or "no subprocess output"
+        raise FetchError(f"rsync failed for {host}:{name}: exit {returncode}: {detail}")
 
 
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def sha256(path: Path, progress: Progress | None = None) -> str:
+    return hash_file(path, progress)
 
 
 def verify_artifact(artifact: Path, expected_nodes: set[str]) -> dict[str, Any]:
@@ -147,22 +146,24 @@ def verify_artifact(artifact: Path, expected_nodes: set[str]) -> dict[str, Any]:
         elif not path.is_file() and not path.is_dir():
             raise FetchError(f"Special file in artifact: {path}")
     checked = set()
-    for number, line in enumerate(sums_path.read_text().splitlines(), 1):
-        if not line.strip():
-            continue
-        if "  " not in line:
-            raise FetchError(f"Malformed checksum at {sums_path}:{number}")
-        wanted, relative = line.split("  ", 1)
-        if not re.fullmatch(r"[0-9a-f]{64}", wanted):
-            raise FetchError(f"Malformed SHA-256 at {sums_path}:{number}")
-        if (relative not in files or relative in checked
-                or Path(relative).is_absolute() or ".." in Path(relative).parts):
-            raise FetchError(f"Unsafe, duplicate, or missing checksum path: {relative}")
-        if sha256(artifact / relative) != wanted:
-            raise FetchError(f"Checksum verification failed: {artifact / relative}")
-        checked.add(relative)
-    if checked != files or "MANIFEST.json" not in checked:
-        raise FetchError(f"Incomplete checksum coverage at {artifact}: {sorted(files - checked)}")
+    total = sum((artifact / relative).stat().st_size for relative in files)
+    with Progress(f"SHA256 {artifact.name}", total) as progress:
+        for number, line in enumerate(sums_path.read_text().splitlines(), 1):
+            if not line.strip():
+                continue
+            if "  " not in line:
+                raise FetchError(f"Malformed checksum at {sums_path}:{number}")
+            wanted, relative = line.split("  ", 1)
+            if not re.fullmatch(r"[0-9a-f]{64}", wanted):
+                raise FetchError(f"Malformed SHA-256 at {sums_path}:{number}")
+            if (relative not in files or relative in checked
+                    or Path(relative).is_absolute() or ".." in Path(relative).parts):
+                raise FetchError(f"Unsafe, duplicate, or missing checksum path: {relative}")
+            if sha256(artifact / relative, progress) != wanted:
+                raise FetchError(f"Checksum verification failed: {artifact / relative}")
+            checked.add(relative)
+        if checked != files or "MANIFEST.json" not in checked:
+            raise FetchError(f"Incomplete checksum coverage at {artifact}: {sorted(files - checked)}")
     try:
         manifest = json.loads(manifest_path.read_text())
         if not isinstance(manifest, dict):
@@ -209,10 +210,12 @@ def fetch_source(label: str, host: str, remote_root: str, pattern: str,
     result["remote_root"] = remote_root
     result["inventory_before"] = before
     errors = []
-    for record in before["artifacts"]:
+    status(f"{label}: {len(before['artifacts'])} saved bundles found")
+    for index, record in enumerate(before["artifacts"], 1):
         row = dict(record, status="failed")
         result["artifacts"].append(row)
         name = row["name"]
+        status(f"{label}: bundle {index}/{len(before['artifacts'])}: {name}")
         try:
             if row.get("error"):
                 raise FetchError(row["error"])
@@ -220,25 +223,31 @@ def fetch_source(label: str, host: str, remote_root: str, pattern: str,
             key = (host, remote_root, name, fingerprint)
             candidate = copies.get(key)
             if candidate is not None:
+                status(f"Rechecking cached copy before reuse: {candidate}")
                 try:
                     if sha256(candidate / "SHA256SUMS") != fingerprint:
                         raise FetchError("local checksum inventory changed")
                     row.update(verify_artifact(candidate, expected_nodes))
                     row.update(status="reused", local_path=candidate.relative_to(output_root).as_posix())
+                    status(f"Reused verified bundle: {label}/{name}")
                     continue
-                except (FetchError, OSError, ValueError):
+                except (FetchError, OSError, ValueError) as exc:
                     # Preserve the damaged copy; download a fresh one, never edit it.
-                    pass
+                    status(f"Cached copy unusable ({exc}); retaining it and fetching a fresh copy")
             destination = stage / label / name
             row["staged_path"] = f"{label}/{name}"
             rsync_artifact(host, remote_root, name, destination, ssh_options)
             if sha256(destination / "SHA256SUMS") != fingerprint:
                 raise FetchError("source checksum inventory changed during transfer")
+            status(f"Verifying downloaded bundle: {label}/{name}")
             row.update(verify_artifact(destination, expected_nodes))
             row["status"] = "fetched"
+            status(f"Verified downloaded bundle: {label}/{name}")
         except (FetchError, OSError, ValueError) as exc:
             row["error"] = str(exc)
             errors.append(f"{label}/{name}: {exc}")
+            status(f"FAILED {label}/{name}: {exc}")
+    status(f"{label}: checking remote inventory again for source changes")
     after = remote_inventory(host, remote_root, pattern, ssh_options)
     result["inventory_after"] = after
     after_rows = {row["name"]: row for row in after["artifacts"]}
@@ -283,7 +292,7 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site", choices=("briggs", "charles"), default="briggs")
     parser.add_argument("--shore-ip", default="100.88.214.50")
-    parser.add_argument("--drone-host", default="pi@100.112.119.114")
+    parser.add_argument("--drone-host", default="pearl@100.112.119.114")
     parser.add_argument("--pearl-real-host", default="pearl@100.113.99.58")
     parser.add_argument("--pearl-grass-host", default="pearl@100.71.137.47")
     parser.add_argument("--remote-root", default=DEFAULT_REMOTE_ROOT)
@@ -312,7 +321,9 @@ def main(argv=None) -> int:
         pearl_host = args.pearl_grass_host if args.site == "briggs" else args.pearl_real_host
         pearl_node = "pearl-grass" if args.site == "briggs" else "pearl-real"
         output_root.mkdir(parents=True, exist_ok=True)
+        status(f"Indexing previous fetch manifests: {output_root}")
         copies = previous_copies(output_root)
+        status(f"Indexed {len(copies)} prior bundle references; copies are rehashed before reuse")
         stage = Path(tempfile.mkdtemp(prefix=".fetching-", dir=output_root))
         errors = []
         for label, host, root, node, pattern in (
@@ -328,6 +339,8 @@ def main(argv=None) -> int:
             except (FetchError, OSError, ValueError) as exc:
                 result["error"] = str(exc)
                 errors.append(f"{label}: {exc}")
+                status(f"FAILED {label}: {exc}")
+        status("Finalizing fetch provenance manifest")
         final = finalize(stage, output_root, manifest, "\n".join(errors) if errors else None)
         stage = None
         incomplete = [f"{label}/{row['name']}" for label, source in manifest["sources"].items()

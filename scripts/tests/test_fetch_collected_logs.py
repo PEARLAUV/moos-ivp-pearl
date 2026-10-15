@@ -4,6 +4,7 @@
 import copy
 import hashlib
 import importlib.util
+import io
 import json
 import shlex
 import shutil
@@ -70,6 +71,50 @@ class FetchCollectedLogsTest(unittest.TestCase):
     def manifests(self):
         return [json.loads(path.read_text()) for path in
                 sorted(self.output.glob("*/FETCH_MANIFEST.json"))]
+
+    def test_default_drone_login_matches_artifact_owner_and_is_overridable(self):
+        with mock.patch.object(fetcher, "remote_inventory", side_effect=self.inventory), \
+                mock.patch.object(fetcher, "rsync_artifact", side_effect=self.transfer):
+            result = fetcher.main(["--allow-non-shoreside", "--output-root", str(self.output)])
+        self.assertEqual(result, 0)
+        drone_inventories = [row for row in self.discoveries if "drone" in row[2]]
+        self.assertTrue(drone_inventories)
+        self.assertEqual(drone_inventories[0][1], fetcher.DEFAULT_REMOTE_ROOT)
+        self.assertTrue(drone_inventories[0][1].startswith("/home/pearl/"))
+        for host, _root, _pattern in drone_inventories:
+            self.assertEqual(host, "pearl@100.112.119.114")
+        args = fetcher.parse_args(["--output-root", str(self.output),
+                                   "--drone-host", "archive@drone.test"])
+        self.assertEqual(args.drone_host, "archive@drone.test")
+
+    def test_rsync_output_streams_with_bundle_progress_and_preserves_error(self):
+        destination = self.root / "transfer"
+        with mock.patch.object(fetcher, "run_streaming", return_value=(0, "100%")) as stream:
+            fetcher.rsync_artifact("pearl@drone.test", "/remote logs", self.drone1.name, destination,
+                                   ["-o", "ConnectTimeout=15"])
+        command = stream.call_args.args[0]
+        for option in ("--info=progress2", "--outbuf=L", "--no-inc-recursive", "--protect-args", "--partial"):
+            self.assertIn(option, command)
+        self.assertIn(f"pearl@drone.test:/remote logs/{self.drone1.name}/", command)
+        self.assertNotIn("--delete", command)
+        with mock.patch.object(fetcher, "run_streaming", return_value=(23, "permission denied")):
+            with self.assertRaisesRegex(fetcher.FetchError, "exit 23: permission denied"):
+                fetcher.rsync_artifact("pearl@drone.test", "/remote", self.drone1.name,
+                                       self.root / "failed-transfer", [])
+
+    def test_stage_and_hash_progress_stay_on_stderr(self):
+        stderr, stdout = io.StringIO(), io.StringIO()
+        with mock.patch.object(fetcher.sys, "stderr", stderr), mock.patch.object(fetcher.sys, "stdout", stdout):
+            self.assertEqual(self.run_fetch(), 0)
+            self.assertIn("bundle 1/2", stderr.getvalue())
+            self.assertIn("Verifying downloaded bundle", stderr.getvalue())
+            self.assertIn("SHA256", stderr.getvalue())
+            self.assertIn("100.0%", stderr.getvalue())
+            self.assertEqual(self.run_fetch(), 0)
+            self.assertIn("Rechecking cached copy", stderr.getvalue())
+            self.assertIn("Reused verified bundle", stderr.getvalue())
+        self.assertNotIn("SHA256", stdout.getvalue())
+        self.assertEqual(len(stdout.getvalue().splitlines()), 2)
 
     def test_verifies_manifest_node_and_every_checksum(self):
         result = fetcher.verify_artifact(self.drone1, {"drone"})

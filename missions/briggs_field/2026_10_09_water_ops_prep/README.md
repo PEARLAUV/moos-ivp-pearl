@@ -274,7 +274,7 @@ and pending/error details. It does **not** claim the nodes form a matched sortie
 source recordings are report-complete. Incomplete source bundles remain
 `source_complete: false` with warnings (including the REAL-PEARL Jetson gap).
 
-Defaults assume `pi@100.112.119.114` for the Landmark/drone computer,
+Defaults assume `pearl@100.112.119.114` for the Landmark/drone computer,
 `pearl@100.71.137.47` for Briggs GRASS PEARL, and
 `pearl@100.113.99.58` for Charles REAL PEARL. The remote artifact root is
 `/home/pearl/moos-ivp-pearl/missions/briggs_field/2026_10_09_water_ops_prep/field_logs`
@@ -284,7 +284,36 @@ There is no silent fallback to another root. Override `COLLECT_DRONE_HOST`,
 `COLLECT_DRONE_REMOTE_ROOT`, `COLLECT_PEARL_REMOTE_ROOT`, `COLLECT_OUTPUT_ROOT`,
 or `COLLECT_ARGS` for a different deployment. Existing
 SSH host-key and authentication policy is preserved; the targets do not disable
-host-key checking or copy credentials.
+host-key checking or copy credentials. The drone login must be able to traverse
+and read `/home/pearl/moos-ivp-pearl`: logging in as `pi` can authenticate
+successfully yet fail with `PermissionError` on this path. Use the owning account,
+not `sudo` or relaxed directory permissions. To override an older local default:
+
+```bash
+make collect-logs-briggs COLLECT_DRONE_HOST=pearl@100.112.119.114
+```
+
+**Progress is enabled by default** for `make logs` and both remote fetch targets:
+
+- Local log/video copies, FC downloads/timing probes, and SHA-256 passes show
+  measured bytes, percentage, average speed, and estimated remaining time.
+  FC waits report no-data duration and retry attempts; progress does not replace
+  or relax disarmed/grounded safety checks.
+- Fetching prints the host and bundle number (`3/8`, for example), then streams
+  rsync's per-bundle bytes/percentage/rate/ETA live instead of hiding its output
+  until completion. A full file list is obtained before transfer percentages;
+  silent rsync periods produce a notice every ten seconds. That notice identifies
+  lack of subprocess output, not a diagnosed network fault.
+- Stages distinguish SSH inventory, copying, FC parameters/catalog selection,
+  rechecking cached copies, verifying downloads, and finalizing manifests.
+  A transfer reaching 100% is **not** checksum-verification completion.
+- Progress and diagnostics go to **stderr**; final artifact paths remain on
+  stdout. Terminals get updating progress lines; redirected output gets normal
+  lines. Failed rsync transfers retain an output tail in their error records.
+
+The shared helper is `scripts/log_progress.py`; deploy it alongside the updated
+collector/fetch scripts on the machines running them. No additional Python
+packages, remote services, or permission changes are required.
 
 For a stopped local three-community simulation, use:
 
